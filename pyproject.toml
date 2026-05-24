@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "compliance-agent"
+version = "0.1.0"
+description = "AI agent that extracts structured compliance requirements from policy and regulation documents."
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.92.0",
+    "pydantic>=2.6",
+    "pypdf>=4.0",
+    "click>=8.1",
+]
+
+[project.scripts]
+compliance-agent = "compliance_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
