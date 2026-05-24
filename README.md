@@ -41,3 +41,4 @@ See `src/compliance_agent/models.py` for the full schema.
   Pydantic `ExtractionResult` schema, so callers always get a typed object or an error.
 - The system prompt is prompt-cached, so repeated runs against different documents pay
   the system-prompt token cost only on the first call within the cache TTL.
+- Supports GDPR, SOC 2, HIPAA, and ISO 27001 frameworks out of the box.
