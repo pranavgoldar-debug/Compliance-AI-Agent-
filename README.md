@@ -14,6 +14,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```bash
 compliance-agent examples/sample_policy.txt -o requirements.json
 compliance-agent examples/sample_policy.txt --framework "SOC 2"
+compliance-agent examples/sample_policy.txt --verify -o results.json
 ```
 
 Supports `.txt` and `.pdf` input.
@@ -33,6 +34,29 @@ for req in result.requirements:
 Each requirement carries: `requirement_id`, `title`, `summary`, verbatim `source_quote`,
 `category`, `severity`, `applies_to`, `evidence_artifacts`, and `section_reference`.
 See `src/compliance_agent/models.py` for the full schema.
+
+## Verification
+
+Pass `--verify` (CLI) or use `ComplianceVerifier` directly to grade an extraction
+against the source. Each requirement gets a finding:
+
+- `quote_verbatim` — Python-side check that `source_quote` appears verbatim in the
+  source (whitespace-tolerant). No model call needed.
+- `status` (`pass` / `warning` / `fail`) plus `issues` and `suggested_fix` — a second
+  Claude call grades semantic faithfulness, catching hallucinated obligations and
+  miscalibrated severity. Also surfaces `missed_requirements` the extractor skipped.
+
+```python
+from compliance_agent import ComplianceExtractor, ComplianceVerifier
+from compliance_agent.extractor import read_document
+
+text = read_document("examples/sample_policy.txt")
+extraction = ComplianceExtractor().extract(text)
+verification = ComplianceVerifier().verify(text, extraction)
+for f in verification.findings:
+    if f.status != "pass":
+        print(f.requirement_id, f.status, f.issues)
+```
 
 ## How it works
 

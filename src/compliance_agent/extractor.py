@@ -19,7 +19,7 @@ When you receive a document:
 - Do not invent requirements that are not supported by the source text."""
 
 
-def _read_document(source: Union[str, Path]) -> str:
+def read_document(source: Union[str, Path]) -> str:
     path = Path(source)
     if path.suffix.lower() == ".pdf":
         from pypdf import PdfReader
@@ -69,7 +69,7 @@ class ComplianceExtractor:
     def extract_from_file(
         self, source: Union[str, Path], *, framework_hint: Optional[str] = None
     ) -> ExtractionResult:
-        return self.extract(_read_document(source), framework_hint=framework_hint)
+        return self.extract(read_document(source), framework_hint=framework_hint)
 
 
 def extract_requirements(
