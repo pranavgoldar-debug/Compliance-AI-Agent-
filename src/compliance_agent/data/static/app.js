@@ -123,7 +123,7 @@ function renderCalendar() {
       .some((v) => (v || "").toLowerCase().includes(q));
   });
 
-  calendarTitle.textContent = `${currentCountry.flag}  ${currentCountry.country_name} — Compliance Calendar`;
+  calendarTitle.textContent = `${currentCountry.flag}  ${currentCountry.country_name} — Compliance`;
   calendarSummary.textContent =
     `${filtered.length} of ${currentFilings.length} filings shown. ` +
     `Status / Filing reference / Comments are blank for you to fill in.`;
