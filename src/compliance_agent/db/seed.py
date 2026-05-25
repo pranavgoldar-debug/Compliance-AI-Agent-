@@ -40,33 +40,27 @@ from compliance_agent.db import (
 # ---------------------------------------------------------------------------
 DEMO_USERS = [
     {
-        "email": "admin@aspora.com",
+        "email": "pranav.goldar@aspora.com",
         "password": "admin123",
-        "full_name": "Alex Admin",
+        "full_name": "Pranav Goldar",
         "role": Role.admin,
     },
     {
-        "email": "yoga@aspora.com",
-        "password": "yoga12345",
-        "full_name": "Yoga Compliance Manager",
-        "role": Role.admin,
-    },
-    {
-        "email": "employee@aspora.com",
-        "password": "employee123",
-        "full_name": "Sam Employee",
+        "email": "pranavgoldar@gmail.com",
+        "password": "aspora2026",
+        "full_name": "Pranav (Operations)",
         "role": Role.employee,
     },
     {
-        "email": "priya@aspora.com",
-        "password": "priya12345",
-        "full_name": "Priya Sharma",
+        "email": "pranavgoldar.iitb@gmail.com",
+        "password": "iitb2026",
+        "full_name": "Pranav (IITB)",
         "role": Role.employee,
     },
     {
-        "email": "james@aspora.com",
-        "password": "james12345",
-        "full_name": "James Wilson",
+        "email": "pranavgoldar.moodi@gmail.com",
+        "password": "moodi2026",
+        "full_name": "Pranav (Moodi)",
         "role": Role.employee,
     },
 ]
@@ -83,7 +77,7 @@ DEMO_ENTITIES = [
         "registration_number": "01234567",
         "incorporation_date": date(2018, 2, 18),
         "fiscal_year_end": "31-Mar",
-        "country_lead_email": "james@aspora.com",
+        "country_lead_email": "pranavgoldar.iitb@gmail.com",
     },
     {
         "name": "Aspora US Inc",
@@ -92,7 +86,7 @@ DEMO_ENTITIES = [
         "registration_number": "DE-78451293",
         "incorporation_date": date(2019, 6, 12),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "admin@aspora.com",
+        "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
         "name": "Aspora India Pvt Ltd",
@@ -101,7 +95,7 @@ DEMO_ENTITIES = [
         "registration_number": "U72900KA2019PTC123456",
         "incorporation_date": date(2019, 8, 22),
         "fiscal_year_end": "31-Mar",
-        "country_lead_email": "priya@aspora.com",
+        "country_lead_email": "pranavgoldar@gmail.com",
     },
     {
         "name": "Aspora DMCC",
@@ -110,7 +104,7 @@ DEMO_ENTITIES = [
         "registration_number": "DMCC-987654",
         "incorporation_date": date(2020, 5, 5),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "yoga@aspora.com",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
     {
         "name": "Aspora Singapore Pte Ltd",
@@ -119,7 +113,7 @@ DEMO_ENTITIES = [
         "registration_number": "202012345A",
         "incorporation_date": date(2020, 11, 2),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "yoga@aspora.com",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
     {
         "name": "Aspora Lithuania UAB",
@@ -128,7 +122,7 @@ DEMO_ENTITIES = [
         "registration_number": "LT304567890",
         "incorporation_date": date(2021, 3, 14),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "admin@aspora.com",
+        "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
         "name": "Aspora Canada Inc",
@@ -137,7 +131,7 @@ DEMO_ENTITIES = [
         "registration_number": "987654-3",
         "incorporation_date": date(2022, 1, 20),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "admin@aspora.com",
+        "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
         "name": "Aspora SARL",
@@ -146,7 +140,7 @@ DEMO_ENTITIES = [
         "registration_number": "B-LUX-245678",
         "incorporation_date": date(2022, 9, 8),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "yoga@aspora.com",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
 ]
 

@@ -1,0 +1,69 @@
+import { Routes, Route, Navigate } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AppShell } from "@/components/AppShell";
+import { LoginPage } from "@/pages/LoginPage";
+import {
+  DashboardPage,
+  CalendarPage,
+  EntitiesPage,
+  EntityDetailPage,
+  TasksPage,
+  RulesPage,
+  SettingsPage,
+} from "@/pages/placeholders";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DashboardPage />} />
+            <Route path="calendar" element={<CalendarPage />} />
+            <Route path="entities" element={<EntitiesPage />} />
+            <Route path="entities/:entityId" element={<EntityDetailPage />} />
+            <Route path="tasks" element={<TasksPage />} />
+            <Route
+              path="rules"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <RulesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}

@@ -236,12 +236,14 @@ def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> N
 
 @main.command()
 def seed() -> None:
-    """Seed the SQLite database with demo Aspora entities, rules, and users.
+    """Seed the SQLite database with Aspora entities, rules, and users.
 
     Idempotent — safe to re-run. Creates compliance.db in the working directory
-    if it doesn't exist. Demo logins:
-       admin@aspora.com / admin123
-       employee@aspora.com / employee123
+    if it doesn't exist. Login accounts:
+       pranav.goldar@aspora.com         admin123        (admin)
+       pranavgoldar@gmail.com           aspora2026      (employee)
+       pranavgoldar.iitb@gmail.com      iitb2026        (employee)
+       pranavgoldar.moodi@gmail.com     moodi2026       (employee)
     """
     from compliance_agent.db.seed import run_seed
 
