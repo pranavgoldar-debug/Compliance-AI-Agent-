@@ -15,6 +15,7 @@ def _build() -> list[FintechFiling]:
             authority="RBI (DPSS)",
             frequency="Annual",
             due_date_rule="Annual confirmation in line with PA-PG Authorization conditions; net-worth statement within 30 days of FY close.",
+            payment_due="One-time application fee on submission; net-worth maintenance (₹15 cr minimum, ₹25 cr by 3rd FY end) per RBI PA-PG Guidelines.",
             applicability="Mandatory",
             applicability_note="Required for any entity acting as Payment Aggregator / Payment Gateway under RBI's PA-PG Guidelines.",
         ),
@@ -26,6 +27,7 @@ def _build() -> list[FintechFiling]:
             authority="RBI (FED)",
             frequency="Annual",
             due_date_rule="AD Cat-II licence renewable annually; principal-officer attestations and net-owned-funds confirmation per RBI Master Direction.",
+            payment_due="Net-owned-funds floor of ₹50 lakh for AD Cat-II (₹5 cr for principal MTSS operators); annual renewal processing fee per RBI.",
             applicability="Mandatory",
             applicability_note="Required for inbound (RDA) and outbound (MTSS) personal remittance flows.",
         ),
@@ -225,6 +227,7 @@ def _build() -> list[FintechFiling]:
             authority="Income Tax Department",
             frequency="Annual",
             due_date_rule="By 31 Oct for FY ending 31 Mar (for companies requiring audit).",
+            payment_due="Self-assessment tax (after credit for advance tax + TDS) paid before filing; late filing fee ₹5,000 under Sec 234F + interest under 234A/B/C.",
             applicability="Mandatory",
         ),
         FintechFiling(
@@ -315,6 +318,7 @@ def _build() -> list[FintechFiling]:
             authority="MCA / ROC",
             frequency="Annual",
             due_date_rule="Within 30 days of AGM (AGM by 30 Sep, so typically by 30 Oct).",
+            payment_due="ROC filing fee per share-capital slab (typically ₹200–₹600); additional fee ₹100/day for late filing (no cap).",
             applicability="Mandatory",
         ),
         FintechFiling(
@@ -325,6 +329,7 @@ def _build() -> list[FintechFiling]:
             authority="MCA / ROC",
             frequency="Annual",
             due_date_rule="Within 60 days of AGM (typically by 29 Nov).",
+            payment_due="ROC filing fee per share-capital slab (typically ₹200–₹600); additional fee ₹100/day late.",
             applicability="Mandatory",
         ),
         FintechFiling(
@@ -335,6 +340,7 @@ def _build() -> list[FintechFiling]:
             authority="MCA / ROC",
             frequency="Annual / Event-based",
             due_date_rule="Within 15 days of AGM that appointed/re-appointed the auditor.",
+            payment_due="Filing fee ₹200–₹600 by share-capital slab; ₹100/day additional fee on delay.",
             applicability="Mandatory",
         ),
         FintechFiling(
@@ -345,6 +351,7 @@ def _build() -> list[FintechFiling]:
             authority="MCA",
             frequency="Annual",
             due_date_rule="By 30 Sep for every DIN holder.",
+            payment_due="No fee if filed on time; ₹5,000 penalty per DIN once deactivated.",
             applicability="Mandatory",
         ),
         FintechFiling(
@@ -355,6 +362,7 @@ def _build() -> list[FintechFiling]:
             authority="MCA / ROC",
             frequency="Annual",
             due_date_rule="By 30 Jun for the preceding FY.",
+            payment_due="ROC filing fee per slab (typically ₹200–₹600); ₹100/day additional fee on delay.",
             applicability="Mandatory",
         ),
         FintechFiling(

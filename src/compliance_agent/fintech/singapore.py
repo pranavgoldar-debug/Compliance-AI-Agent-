@@ -158,6 +158,7 @@ def _build() -> list[FintechFiling]:
             authority="ACRA",
             frequency="Annual",
             due_date_rule="Annual Return within 7 months of FY close (private company); AGM within 6 months of FY close.",
+            payment_due="ACRA filing fee SGD 60 (annual return). Late lodgement penalty from SGD 300 (and risk of strike-off).",
             applicability="Mandatory",
         ),
         FintechFiling(

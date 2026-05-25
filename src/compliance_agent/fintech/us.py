@@ -30,6 +30,7 @@ def _build() -> list[FintechFiling]:
             authority="State financial regulators via NMLS (CSBS)",
             frequency="Annual + Quarterly (MSB Call Report)",
             due_date_rule="State licence renewals by 31 Dec; MSB Call Report within 45 days of quarter close.",
+            payment_due="Per-state renewal fees range ~$500–$5,000/state. Initial licensing $1,000–$100,000+ per state plus surety bond $25k–$2M.",
             applicability="Mandatory",
             applicability_note="Required in every US state where the entity transmits money; tracked per-state in NMLS.",
         ),
@@ -254,7 +255,7 @@ def _build() -> list[FintechFiling]:
             authority="State of incorporation",
             frequency="Annual",
             due_date_rule="Delaware: 1 Mar; other states vary — usually anniversary of incorporation.",
-            payment_due="With annual report filing.",
+            payment_due="Delaware franchise tax min $400 (Authorized Shares method) or min $400 (Assumed Par Value Capital method); $50 annual report fee. Late = $200 penalty + 1.5%/month interest.",
             applicability="Mandatory",
         ),
         FintechFiling(

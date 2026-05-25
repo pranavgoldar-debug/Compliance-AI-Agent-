@@ -15,6 +15,7 @@ def _build() -> list[FintechFiling]:
             authority="FCA",
             frequency="One-time + Event-based",
             due_date_rule="Authorization before commencement; change-in-control notification before completion of change.",
+            payment_due="Application fee ~£5,000 (small PI) to £25,000 (API); annual periodic fee per FCA fee-block A.10 (minimum ~£1,151).",
             applicability="Mandatory",
         ),
         FintechFiling(
@@ -122,7 +123,7 @@ def _build() -> list[FintechFiling]:
             authority="Information Commissioner's Office (ICO)",
             frequency="Annual + Continuous + Event-based",
             due_date_rule="ICO data-protection fee paid annually on anniversary; breach to ICO within 72 hours of awareness.",
-            payment_due="Annual ICO fee on anniversary.",
+            payment_due="ICO fee — Tier 1 £40 (turnover ≤£632k or ≤10 staff), Tier 2 £60 (≤£36m or ≤250 staff), Tier 3 £2,900 (larger).",
             applicability="Mandatory",
         ),
 
@@ -192,6 +193,7 @@ def _build() -> list[FintechFiling]:
             authority="Companies House",
             frequency="Annual + Event-based",
             due_date_rule="Confirmation Statement within 14 days of review date; accounts within 9 months of FY close; PSC updates within 14 days of internal record and 14 days more to register.",
+            payment_due="CS01 fee £34 online (£62 paper). Late accounts penalty £150–£1,500 (private), doubled if late in two consecutive years.",
             applicability="Mandatory",
         ),
         FintechFiling(

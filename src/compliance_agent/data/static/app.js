@@ -168,19 +168,15 @@ function renderRow(f) {
   tr.innerHTML = `
     <td class="col-sno">${f.s_no}</td>
     <td class="col-geo">${currentCountry.flag}</td>
-    <td class="col-cat"><span class="tag cat-tag ${catClass(f.category)}">${escapeHtml(f.category)}</span></td>
+    <td class="col-cat"><span class="cat-pill ${catClass(f.category)}">${escapeHtml(f.category)}</span></td>
     <td class="col-area">${escapeHtml(f.area)}</td>
     <td class="col-form"><strong>${escapeHtml(f.form_name)}</strong></td>
     <td class="col-auth">${escapeHtml(f.authority)}</td>
-    <td class="col-freq"><span class="tag ${freqClass(f.frequency)}">${escapeHtml(f.frequency)}</span></td>
+    <td class="col-freq"><span class="freq-text ${freqClass(f.frequency)}">${escapeHtml(f.frequency)}</span></td>
     <td class="col-rule">${escapeHtml(f.due_date_rule)}</td>
     <td class="col-pay">${f.payment_due ? escapeHtml(f.payment_due) : '<span class="blank">—</span>'}</td>
-    <td class="col-app"><span class="tag ${appClass(f.applicability)}">${escapeHtml(f.applicability)}</span></td>
+    <td class="col-app"><span class="app-pill ${appClass(f.applicability)}">${escapeHtml(f.applicability)}</span></td>
     <td class="col-reason">${f.applicability_note ? escapeHtml(f.applicability_note) : '<span class="blank">—</span>'}</td>
-    <td class="col-due"><span class="blank">computed</span></td>
-    <td class="col-status"><span class="blank">to fill</span></td>
-    <td class="col-ref"><span class="blank">to fill</span></td>
-    <td class="col-comments"><span class="blank">to fill</span></td>
   `;
   return tr;
 }

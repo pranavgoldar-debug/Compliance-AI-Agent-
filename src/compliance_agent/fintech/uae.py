@@ -125,7 +125,7 @@ def _build() -> list[FintechFiling]:
             authority="Federal Tax Authority (FTA)",
             frequency="Annual",
             due_date_rule="Registration deadlines per FTA timetable; CT return within 9 months of FY close (15% domestic minimum top-up tax from 2025 for in-scope MNEs).",
-            payment_due="Within 9 months of FY close.",
+            payment_due="9% CT on taxable income above AED 375,000; payment due same date as return (9 months from FY close). Late registration penalty AED 10,000.",
             applicability="Mandatory",
         ),
         FintechFiling(
@@ -160,7 +160,7 @@ def _build() -> list[FintechFiling]:
             authority="Department of Economic Development / Free Zone authority",
             frequency="Annual",
             due_date_rule="On licence anniversary.",
-            payment_due="On renewal.",
+            payment_due="Renewal fee typically AED 1,500–15,000 depending on activity and emirate / free zone; late-renewal penalty AED 250+/month.",
             applicability="Mandatory",
         ),
         FintechFiling(
