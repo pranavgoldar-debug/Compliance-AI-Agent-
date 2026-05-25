@@ -79,6 +79,48 @@ The bundled samples (`sample_policy.txt` v3.2 vs `sample_policy_v4.txt` v4.0) de
 1 added requirement (JIT privileged access), 4 changed (tighter rotation, longer
 retention, expanded MFA scope, faster incident SLA).
 
+## Deployment — Render.com (free tier)
+
+The repo ships with a `render.yaml` so the deploy is one click after the
+GitHub connection is set up.
+
+1. **Push the code to a GitHub repo** (this branch or `main`).
+2. Sign up at https://render.com and click **New +** → **Blueprint**.
+3. Pick your `Compliance-AI-Agent-` repo. Render reads `render.yaml` and
+   creates a `web` service called `compliance-ai-agent`.
+4. Click **Apply**. First build takes 3–5 minutes.
+5. Your public URL appears in the Render dashboard:
+   `https://compliance-ai-agent-XXXX.onrender.com`.
+
+**Default deploy is mock mode** — no API key required, no token spend.
+
+**To enable live Claude extraction** on the deployed instance:
+
+1. In Render dashboard → your service → **Environment**.
+2. Add two variables:
+   - `ANTHROPIC_API_KEY` = `sk-ant-...` (your key, kept secret)
+   - `COMPLIANCE_AGENT_LIVE` = `1`
+3. Click **Save changes** — Render auto-restarts the service.
+
+The key lives only in Render's encrypted env store; it is never in git
+and never reaches the browser. Toggle it off by deleting the two vars
+and restarting.
+
+Render's free tier spins the instance down after 15 minutes of inactivity
+and cold-starts on the next request (~30s). Upgrade to a paid tier if you
+need always-on.
+
+### Other platforms
+
+The `Procfile` is generic so the project also works on:
+
+- **Railway** — `railway up` after `pip install -g @railway/cli`
+- **Fly.io** — `fly launch` (will detect FastAPI)
+- **Heroku** — `git push heroku main`
+
+Each platform reads `Procfile` for the start command and `runtime.txt`
+for the Python version.
+
 ## How it works
 
 - `claude-opus-4-7` with adaptive thinking + `effort: high` for careful extraction.

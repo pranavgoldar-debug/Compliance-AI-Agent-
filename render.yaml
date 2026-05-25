@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: compliance-ai-agent
+    runtime: python
+    plan: free
+    region: oregon
+    branch: claude/brave-shannon-JdSDE
+    buildCommand: pip install -e .
+    startCommand: uvicorn compliance_agent.web:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/fintech/countries
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # COMPLIANCE_AGENT_LIVE / ANTHROPIC_API_KEY are intentionally NOT
+      # declared here. Mock mode is the default. To enable live Claude
+      # extraction in production, add both as environment variables in
+      # the Render dashboard (so they stay out of git).
