@@ -1,0 +1,50 @@
+GENERAL DATA PROTECTION REGULATION (EU) 2016/679 — KEY PROVISIONS
+
+Article 5. Principles relating to processing of personal data
+Personal data shall be: (a) processed lawfully, fairly and in a transparent
+manner; (b) collected for specified, explicit and legitimate purposes;
+(c) adequate, relevant and limited to what is necessary (data minimisation);
+(d) accurate and kept up to date; (e) kept in a form which permits
+identification for no longer than necessary; (f) processed in a manner that
+ensures appropriate security.
+
+Article 6. Lawfulness of processing
+Processing shall be lawful only if at least one of the following applies:
+consent of the data subject; necessity for performance of a contract; legal
+obligation; vital interests; public interest; or legitimate interests.
+
+Article 13. Information to be provided where personal data are collected
+The controller shall, at the time when personal data are obtained, provide
+the data subject with the identity of the controller, the purposes of
+processing, the legal basis, the recipients, retention period, and the
+rights of the data subject.
+
+Article 17. Right to erasure ('right to be forgotten')
+The data subject shall have the right to obtain from the controller the
+erasure of personal data without undue delay where one of the specified
+grounds applies, including when the data are no longer necessary for the
+purposes for which they were collected.
+
+Article 25. Data protection by design and by default
+The controller shall implement appropriate technical and organisational
+measures, both at the time of determination of the means for processing
+and at the time of the processing itself, designed to implement data
+protection principles in an effective manner.
+
+Article 32. Security of processing
+The controller and processor shall implement appropriate technical and
+organisational measures to ensure a level of security appropriate to the
+risk, including pseudonymisation and encryption of personal data, and the
+ability to restore availability and access to personal data in a timely
+manner in the event of a physical or technical incident.
+
+Article 33. Notification of a personal data breach to the supervisory authority
+In the case of a personal data breach, the controller shall without undue
+delay and, where feasible, not later than 72 hours after having become
+aware of it, notify the personal data breach to the supervisory authority.
+
+Article 35. Data protection impact assessment
+Where a type of processing is likely to result in a high risk to the rights
+and freedoms of natural persons, the controller shall, prior to the
+processing, carry out an assessment of the impact of the envisaged
+processing operations on the protection of personal data.

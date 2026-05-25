@@ -1,0 +1,39 @@
+CERT-IN CYBER SECURITY DIRECTIONS, APRIL 2022 — KEY PROVISIONS
+
+Direction (i). Synchronisation of system clocks
+All service providers, intermediaries, data centres, body corporate and
+Government organisations shall connect to the Network Time Protocol (NTP)
+Server of the National Informatics Centre or the National Physical
+Laboratory, or to NTP servers traceable to these NTP servers, for
+synchronisation of all their ICT systems clocks.
+
+Direction (ii). Mandatory cyber incident reporting within 6 hours
+Any service provider, intermediary, data centre, body corporate and
+Government organisation shall mandatorily report cyber incidents to
+CERT-In within 6 hours of noticing such incidents or being brought to
+notice about such incidents.
+
+Direction (iv). Maintenance of logs
+All service providers, intermediaries, data centres, body corporate and
+Government organisations shall mandatorily enable logs of all their ICT
+systems and maintain them securely for a rolling period of 180 days. The
+same shall be maintained within the Indian jurisdiction.
+
+Direction (v). KYC for VPS, VPN, cloud providers
+Data centres, Virtual Private Server (VPS) providers, Cloud Service
+providers and Virtual Private Network Service (VPN Service) providers
+shall be required to register accurate information of subscribers /
+customers and to maintain it for a period of five years or longer after
+cancellation or withdrawal of the registration.
+
+Direction (vi). KYC for virtual asset service providers
+Virtual asset service providers, virtual asset exchange providers and
+custodian wallet providers shall mandatorily maintain all information
+obtained as part of Know Your Customer (KYC) and records of financial
+transactions for a period of five years.
+
+Direction (vii). Point of contact for CERT-In
+Service providers, intermediaries, data centres, body corporate, and
+Government organisations shall designate a Point of Contact to interface
+with CERT-In and shall communicate the details of the Point of Contact to
+CERT-In.

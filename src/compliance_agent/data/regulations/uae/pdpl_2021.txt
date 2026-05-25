@@ -1,0 +1,56 @@
+UAE FEDERAL DECREE-LAW NO. 45 OF 2021 — PERSONAL DATA PROTECTION LAW (PDPL)
+
+Article 4. Cases of personal data processing without consent
+Personal data may be processed without the data subject's consent where
+processing is necessary to protect public interest, fulfill obligations
+under existing laws, perform a contract to which the data subject is a
+party, protect the data subject's interests, or for purposes of
+preventive or occupational medicine.
+
+Article 6. Conditions for consent to process personal data
+Consent shall be a specific, clear, simple, unambiguous and easy-to-access
+statement that the data subject agrees to the processing of his or her
+personal data. The controller shall be able to demonstrate that the data
+subject has consented. The data subject may withdraw consent at any time.
+
+Article 7. General controller obligations
+The controller shall take appropriate technical and organisational
+measures and apply appropriate standards and rules to protect personal
+data. The controller shall maintain a special record of personal data and
+make it available to the UAE Data Office on request.
+
+Article 9. Processor obligations
+The controller shall not engage a processor unless the processor provides
+sufficient guarantees that the processing shall be carried out in
+accordance with the provisions of this Decree-Law. Processing carried out
+by a processor shall be governed by a contract that binds the processor
+to the controller.
+
+Article 13. Right to access information
+The data subject shall have the right to obtain from the controller,
+without charge, the methods used in processing personal data, the
+purposes of processing, the categories of personal data being processed,
+the recipients, the period of personal data retention, and information
+related to cross-border transfers.
+
+Article 16. Right to limit, stop or erase processing
+The data subject shall have the right to restrict the processing of his
+or her personal data in specified cases and to request the controller to
+erase his or her personal data where the personal data is no longer
+necessary for the purposes for which it was collected, or where the data
+subject withdraws his or her consent.
+
+Article 21. Cross-border transfer of personal data
+Personal data may be transferred outside the State to jurisdictions that
+have a special legislation on personal data protection providing an
+adequate level of protection. Transfers to jurisdictions without such
+legislation shall be permitted only on the basis of approved binding
+agreements, contractual clauses or with the express consent of the data
+subject.
+
+Article 23. Reporting personal data breaches
+The controller shall notify the UAE Data Office of any breach of personal
+data immediately upon becoming aware of the breach, where the breach
+would prejudice the privacy, confidentiality or security of the personal
+data of the data subject. The notification shall include a description of
+the breach and the measures taken.

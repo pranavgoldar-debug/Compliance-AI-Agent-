@@ -1,0 +1,51 @@
+HIPAA (US) — KEY PROVISIONS FROM THE PRIVACY, SECURITY, AND BREACH NOTIFICATION RULES
+
+45 CFR 164.502 — Uses and disclosures of protected health information
+A covered entity may not use or disclose protected health information,
+except as permitted or required by this subpart. A covered entity must
+make reasonable efforts to limit protected health information to the
+minimum necessary to accomplish the intended purpose.
+
+45 CFR 164.508 — Uses and disclosures for which an authorization is required
+A covered entity must obtain an individual's authorization for any use or
+disclosure of protected health information that is not otherwise permitted
+or required by this subpart, including for marketing and the sale of
+protected health information.
+
+45 CFR 164.524 — Access of individuals to protected health information
+An individual has a right of access to inspect and obtain a copy of
+protected health information in a designated record set. A covered entity
+must act on a request for access no later than 30 days after receipt.
+
+45 CFR 164.308 — Administrative safeguards
+A covered entity must implement policies and procedures to prevent, detect,
+contain, and correct security violations, including conducting an accurate
+and thorough risk analysis, workforce security training, and a contingency
+plan for emergencies that damage systems containing electronic protected
+health information.
+
+45 CFR 164.310 — Physical safeguards
+A covered entity must implement policies and procedures to limit physical
+access to its electronic information systems and the facilities in which
+they are housed, while ensuring that properly authorized access is
+allowed.
+
+45 CFR 164.312 — Technical safeguards
+A covered entity must implement technical policies and procedures for
+electronic information systems that maintain electronic protected health
+information to allow access only to authorized persons. This includes
+unique user identification, automatic logoff, and encryption of
+electronic protected health information.
+
+45 CFR 164.404 — Notification to individuals
+A covered entity shall, following the discovery of a breach of unsecured
+protected health information, notify each individual whose information has
+been, or is reasonably believed to have been, accessed, acquired, used, or
+disclosed as a result of the breach. Notification shall be made without
+unreasonable delay and in no case later than 60 days after discovery.
+
+45 CFR 164.410 — Notification by a business associate
+A business associate shall, following the discovery of a breach of
+unsecured protected health information, notify the covered entity of the
+breach without unreasonable delay and in no case later than 60 days after
+discovery.

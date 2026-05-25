@@ -1,0 +1,52 @@
+PCI DSS v4.0 — PAYMENT CARD INDUSTRY DATA SECURITY STANDARD — KEY REQUIREMENTS
+
+Requirement 1. Install and maintain network security controls
+Network security controls (NSCs), such as firewalls and other network
+security technologies, shall be installed and maintained between trusted
+and untrusted networks. All inbound and outbound traffic to the cardholder
+data environment shall be restricted to that which is necessary.
+
+Requirement 2. Apply secure configurations to all system components
+Vendor default accounts and passwords shall be either removed or
+disabled before installing a system on the network. All system components
+shall be configured securely, with documented configuration standards
+addressing known security vulnerabilities and consistent with industry
+hardening guidance.
+
+Requirement 3. Protect stored account data
+The storage of cardholder data shall be kept to a minimum. The primary
+account number (PAN), when stored, shall be rendered unreadable anywhere
+it is stored — for example, by using strong cryptography with associated
+key-management processes and procedures. Sensitive authentication data
+shall not be retained after authorization.
+
+Requirement 4. Protect cardholder data with strong cryptography during transmission
+Strong cryptography and security protocols shall be used to safeguard
+sensitive cardholder data during transmission over open, public networks.
+Trusted keys and certificates shall be in place; the protocol in use must
+support only secure versions or configurations.
+
+Requirement 6. Develop and maintain secure systems and software
+Bespoke and custom software shall be developed securely. All system
+components shall be protected from known vulnerabilities by installing
+applicable security patches. Critical patches shall be installed within
+one month of release; other applicable patches within an appropriate
+timeframe based on a risk-based approach.
+
+Requirement 8. Identify users and authenticate access to system components
+All users shall be assigned a unique ID before access to system components
+or cardholder data is allowed. Multi-factor authentication shall be
+implemented for all access into the cardholder data environment and for
+all remote network access originating from outside the entity's network.
+
+Requirement 10. Log and monitor all access to system components and cardholder data
+Audit logs shall be implemented to record all access to system components
+and cardholder data. Audit log records shall be retained for at least 12
+months, with a minimum of 3 months immediately available for analysis.
+Logs shall be reviewed daily for anomalies and suspicious activity.
+
+Requirement 11. Test security of systems and networks regularly
+Internal and external vulnerability scans shall be performed at least
+once every three months and after any significant change. Penetration
+testing shall be performed at least annually and after any significant
+infrastructure or application upgrade or modification.

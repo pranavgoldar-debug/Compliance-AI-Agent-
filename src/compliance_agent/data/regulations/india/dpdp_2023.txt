@@ -1,0 +1,46 @@
+DIGITAL PERSONAL DATA PROTECTION ACT, 2023 (INDIA) — KEY PROVISIONS
+
+Section 4. Grounds for processing personal data
+Personal data of a Data Principal may be processed only in accordance with
+this Act and for a lawful purpose for which the Data Principal has given
+her consent, or for certain legitimate uses.
+
+Section 5. Notice
+Every request made by a Data Fiduciary for consent shall be accompanied by
+a notice, in clear and plain language, containing the personal data being
+processed, the purpose, the manner in which the Data Principal may exercise
+her rights, and the manner of making a complaint to the Board.
+
+Section 6. Consent
+The consent given by the Data Principal shall be free, specific, informed,
+unconditional and unambiguous, with a clear affirmative action. The Data
+Principal shall have the right to withdraw her consent at any time.
+
+Section 8. General obligations of Data Fiduciary
+A Data Fiduciary shall implement appropriate technical and organisational
+measures, and reasonable security safeguards to prevent personal data
+breach. The Data Fiduciary shall ensure the completeness, accuracy and
+consistency of personal data used to make decisions affecting the Data
+Principal.
+
+Section 9. Processing of personal data of children
+The Data Fiduciary shall, before processing any personal data of a child,
+obtain verifiable consent of the parent or lawful guardian. The Data
+Fiduciary shall not undertake tracking or behavioural monitoring of
+children or targeted advertising directed at children.
+
+Section 12. Right to access information about personal data
+The Data Principal shall have the right to obtain a summary of personal
+data being processed, the identities of all Data Fiduciaries with whom the
+personal data has been shared, and any other information related to the
+processing.
+
+Section 13. Right to grievance redressal
+The Data Principal shall have the right to readily available means of
+grievance redressal provided by the Data Fiduciary. The Data Fiduciary
+shall respond to grievances within the prescribed period.
+
+Section 25. Penalties
+The Board may impose monetary penalties up to two hundred and fifty crore
+rupees for failure to take reasonable security safeguards to prevent
+personal data breach.

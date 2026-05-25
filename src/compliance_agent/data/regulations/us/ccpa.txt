@@ -1,0 +1,52 @@
+CALIFORNIA CONSUMER PRIVACY ACT (CCPA), AS AMENDED BY CPRA — KEY PROVISIONS
+
+§ 1798.100. Right to know what personal information is collected
+A consumer shall have the right to request that a business that collects
+personal information about the consumer disclose to the consumer the
+categories and specific pieces of personal information the business has
+collected. A business shall, at or before the point of collection, inform
+consumers of the categories of personal information to be collected and
+the purposes for which the categories of personal information shall be
+used.
+
+§ 1798.105. Right to delete personal information
+A consumer shall have the right to request that a business delete any
+personal information about the consumer which the business has collected
+from the consumer. A business that receives a verifiable consumer request
+shall delete the consumer's personal information from its records and
+direct any service providers and contractors to delete the consumer's
+personal information from their records.
+
+§ 1798.106. Right to correct inaccurate personal information
+A consumer shall have the right to request a business that maintains
+inaccurate personal information about the consumer to correct that
+inaccurate personal information, taking into account the nature of the
+personal information and the purposes of the processing.
+
+§ 1798.120. Right to opt-out of sale or sharing
+A consumer shall have the right, at any time, to direct a business that
+sells or shares personal information about the consumer to third parties
+not to sell or share the consumer's personal information. A business that
+sells or shares personal information shall provide a clear and
+conspicuous link on its homepage titled "Do Not Sell or Share My
+Personal Information".
+
+§ 1798.121. Right to limit use and disclosure of sensitive personal information
+A consumer shall have the right, at any time, to direct a business that
+collects sensitive personal information about the consumer to limit its
+use of the consumer's sensitive personal information to that use which is
+necessary to perform the services or provide the goods reasonably
+expected by an average consumer.
+
+§ 1798.135. Methods for submitting requests to opt-out
+A business that sells or shares consumers' personal information shall, in
+a form that is reasonably accessible to consumers, provide a clear and
+conspicuous link on the business's internet homepages titled "Do Not Sell
+or Share My Personal Information" that enables a consumer, or a person
+authorized by the consumer, to opt-out.
+
+§ 1798.155. Administrative enforcement
+A business or service provider that intentionally violates this title may
+be liable for a civil penalty of up to seven thousand five hundred dollars
+($7,500) per violation. Violations involving minors may carry higher
+penalties.
