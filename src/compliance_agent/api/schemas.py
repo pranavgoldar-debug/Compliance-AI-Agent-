@@ -1,0 +1,195 @@
+"""Pydantic schemas for the Aspora Compliance OS API surface."""
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
+
+from compliance_agent.db import Applicability, ObligationStatus, Role, RuleStatus
+
+
+class _Base(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
+class UserBrief(_Base):
+    id: int
+    email: str
+    full_name: str
+    role: Role
+
+
+# ---------------------------------------------------------------------------
+# Entities
+# ---------------------------------------------------------------------------
+class EntityCreate(BaseModel):
+    name: str
+    legal_type: str = ""
+    jurisdiction_code: str
+    registration_number: Optional[str] = None
+    incorporation_date: Optional[date] = None
+    fiscal_year_end: Optional[str] = None
+    country_lead_id: Optional[int] = None
+
+
+class EntityUpdate(BaseModel):
+    name: Optional[str] = None
+    legal_type: Optional[str] = None
+    jurisdiction_code: Optional[str] = None
+    registration_number: Optional[str] = None
+    incorporation_date: Optional[date] = None
+    fiscal_year_end: Optional[str] = None
+    country_lead_id: Optional[int] = None
+
+
+class EntityOut(_Base):
+    id: int
+    name: str
+    legal_type: str
+    jurisdiction_code: str
+    registration_number: Optional[str] = None
+    incorporation_date: Optional[date] = None
+    fiscal_year_end: Optional[str] = None
+    country_lead: Optional[UserBrief] = None
+    archived_at: Optional[datetime] = None
+    created_at: datetime
+    active_obligations_count: int = 0
+    overdue_obligations_count: int = 0
+    in_alert_window_count: int = 0
+    last_filed_at: Optional[datetime] = None
+
+
+# ---------------------------------------------------------------------------
+# Rules
+# ---------------------------------------------------------------------------
+class RuleCreate(BaseModel):
+    name: str
+    jurisdiction_code: str
+    category: str
+    area: str = ""
+    form_name: str
+    authority: str
+    frequency: str
+    due_date_rule: str
+    payment_rule: Optional[str] = None
+    applicability: Applicability = Applicability.mandatory
+    applicability_note: Optional[str] = None
+    status: RuleStatus = RuleStatus.production
+    entity_ids: list[int] = []
+
+
+class RuleUpdate(BaseModel):
+    name: Optional[str] = None
+    jurisdiction_code: Optional[str] = None
+    category: Optional[str] = None
+    area: Optional[str] = None
+    form_name: Optional[str] = None
+    authority: Optional[str] = None
+    frequency: Optional[str] = None
+    due_date_rule: Optional[str] = None
+    payment_rule: Optional[str] = None
+    applicability: Optional[Applicability] = None
+    applicability_note: Optional[str] = None
+    status: Optional[RuleStatus] = None
+    entity_ids: Optional[list[int]] = None
+
+
+class RuleOut(_Base):
+    id: int
+    name: str
+    jurisdiction_code: str
+    category: str
+    area: str
+    form_name: str
+    authority: str
+    frequency: str
+    due_date_rule: str
+    payment_rule: Optional[str] = None
+    applicability: Applicability
+    applicability_note: Optional[str] = None
+    status: RuleStatus
+    entity_ids: list[int] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Obligations
+# ---------------------------------------------------------------------------
+class ObligationUpdate(BaseModel):
+    status: Optional[ObligationStatus] = None
+    assignee_id: Optional[int] = None
+    filing_reference: Optional[str] = None
+    payment_amount: Optional[str] = None
+    payment_reference: Optional[str] = None
+    notes: Optional[str] = None
+    due_date: Optional[date] = None
+
+
+class CommentOut(_Base):
+    id: int
+    obligation_id: int
+    author: UserBrief
+    body: str
+    created_at: datetime
+
+
+class ObligationOut(_Base):
+    id: int
+    rule_id: int
+    entity_id: int
+    rule_name: str
+    rule_form_name: str
+    rule_authority: str
+    rule_category: str
+    rule_frequency: str
+    entity_name: str
+    entity_jurisdiction_code: str
+    due_date: date
+    period_label: Optional[str] = None
+    status: ObligationStatus
+    assignee: Optional[UserBrief] = None
+    filing_reference: Optional[str] = None
+    payment_amount: Optional[str] = None
+    payment_reference: Optional[str] = None
+    notes: Optional[str] = None
+    days_remaining: int = 0
+    is_overdue: bool = False
+    is_in_alert_window: bool = False
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CommentCreate(BaseModel):
+    body: str
+
+
+# ---------------------------------------------------------------------------
+# Dashboard / Calendar
+# ---------------------------------------------------------------------------
+class DashboardStats(_Base):
+    overdue: int
+    in_alert_window: int
+    in_safe_zone: int
+    completed_this_month: int
+    open_tasks: list[ObligationOut]
+    items_in_alert_window: list[ObligationOut]
+    this_week: list[ObligationOut]
+
+
+class CalendarObligation(_Base):
+    id: int
+    due_date: date
+    status: ObligationStatus
+    entity_id: int
+    entity_name: str
+    rule_form_name: str
+    rule_authority: str
+    rule_category: str
+    is_overdue: bool
+    days_remaining: int

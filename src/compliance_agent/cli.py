@@ -234,5 +234,52 @@ def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> N
     uvicorn.run("compliance_agent.web:app", host=host, port=port, reload=reload)
 
 
+@main.command()
+def seed() -> None:
+    """Seed the SQLite database with demo Aspora entities, rules, and users.
+
+    Idempotent — safe to re-run. Creates compliance.db in the working directory
+    if it doesn't exist. Demo logins:
+       admin@aspora.com / admin123
+       employee@aspora.com / employee123
+    """
+    from compliance_agent.db.seed import run_seed
+
+    click.echo("Seeding database…", err=True)
+    counts = run_seed()
+    click.echo(f"  users:                {counts['users']}", err=True)
+    click.echo(f"  entities:             {counts['entities']}", err=True)
+    click.echo(f"  rules:                {counts['rules']}", err=True)
+    click.echo(f"  obligations created:  {counts['obligations_created']}", err=True)
+    click.echo("Done.", err=True)
+
+
+@main.command(name="create-user")
+@click.option("--email", required=True)
+@click.option("--password", required=True, prompt=True, hide_input=True, confirmation_prompt=False)
+@click.option("--full-name", default="")
+@click.option("--role", type=click.Choice(["admin", "employee"]), default="employee")
+def create_user(email: str, password: str, full_name: str, role: str) -> None:
+    """Create a new user account."""
+    from compliance_agent.auth.passwords import hash_password
+    from compliance_agent.db import Role, User, init_db, session_scope
+
+    init_db()
+    with session_scope() as db:
+        from sqlalchemy import select
+
+        if db.execute(select(User).where(User.email == email)).scalar_one_or_none():
+            raise click.ClickException(f"User {email} already exists.")
+        db.add(
+            User(
+                email=email,
+                password_hash=hash_password(password),
+                full_name=full_name,
+                role=Role(role),
+            )
+        )
+    click.echo(f"Created user {email} ({role}).", err=True)
+
+
 if __name__ == "__main__":
     main()

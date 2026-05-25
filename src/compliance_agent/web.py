@@ -20,7 +20,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from compliance_agent.api import (
+    calendar_router,
+    dashboard_router,
+    entities_router,
+    obligations_router,
+    rules_router,
+    tasks_router,
+)
+from compliance_agent.auth import auth_router
 from compliance_agent.catalog import CATALOG, Country, Regulation, get_regulation
+from compliance_agent.db import init_db
 from compliance_agent.fintech import (
     CATALOG as FINTECH_CATALOG,
     CountryFilings,
@@ -52,7 +62,19 @@ def _is_live() -> bool:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Compliance AI Agent", version="0.2.0")
+    app = FastAPI(title="Aspora Compliance OS", version="0.3.0")
+
+    # Bring the DB online on startup. Idempotent — safe in production restarts.
+    init_db()
+
+    # Aspora Compliance OS routers (auth-gated).
+    app.include_router(auth_router)
+    app.include_router(dashboard_router)
+    app.include_router(entities_router)
+    app.include_router(rules_router)
+    app.include_router(obligations_router)
+    app.include_router(calendar_router)
+    app.include_router(tasks_router)
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))
 
