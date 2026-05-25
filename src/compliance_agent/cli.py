@@ -7,8 +7,8 @@ from typing import Optional
 
 import click
 
-from compliance_agent.extractor import ComplianceExtractor, read_document
-from compliance_agent.verifier import ComplianceVerifier
+from compliance_agent.extractor import read_document
+from compliance_agent.mock import mock_extract, mock_verify
 
 
 @click.command()
@@ -30,7 +30,7 @@ from compliance_agent.verifier import ComplianceVerifier
     "--model",
     default="claude-opus-4-7",
     show_default=True,
-    help="Claude model ID.",
+    help="Claude model ID (only used with --live).",
 )
 @click.option(
     "--verify",
@@ -38,27 +38,45 @@ from compliance_agent.verifier import ComplianceVerifier
     default=False,
     help="Run a second-pass verifier that grades each extracted requirement against the source.",
 )
+@click.option(
+    "--live",
+    is_flag=True,
+    default=False,
+    help="Call the Anthropic API. Requires ANTHROPIC_API_KEY. Default is mock mode (stub output, no API call).",
+)
 def main(
     source: Path,
     framework_hint: Optional[str],
     output: Optional[Path],
     model: str,
     verify: bool,
+    live: bool,
 ) -> None:
     """Extract structured compliance requirements from a policy or regulation document."""
     source_text = read_document(source)
 
-    extractor = ComplianceExtractor(model=model)
-    click.echo(f"Extracting requirements from {source}...", err=True)
-    extraction = extractor.extract(source_text, framework_hint=framework_hint)
+    if live:
+        from compliance_agent.extractor import ComplianceExtractor
+        from compliance_agent.verifier import ComplianceVerifier
+
+        click.echo(f"Extracting requirements from {source} (live, {model})...", err=True)
+        extraction = ComplianceExtractor(model=model).extract(source_text, framework_hint=framework_hint)
+    else:
+        click.echo(f"Extracting requirements from {source} (MOCK — no API call)...", err=True)
+        extraction = mock_extract(source_text, framework_hint=framework_hint)
+
     click.echo(f"  → {len(extraction.requirements)} requirements extracted.", err=True)
 
     payload: dict = {"extraction": extraction.model_dump(mode="json")}
 
     if verify:
-        click.echo("Verifying extraction against source...", err=True)
-        verifier = ComplianceVerifier(model=model)
-        verification = verifier.verify(source_text, extraction)
+        if live:
+            click.echo("Verifying extraction against source (live)...", err=True)
+            verification = ComplianceVerifier(model=model).verify(source_text, extraction)
+        else:
+            click.echo("Verifying extraction against source (MOCK)...", err=True)
+            verification = mock_verify(source_text, extraction)
+
         counts = {"pass": 0, "warning": 0, "fail": 0}
         for f in verification.findings:
             counts[f.status.value] += 1

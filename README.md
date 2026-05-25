@@ -6,15 +6,23 @@ Extracts structured, auditable compliance requirements from policy and regulatio
 
 ```bash
 pip install -e .
-export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+By default the CLI runs in **mock mode** — it returns stub output that matches
+the real schema so you can wire the pipeline end-to-end without an API key.
+Pass `--live` (and set `ANTHROPIC_API_KEY`) to call Claude for real.
 
 ## CLI
 
 ```bash
+# Mock mode — no API key needed
 compliance-agent examples/sample_policy.txt -o requirements.json
-compliance-agent examples/sample_policy.txt --framework "SOC 2"
 compliance-agent examples/sample_policy.txt --verify -o results.json
+
+# Live mode — requires ANTHROPIC_API_KEY
+export ANTHROPIC_API_KEY=sk-ant-...
+compliance-agent examples/sample_policy.txt --live --verify -o results.json
+compliance-agent examples/sample_policy.txt --live --framework "SOC 2"
 ```
 
 Supports `.txt` and `.pdf` input.
