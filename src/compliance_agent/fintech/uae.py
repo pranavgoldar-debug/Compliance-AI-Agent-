@@ -9,7 +9,7 @@ def _build() -> list[FintechFiling]:
         # === Licensing & Authorization ===
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Stored Value Facility / Retail Payment Services",
             form_name="CBUAE Stored Value Facility (SVF) / Retail Payment Services and Card Schemes (RPSCS) licence",
             authority="Central Bank of the UAE (CBUAE)",
@@ -19,7 +19,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Free-zone (DIFC / ADGM)",
             form_name="DFSA / FSRA permission (Money Services, Operating an Exchange) — if licensed in DIFC/ADGM",
             authority="DFSA (DIFC) / FSRA (ADGM)",
@@ -30,7 +30,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Prudential reporting",
             form_name="CBUAE regulatory returns (e.g. Form 19 / SVF returns)",
             authority="CBUAE",
@@ -119,7 +119,7 @@ def _build() -> list[FintechFiling]:
         # === Tax ===
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Corporate Tax",
             form_name="UAE Corporate Tax registration + annual return (Federal Decree-Law 47/2022)",
             authority="Federal Tax Authority (FTA)",
@@ -130,7 +130,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (VAT)",
+            category="VAT",
             area="VAT",
             form_name="VAT return (Form VAT201)",
             authority="Federal Tax Authority",
@@ -141,7 +141,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Economic Substance",
             form_name="Economic Substance Regulations (ESR) Notification + Annual Report",
             authority="Federal Tax Authority / MoF",
@@ -175,7 +175,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="WPS",
             form_name="Wages Protection System monthly salary file",
             authority="MOHRE",
@@ -188,7 +188,7 @@ def _build() -> list[FintechFiling]:
         # === Additional UAE entries ===
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="Emiratisation",
             form_name="Nafis Emiratisation quota compliance (Mohre)",
             authority="MOHRE / Emirati Talent Competitiveness Council",
@@ -200,7 +200,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Pensions",
             area="GPSSA",
             form_name="GPSSA (Pensions) contributions for UAE / GCC nationals",
             authority="General Pension & Social Security Authority",
@@ -212,7 +212,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Transfer Pricing",
             form_name="Master File / Local File / Disclosure Form (CT TP rules)",
             authority="Federal Tax Authority",
@@ -223,7 +223,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Tax Residency Certificate",
             form_name="Tax Residency Certificate (TRC) application — treaty access",
             authority="Federal Tax Authority",
@@ -234,7 +234,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (Excise)",
+            category="Excise Tax",
             area="Excise Tax",
             form_name="Excise Tax registration + monthly return (Form EX201)",
             authority="Federal Tax Authority",

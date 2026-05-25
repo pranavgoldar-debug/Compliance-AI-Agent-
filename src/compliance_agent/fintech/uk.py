@@ -9,7 +9,7 @@ def _build() -> list[FintechFiling]:
         # === Licensing & Authorization ===
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Payment Services",
             form_name="FCA Authorised Payment Institution permission (PSR 2017) + ongoing change-in-control notifications",
             authority="FCA",
@@ -20,7 +20,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Regulatory reporting",
             form_name="FCA Regulatory Returns (FSA056 / REP017 etc.) via GABRIEL/RegData",
             authority="FCA",
@@ -30,7 +30,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Safeguarding",
             form_name="Annual safeguarding audit + monthly safeguarding reconciliation",
             authority="FCA",
@@ -40,7 +40,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Senior Managers & Certification Regime",
             form_name="SMCR Form A (approvals), Conduct Rules training, annual certification",
             authority="FCA",
@@ -152,7 +152,7 @@ def _build() -> list[FintechFiling]:
         # === Tax ===
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Corporation Tax",
             form_name="CT600 + iXBRL accounts + Corporation Tax payment",
             authority="HMRC",
@@ -163,7 +163,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (VAT)",
+            category="VAT",
             area="VAT",
             form_name="VAT return (Making Tax Digital)",
             authority="HMRC",
@@ -174,7 +174,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="PAYE",
             form_name="PAYE / NIC RTI submissions (FPS / EPS) + P11D",
             authority="HMRC",
@@ -210,7 +210,7 @@ def _build() -> list[FintechFiling]:
         # === Additional UK entries ===
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Pensions",
             area="Auto-enrolment pensions",
             form_name="Auto-enrolment pension contributions (monthly remittance)",
             authority="The Pensions Regulator / scheme provider",
@@ -222,7 +222,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Pensions",
             area="Pensions re-enrolment",
             form_name="Re-enrolment + Declaration of Compliance to TPR",
             authority="The Pensions Regulator",
@@ -233,7 +233,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="P11D(b) Class 1A NIC",
             form_name="P11D(b) — Class 1A NIC return on benefits in kind",
             authority="HMRC",
@@ -245,7 +245,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="Employment-Related Securities",
             form_name="ERS annual return (incl. EMI / CSOP / unapproved schemes)",
             authority="HMRC",
@@ -257,7 +257,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Corporation Tax QIP",
             form_name="Corporation Tax — Quarterly Instalment Payments (large/very large companies)",
             authority="HMRC",
@@ -269,7 +269,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Accounting Control",
             area="Senior Accounting Officer",
             form_name="SAO certificate (Senior Accounting Officer)",
             authority="HMRC",
@@ -292,7 +292,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="Gender Pay Gap",
             form_name="Gender Pay Gap Report",
             authority="Government Equalities Office / GOV.UK portal",
@@ -338,7 +338,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Payroll",
             area="Off-payroll working",
             form_name="IR35 / Off-Payroll Working (ITEPA Ch.10) compliance",
             authority="HMRC",
@@ -346,6 +346,39 @@ def _build() -> list[FintechFiling]:
             due_date_rule="Status Determination Statement issued before any engagement begins; client-led status decisions for medium/large businesses.",
             applicability="Conditional",
             applicability_note="Required if engaging contractors via intermediary entities (PSCs) and company is medium/large.",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="CIS",
+            area="Construction Industry Scheme",
+            form_name="CIS300 monthly contractor return + CIS deductions",
+            authority="HMRC",
+            frequency="Monthly",
+            due_date_rule="CIS300 by 19th of the tax month (5th); payment by 22nd (electronic) following tax month.",
+            payment_due="20% (verified subcontractor) / 30% (unverified) of payment net of materials. £100+ penalty for late return + interest.",
+            applicability="Conditional",
+            applicability_note="Triggered only if engaging construction-sector subcontractors (rarely applicable to a remittance fintech; included for completeness).",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Statistics",
+            area="Bank of England",
+            form_name="Bank of England statistical returns (Form FS / BE / BoP surveys)",
+            authority="Bank of England",
+            frequency="Quarterly / Annual",
+            due_date_rule="Per BoE Statistical Code of Practice — typically 4–6 weeks after period close for sampled firms.",
+            applicability="Conditional",
+            applicability_note="Triggered if BoE samples the entity for cross-border flow / monetary financial institution statistics.",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Statistics",
+            area="ONS surveys",
+            form_name="Office for National Statistics business surveys (e.g. International Trade in Services)",
+            authority="Office for National Statistics",
+            frequency="Quarterly / Annual",
+            due_date_rule="Within deadline printed on each survey notification (typically 30 days).",
+            applicability="Conditional",
         ),
     ]
 

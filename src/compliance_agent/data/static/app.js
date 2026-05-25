@@ -153,8 +153,11 @@ function mkPill(value, label) {
 }
 
 function catClass(category) {
-  const first = (category || "").split(/[\s&/(]/)[0];
-  return `cat-${first}`;
+  const slug = (category || "")
+    .toLowerCase()
+    .replace(/[^\w]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `cat-${slug}`;
 }
 function appClass(app) {
   return `app-${(app || "").split(/[\s-]/)[0]}`;

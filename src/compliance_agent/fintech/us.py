@@ -14,7 +14,7 @@ def _build() -> list[FintechFiling]:
         # === Licensing & Authorization ===
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Federal MSB registration",
             form_name="FinCEN Form 107 — MSB registration / renewal",
             authority="FinCEN",
@@ -24,7 +24,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="State money transmitter licences",
             form_name="State Money Transmitter Licenses (NMLS) — annual renewals + quarterly call reports",
             authority="State financial regulators via NMLS (CSBS)",
@@ -36,7 +36,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Surety bonds / net worth",
             form_name="Per-state surety bond + minimum net worth confirmation",
             authority="State financial regulators",
@@ -182,7 +182,7 @@ def _build() -> list[FintechFiling]:
         # === Tax ===
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Federal corporate tax",
             form_name="IRS Form 1120 (federal corporate income tax return) + Form 1120-W (estimated tax)",
             authority="IRS",
@@ -193,7 +193,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="Information returns",
             form_name="IRS Forms 1099 series (e.g. 1099-MISC, 1099-NEC, 1099-INT)",
             authority="IRS",
@@ -203,7 +203,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="Foreign accounts",
             form_name="FBAR — FinCEN Form 114 (Report of Foreign Bank and Financial Accounts)",
             authority="FinCEN",
@@ -214,7 +214,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="FATCA",
             form_name="FATCA reporting (Form 8966 / W-8/W-9 collection)",
             authority="IRS",
@@ -226,7 +226,7 @@ def _build() -> list[FintechFiling]:
         # === Payroll ===
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="Federal payroll taxes",
             form_name="IRS Form 941 (quarterly) + Form 940 (annual FUTA) + W-2 / W-3",
             authority="IRS",
@@ -237,7 +237,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="State payroll",
             form_name="State withholding + unemployment + SDI returns",
             authority="State revenue / labor departments",
@@ -284,7 +284,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="Withholding on foreign payments",
             form_name="IRS Forms 1042 / 1042-S (Withholding on US-source income to foreign persons)",
             authority="IRS",
@@ -295,7 +295,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="Specified foreign assets",
             form_name="IRS Form 8938 (Statement of Specified Foreign Financial Assets)",
             authority="IRS",
@@ -307,7 +307,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="Foreign subsidiary",
             form_name="IRS Form 5471 (Information Return for US Persons w.r.t. Foreign Corps)",
             authority="IRS",
@@ -319,7 +319,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (Sales/Use)",
+            category="Sales/Use Tax",
             area="State sales/use tax",
             form_name="State sales & use tax returns (per state nexus)",
             authority="State Department of Revenue",
@@ -364,7 +364,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Workers Compensation",
             area="OSHA",
             form_name="OSHA Form 300 / 300A (Log + Summary of Work-Related Injuries)",
             authority="OSHA",
@@ -374,7 +374,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="EEO-1",
             form_name="EEO-1 Component 1 Report",
             authority="EEOC",
@@ -382,6 +382,41 @@ def _build() -> list[FintechFiling]:
             due_date_rule="Annual EEO-1 portal window — historically Apr–May.",
             applicability="Conditional",
             applicability_note="Required for private employers ≥ 100 employees, or federal contractors ≥ 50 employees with $50k contract.",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Accounting Control",
+            area="SOX",
+            form_name="Sarbanes-Oxley (SOX) §302 / §404 — ICFR attestation and management report",
+            authority="SEC / PCAOB",
+            frequency="Quarterly + Annual",
+            due_date_rule="§302 cert with each 10-Q / 10-K; §404 management report + auditor attestation with annual report.",
+            payment_due="No payment; SEC fines + officer/director penalties for failures.",
+            applicability="Conditional",
+            applicability_note="Required only if SEC-registered (public). Private fintechs maintain ICFR internally; lender / investor due diligence often expects SOX-equivalent controls.",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Unclaimed Property",
+            area="State escheat",
+            form_name="State Unclaimed Property reports (escheat) — annual filing per state",
+            authority="State unclaimed property administrators",
+            frequency="Annual",
+            due_date_rule="Most states: report by 1 Nov (spring states by 30 Apr / 1 May) — for property unclaimed beyond dormancy (1–5 years).",
+            payment_due="Property remitted in full to the state; per-day / per-record civil penalties + interest on late delivery.",
+            applicability="Mandatory",
+            applicability_note="Highly likely for a remittance fintech — undeliverable transfers and stale customer balances are escheatable.",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Statistics",
+            area="Treasury International Capital",
+            form_name="Treasury International Capital (TIC) reports — Forms B / C / D / S / SLT",
+            authority="US Department of the Treasury / Federal Reserve",
+            frequency="Monthly / Quarterly / Semi-annual",
+            due_date_rule="Per TIC reporting calendar — Form S monthly; SLT semi-annual.",
+            applicability="Conditional",
+            applicability_note="Triggered above TIC thresholds for cross-border claims/liabilities or securities holdings.",
         ),
     ]
 

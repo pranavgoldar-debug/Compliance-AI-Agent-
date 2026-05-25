@@ -49,8 +49,10 @@ def _renumber(filings: list[FintechFiling]) -> list[FintechFiling]:
 
 def _build_catalog() -> dict[str, CountryFilings]:
     from compliance_agent.fintech import (
+        canada as _ca,
         eu as _eu,
         india as _india,
+        lithuania as _lt,
         singapore as _sg,
         uae as _uae,
         uk as _uk,
@@ -62,6 +64,8 @@ def _build_catalog() -> dict[str, CountryFilings]:
         ("eu", "European Union", "🇪🇺", _eu.FILINGS),
         ("us", "United States", "🇺🇸", _us.FILINGS),
         ("uk", "United Kingdom", "🇬🇧", _uk.FILINGS),
+        ("canada", "Canada", "🇨🇦", _ca.FILINGS),
+        ("lithuania", "Lithuania", "🇱🇹", _lt.FILINGS),
         ("uae", "United Arab Emirates", "🇦🇪", _uae.FILINGS),
         ("singapore", "Singapore", "🇸🇬", _sg.FILINGS),
     ]

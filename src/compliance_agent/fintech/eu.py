@@ -15,7 +15,7 @@ def _build() -> list[FintechFiling]:
         # === Licensing & Authorization ===
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Payment institution",
             form_name="PSD2 Payment Institution / E-Money Institution authorization & passporting notifications",
             authority="Home Member State NCA (e.g. BaFin, CSSF, ACPR, DNB, Bank of Lithuania)",
@@ -25,7 +25,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Safeguarding",
             form_name="Annual safeguarding auditor's report (client funds)",
             authority="Home Member State NCA",
@@ -35,7 +35,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Prudential reporting",
             form_name="EBA REP — own funds and capital requirements return",
             authority="EBA via NCA",
@@ -45,7 +45,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Operational & security",
             form_name="EBA Guidelines on ICT and security risk management — annual self-assessment",
             authority="Home Member State NCA",
@@ -157,7 +157,7 @@ def _build() -> list[FintechFiling]:
         # === Tax (member-state-specific, names generic) ===
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (VAT)",
+            category="VAT",
             area="VAT returns",
             form_name="VAT returns (monthly or quarterly, per State)",
             authority="National tax authority",
@@ -167,7 +167,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (VAT)",
+            category="VAT",
             area="Recapitulative statement",
             form_name="EC Sales List / Intrastat (where applicable)",
             authority="National tax authority",
@@ -177,7 +177,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (VAT)",
+            category="VAT",
             area="DAC7",
             form_name="DAC7 — digital platform operator reporting",
             authority="National tax authority",
@@ -188,7 +188,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Corporate income tax",
             form_name="Annual corporate income tax return + advance payments",
             authority="National tax authority",
@@ -223,7 +223,7 @@ def _build() -> list[FintechFiling]:
         # === Additional EU entries ===
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="EU Reporting",
             area="Cross-border tax arrangements",
             form_name="DAC6 — reporting of reportable cross-border arrangements",
             authority="National tax authority",
@@ -235,7 +235,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="EU Reporting",
             area="CRS / DAC2",
             form_name="Common Reporting Standard / DAC2 — automatic exchange of financial account info",
             authority="National tax authority",
@@ -289,7 +289,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="EU Reporting",
             area="CbCR",
             form_name="Country-by-Country Reporting (DAC4)",
             authority="National tax authority",
@@ -300,7 +300,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (VAT)",
+            category="VAT",
             area="OSS / IOSS",
             form_name="One-Stop-Shop / Import One-Stop-Shop VAT returns",
             authority="National tax authority",

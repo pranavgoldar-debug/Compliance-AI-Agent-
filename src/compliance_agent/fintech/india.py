@@ -9,7 +9,7 @@ def _build() -> list[FintechFiling]:
         # === Licensing & Authorization ===
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Payment systems",
             form_name="PA-PG Authorization (renewal / annual confirmation)",
             authority="RBI (DPSS)",
@@ -21,7 +21,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Forex services",
             form_name="MTSS / RDA returns and annual licence renewal (Authorized Dealer Category II)",
             authority="RBI (FED)",
@@ -33,7 +33,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Cross-border payments",
             form_name="PA-CB Authorization filings",
             authority="RBI (DPSS)",
@@ -179,7 +179,7 @@ def _build() -> list[FintechFiling]:
         # === Direct Tax ===
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Advance tax",
             form_name="Advance tax instalments (Challan ITNS 280)",
             authority="Income Tax Department",
@@ -190,7 +190,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Payroll",
             area="TDS",
             form_name="Monthly TDS deposit (Challan ITNS 281)",
             authority="Income Tax Department",
@@ -201,7 +201,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Payroll",
             area="TDS returns",
             form_name="Form 24Q (salary), 26Q (non-salary resident), 27Q (non-resident)",
             authority="Income Tax Department",
@@ -211,7 +211,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="TDS certificates",
             form_name="Form 16 / Form 16A issuance",
             authority="Income Tax Department",
@@ -221,7 +221,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Income tax return",
             form_name="ITR-6 (companies other than those claiming Sec 11 exemption)",
             authority="Income Tax Department",
@@ -232,7 +232,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Tax audit",
             form_name="Form 3CA-3CD (Tax audit report)",
             authority="Income Tax Department",
@@ -243,7 +243,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Transfer pricing",
             form_name="Form 3CEB (TP audit report)",
             authority="Income Tax Department",
@@ -254,7 +254,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="Statement of financial transactions",
             form_name="Form 61A (SFT)",
             authority="Income Tax Department",
@@ -267,7 +267,7 @@ def _build() -> list[FintechFiling]:
         # === Indirect Tax (GST) ===
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="Outward supplies",
             form_name="GSTR-1",
             authority="GSTN / CBIC",
@@ -277,7 +277,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="Summary return",
             form_name="GSTR-3B",
             authority="GSTN / CBIC",
@@ -288,7 +288,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="Annual return",
             form_name="GSTR-9",
             authority="GSTN / CBIC",
@@ -299,7 +299,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="Annual reconciliation",
             form_name="GSTR-9C",
             authority="GSTN / CBIC",
@@ -400,7 +400,7 @@ def _build() -> list[FintechFiling]:
         # === Labor / Payroll ===
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Pensions",
             area="Provident Fund",
             form_name="EPF monthly challan (ECR) + Form 5 / Form 10",
             authority="EPFO",
@@ -412,7 +412,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Social Security",
             area="Employees' State Insurance",
             form_name="ESI monthly challan",
             authority="ESIC",
@@ -424,7 +424,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="Professional Tax",
             form_name="Monthly / annual PT returns (state-specific)",
             authority="State commercial-tax department",
@@ -435,7 +435,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Social Security",
             area="Labour Welfare Fund",
             form_name="LWF half-yearly/annual contributions",
             authority="State Labour Welfare Boards",
@@ -514,7 +514,7 @@ def _build() -> list[FintechFiling]:
         # === Additional regulatory / statutory entries ===
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="System Audit (SAR)",
             form_name="RBI System Audit Report — annual concurrent audit + SAR submission (PA/PG)",
             authority="RBI (DPSS)",
@@ -537,7 +537,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="TCS",
             form_name="Form 27EQ (Quarterly TCS Return)",
             authority="Income Tax Department",
@@ -549,7 +549,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="TCS on LRS / foreign remittance",
             form_name="TCS @ 20% on foreign remittance (other than education/medical) under LRS",
             authority="Income Tax Department",
@@ -561,7 +561,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="E-invoicing",
             form_name="GST e-invoicing on IRP (B2B invoices)",
             authority="GSTN / CBIC",
@@ -573,7 +573,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="TDS under GST",
             form_name="GSTR-7 (TDS deductor return)",
             authority="GSTN / CBIC",
@@ -585,7 +585,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="ITC reconciliation",
             form_name="GSTR-2B reconciliation + ITC claim",
             authority="GSTN / CBIC",
@@ -628,7 +628,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="POSH Act",
             form_name="POSH Annual Report (Section 21, Sexual Harassment of Women at Workplace Act)",
             authority="District Officer (state)",
@@ -639,7 +639,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Regulatory",
             area="Shops & Establishments",
             form_name="Shops & Establishments registration / renewal (state-specific)",
             authority="State Labour Department",
@@ -650,7 +650,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Pensions",
             area="Gratuity",
             form_name="Gratuity Form A / F (Payment of Gratuity Act 1972)",
             authority="Controlling Authority (state Labour Dept)",
@@ -683,7 +683,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Transfer Pricing — CbCR",
             form_name="Form 3CEAD (Country-by-Country Report) + Form 3CEAC notification",
             authority="Income Tax Department",
@@ -704,7 +704,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="GIFT-IFSCA (if applicable)",
             form_name="IFSCA registration + periodic returns (Banking / Payment Services Regulations 2024)",
             authority="IFSCA (International Financial Services Centres Authority)",

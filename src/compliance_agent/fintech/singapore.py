@@ -9,7 +9,7 @@ def _build() -> list[FintechFiling]:
         # === Licensing & Authorization ===
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Payment Services Act",
             form_name="MAS PS Act licence (Money-changing / Standard / Major Payment Institution) — ongoing conditions",
             authority="Monetary Authority of Singapore (MAS)",
@@ -19,7 +19,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Prudential reporting",
             form_name="MAS PS-N02 — periodic returns (transaction volumes, safeguarding)",
             authority="MAS",
@@ -29,7 +29,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Licensing & Authorization",
+            category="Regulatory",
             area="Audit",
             form_name="Annual auditor's report + safeguarding audit (PS Act)",
             authority="MAS",
@@ -117,7 +117,7 @@ def _build() -> list[FintechFiling]:
         # === Tax ===
         FintechFiling(
             s_no=0,
-            category="Indirect Tax (GST)",
+            category="GST/HST",
             area="GST",
             form_name="GST Form 5",
             authority="IRAS",
@@ -128,7 +128,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Corporate Income Tax",
             form_name="Form C / C-S + ECI (Estimated Chargeable Income)",
             authority="IRAS",
@@ -139,7 +139,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Social Security",
             area="CPF",
             form_name="CPF monthly contribution + IR8A annual return of employee earnings",
             authority="CPF Board / IRAS",
@@ -175,7 +175,7 @@ def _build() -> list[FintechFiling]:
         # === Additional Singapore entries ===
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="Withholding Tax",
             form_name="IRAS Form IR37 (Withholding Tax on payments to non-residents)",
             authority="IRAS",
@@ -187,7 +187,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="Foreign workforce",
             form_name="MOM Form IR21 (cessation of foreign employee employment)",
             authority="Inland Revenue Authority of Singapore",
@@ -198,7 +198,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Regulatory",
             area="Work Pass / EP / S Pass",
             form_name="MOM Work Pass applications & renewals (EP / S Pass / DP / Tech.Pass)",
             authority="Ministry of Manpower",
@@ -209,7 +209,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Labor & Payroll",
+            category="Payroll",
             area="Skills Future Levy",
             form_name="Skills Development Levy (SDL)",
             authority="SkillsFuture Singapore (via CPF Board)",
@@ -220,7 +220,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Corporate Tax",
             area="Transfer Pricing",
             form_name="IRAS TP Documentation + Form for Reporting of Related-Party Transactions",
             authority="IRAS",
@@ -232,7 +232,7 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
+            category="Information Returns",
             area="CRS / FATCA",
             form_name="IRAS CRS / FATCA reporting",
             authority="IRAS",
