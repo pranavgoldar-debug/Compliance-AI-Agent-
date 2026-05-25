@@ -1,0 +1,53 @@
+UK GDPR AND DATA PROTECTION ACT 2018 — KEY PROVISIONS
+
+Article 5 (UK GDPR). Principles relating to processing of personal data
+Personal data shall be: processed lawfully, fairly and in a transparent
+manner; collected for specified, explicit and legitimate purposes;
+adequate, relevant and limited to what is necessary (data minimisation);
+accurate and kept up to date; kept in a form which permits identification
+for no longer than necessary; processed in a manner that ensures
+appropriate security.
+
+Section 9 (DPA 2018). Lawfulness — children's consent in the UK
+Where Article 6(1)(a) of the UK GDPR (consent) applies in relation to the
+offer of information society services directly to a child, in the United
+Kingdom the processing of personal data of a child is lawful only if the
+child is at least 13 years old. Where the child is below that age, such
+processing is lawful only if and to the extent that consent is given or
+authorised by the holder of parental responsibility.
+
+Article 13 (UK GDPR). Information to be provided at collection
+The controller shall, at the time when personal data are obtained, provide
+the data subject with the identity of the controller, the contact details
+of the data protection officer where applicable, the purposes and legal
+basis of processing, the recipients, retention periods, and the rights of
+the data subject including the right to lodge a complaint with the
+Information Commissioner.
+
+Article 15 (UK GDPR). Right of access by the data subject
+The data subject shall have the right to obtain from the controller
+confirmation as to whether or not personal data concerning him or her are
+being processed, and, where that is the case, access to the personal data
+and to information about the purposes of processing, categories of data,
+recipients, retention, and the existence of automated decision-making.
+
+Article 32 (UK GDPR). Security of processing
+The controller and the processor shall implement appropriate technical
+and organisational measures to ensure a level of security appropriate to
+the risk, including pseudonymisation and encryption, the ability to
+ensure ongoing confidentiality, integrity, availability and resilience of
+processing systems, and the ability to restore the availability of and
+access to personal data in a timely manner.
+
+Article 33 (UK GDPR). Personal data breach notification to the ICO
+In the case of a personal data breach, the controller shall without undue
+delay and, where feasible, not later than 72 hours after having become
+aware of it, notify the personal data breach to the Information
+Commissioner's Office, unless the breach is unlikely to result in a risk
+to the rights and freedoms of natural persons.
+
+Section 119A (DPA 2018). Age-appropriate design code
+The Commissioner shall produce a code of practice which contains such
+guidance as the Commissioner considers appropriate on standards of age-
+appropriate design of relevant information society services which are
+likely to be accessed by children.

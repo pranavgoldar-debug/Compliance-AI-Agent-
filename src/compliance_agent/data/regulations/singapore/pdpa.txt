@@ -1,0 +1,58 @@
+SINGAPORE PERSONAL DATA PROTECTION ACT (PDPA) — KEY OBLIGATIONS
+
+Section 13. Consent Obligation
+An organisation shall not collect, use or disclose personal data about an
+individual unless the individual gives, or is deemed to have given, his
+consent under this Act to the collection, use or disclosure, as the case
+may be. Consent is not validly given if the individual has not been
+informed of the purposes.
+
+Section 20. Notification Obligation
+An organisation shall, on or before collecting personal data about an
+individual, inform the individual of the purposes for the collection, use
+or disclosure of the personal data, and, on request, of the business
+contact information of a person able to answer the individual's questions
+about the collection, use or disclosure of the personal data.
+
+Section 21. Access and Correction Obligation
+On request of an individual, an organisation shall, as soon as reasonably
+possible, provide the individual with personal data about the individual
+that is in the possession or under the control of the organisation, and
+information about the ways in which the personal data may have been used
+or disclosed within a year before the date of the request.
+
+Section 24. Protection Obligation
+An organisation shall protect personal data in its possession or under
+its control by making reasonable security arrangements to prevent
+unauthorised access, collection, use, disclosure, copying, modification,
+disposal or similar risks, and the loss of any storage medium or device
+on which personal data is stored.
+
+Section 25. Retention Limitation Obligation
+An organisation shall cease to retain its documents containing personal
+data, or remove the means by which the personal data can be associated
+with particular individuals, as soon as it is reasonable to assume that
+the purpose for which that personal data was collected is no longer being
+served by retention and retention is no longer necessary for legal or
+business purposes.
+
+Section 26. Transfer Limitation Obligation
+An organisation shall not transfer any personal data to a country or
+territory outside Singapore except in accordance with requirements
+prescribed under this Act to ensure that the organisation provides a
+standard of protection to personal data so transferred that is comparable
+to the protection under this Act.
+
+Section 26D. Data Breach Notification Obligation
+Where an organisation has reason to believe that a notifiable data breach
+has occurred, the organisation shall notify the Personal Data Protection
+Commission as soon as is practicable, but in any case no later than 3
+calendar days after the day the organisation makes that assessment.
+Affected individuals shall also be notified if the breach is likely to
+result in significant harm.
+
+Section 11. Data Protection Officer
+An organisation shall designate one or more individuals to be responsible
+for ensuring that the organisation complies with this Act. The business
+contact information of at least one such individual shall be made
+available to the public.

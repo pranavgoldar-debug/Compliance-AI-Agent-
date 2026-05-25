@@ -1,0 +1,43 @@
+DIRECTIVE (EU) 2022/2555 — NIS2 — KEY PROVISIONS
+
+Article 20. Governance
+Management bodies of essential and important entities shall approve the
+cybersecurity risk-management measures taken by those entities, oversee
+their implementation and can be held liable for infringements. Members of
+management bodies shall be required to follow training, on a regular basis,
+to gain sufficient knowledge and skills to assess cybersecurity risks.
+
+Article 21. Cybersecurity risk-management measures
+Essential and important entities shall take appropriate and proportionate
+technical, operational and organisational measures to manage the risks
+posed to the security of network and information systems. These measures
+shall include policies on risk analysis, incident handling, business
+continuity, supply chain security, security in acquisition, vulnerability
+handling, basic cyber hygiene practices and cybersecurity training, use of
+cryptography and encryption, human resources security, access control,
+and multi-factor authentication.
+
+Article 23. Reporting obligations — early warning
+Essential and important entities shall notify, without undue delay, the
+CSIRT or, where applicable, the competent authority of any significant
+incident. An early warning shall be submitted within 24 hours of becoming
+aware of the significant incident, indicating whether the incident is
+suspected of being caused by unlawful or malicious acts or could have a
+cross-border impact.
+
+Article 23. Reporting obligations — incident notification
+A more detailed incident notification shall be submitted within 72 hours
+of becoming aware of the significant incident, including an initial
+assessment of the incident, its severity and impact, and where available
+the indicators of compromise.
+
+Article 23. Final report
+A final report shall be submitted not later than one month after the
+submission of the incident notification, including a detailed description
+of the incident, the type of threat or root cause, applied and ongoing
+mitigation measures, and where applicable the cross-border impact.
+
+Article 24. Use of European cybersecurity certification schemes
+Member States may require essential and important entities to use
+particular ICT products, ICT services and ICT processes that are
+certified under European cybersecurity certification schemes.
