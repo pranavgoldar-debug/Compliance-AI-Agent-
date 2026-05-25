@@ -4,15 +4,13 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/AppShell";
 import { LoginPage } from "@/pages/LoginPage";
-import {
-  DashboardPage,
-  CalendarPage,
-  EntitiesPage,
-  EntityDetailPage,
-  TasksPage,
-  RulesPage,
-  SettingsPage,
-} from "@/pages/placeholders";
+import { DashboardPage } from "@/pages/DashboardPage";
+import { CalendarPage } from "@/pages/CalendarPage";
+import { EntitiesPage } from "@/pages/EntitiesPage";
+import { EntityDetailPage } from "@/pages/EntityDetailPage";
+import { TasksPage } from "@/pages/TasksPage";
+import { RulesPage } from "@/pages/RulesPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {

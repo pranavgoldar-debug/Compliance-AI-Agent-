@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 @router.get("", response_model=list[ObligationOut])
 def list_my_tasks(
-    scope: str = Query("assigned", regex=r"^(assigned|watching|completed|all)$"),
+    scope: str = Query("assigned", pattern=r"^(assigned|watching|completed|all)$"),
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> list[ObligationOut]:
