@@ -21,6 +21,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from compliance_agent.catalog import CATALOG, Country, Regulation, get_regulation
+from compliance_agent.fintech import (
+    CATALOG as FINTECH_CATALOG,
+    CountryFilings,
+    get_country_filings,
+    list_country_summaries,
+)
 from compliance_agent.mock import mock_extract, mock_verify
 from compliance_agent.models import ExtractionResult, VerificationResult
 
@@ -96,6 +102,17 @@ def create_app() -> FastAPI:
             extraction=extraction,
             verification=verification,
         )
+
+    @app.get("/api/fintech/countries")
+    def list_fintech_countries() -> list[dict]:
+        return list_country_summaries()
+
+    @app.get("/api/fintech/{country_code}", response_model=CountryFilings)
+    def get_fintech_filings(country_code: str) -> CountryFilings:
+        cf = get_country_filings(country_code)
+        if cf is None:
+            raise HTTPException(status_code=404, detail=f"Unknown country: {country_code}")
+        return cf
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:

@@ -2,6 +2,7 @@
   --bg: #0f1115;
   --panel: #181b22;
   --panel-2: #1f232c;
+  --panel-3: #262b36;
   --border: #2a2f3a;
   --text: #e8eaf0;
   --muted: #9aa3b2;
@@ -47,6 +48,12 @@ a { color: var(--accent); }
   font-weight: 600;
   letter-spacing: 0.2px;
 }
+.brand-sub {
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+}
 .logo { font-size: 22px; }
 
 .mode-badge {
@@ -62,16 +69,43 @@ a { color: var(--accent); }
   border-color: #2b5d3f;
 }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 32px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.tab {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 8px 16px;
+  border-radius: 8px 8px 0 0;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--border);
+  border-bottom-color: var(--bg);
+  margin-bottom: -1px;
+}
+
 main {
-  max-width: 1100px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 28px 32px 80px;
 }
 
 .picker {
-  display: grid;
-  grid-template-columns: max-content 1fr max-content 1fr;
-  gap: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
   align-items: center;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -79,24 +113,25 @@ main {
   border-radius: 12px;
   margin-bottom: 24px;
 }
-
 .picker label {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  margin-right: -4px;
 }
-
-.picker select {
+.picker select, .picker input {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-radius: 8px;
   font-size: 14px;
-  min-width: 220px;
+  font-family: inherit;
 }
-.picker select:focus {
+.picker select { min-width: 200px; }
+.picker input { min-width: 220px; }
+.picker select:focus, .picker input:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -124,7 +159,8 @@ main {
 }
 .result-header h2 { margin: 0 0 6px 0; font-size: 20px; }
 .scope { margin: 0; color: var(--muted); font-size: 13px; max-width: 700px; }
-.counts { display: flex; gap: 14px; flex-wrap: wrap; }
+
+.counts { display: flex; gap: 10px; flex-wrap: wrap; }
 .count-pill {
   background: var(--panel-2);
   border: 1px solid var(--border);
@@ -137,6 +173,97 @@ main {
 }
 .count-pill strong { display: block; color: var(--text); font-size: 16px; }
 
+/* ====================== Filings table ====================== */
+.table-scroll {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: auto;
+  max-height: calc(100vh - 280px);
+}
+.filings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+.filings-table thead th {
+  background: var(--panel-3);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.filings-table tbody td {
+  padding: 12px 12px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.filings-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+.filings-table .col-sno { width: 50px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.filings-table .col-geo { width: 60px; font-size: 18px; text-align: center; }
+.filings-table .col-cat { width: 140px; }
+.filings-table .col-area { width: 130px; }
+.filings-table .col-form { width: 280px; }
+.filings-table .col-auth { width: 160px; }
+.filings-table .col-freq { width: 110px; }
+.filings-table .col-rule { width: 240px; }
+.filings-table .col-pay { width: 140px; }
+.filings-table .col-app { width: 110px; }
+.filings-table .col-reason { width: 160px; }
+.filings-table .col-due { width: 90px; }
+.filings-table .col-status { width: 90px; }
+.filings-table .col-ref { width: 130px; }
+.filings-table .col-comments { width: 160px; }
+
+.filings-table .blank {
+  color: #495160;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.tag {
+  display: inline-block;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cat-tag {
+  font-weight: 600;
+  color: var(--text);
+}
+.cat-Licensing { color: #b3a3ff; border-color: #4b3f7a; }
+.cat-AML { color: #ffa552; border-color: #6b4621; }
+.cat-Direct { color: #6dd99c; border-color: #2b5d3f; }
+.cat-Indirect { color: #6dd99c; border-color: #2b5d3f; }
+.cat-Forex { color: #7ab7ff; border-color: #2c4d75; }
+.cat-Corporate { color: #f5d76e; border-color: #5b521f; }
+.cat-Labor { color: #ff8db0; border-color: #6b2f4a; }
+.cat-Data { color: #7ee7d9; border-color: #275a55; }
+.cat-Cybersecurity { color: #ff5d6c; border-color: #6b2a32; }
+.cat-Consumer { color: #c4a4ff; border-color: #4b3f7a; }
+
+.app-Mandatory { color: var(--critical); border-color: #5d2a30; }
+.app-Conditional { color: var(--medium); border-color: #5b521f; }
+.app-Sector { color: var(--info); }
+
+.freq-Continuous, .freq-Event { color: var(--high); border-color: #6b4621; }
+.freq-Monthly { color: var(--accent); border-color: #2c4d75; }
+.freq-Quarterly, .freq-Half { color: var(--low); border-color: #2b5d3f; }
+.freq-Annual { color: var(--text); }
+.freq-One { color: var(--muted); }
+
+/* ====================== Extractor view (reused from before) ====================== */
 .verification {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -202,15 +329,6 @@ main {
 }
 .kv-row dt { color: var(--muted); }
 .kv-row dd { margin: 0; }
-.tag {
-  display: inline-block;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 1px 8px;
-  margin: 2px 4px 2px 0;
-  font-size: 12px;
-}
 
 blockquote.source {
   background: var(--panel-2);
@@ -223,7 +341,7 @@ blockquote.source {
 }
 
 footer {
-  max-width: 1100px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 18px 32px 40px;
   color: var(--muted);
@@ -235,10 +353,4 @@ footer code {
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 11px;
-}
-
-@media (max-width: 800px) {
-  .picker { grid-template-columns: 1fr; }
-  .result-header { flex-direction: column; }
-  .counts { width: 100%; }
 }

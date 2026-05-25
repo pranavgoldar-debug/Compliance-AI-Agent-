@@ -11,49 +11,119 @@
     <div class="brand">
       <span class="logo">🛡️</span>
       <h1>Compliance AI Agent</h1>
+      <span class="brand-sub">Fintech · Remittance</span>
     </div>
     <span class="mode-badge" id="mode-badge">Mock mode</span>
   </header>
 
+  <nav class="tabs">
+    <button class="tab active" data-view="calendar">📅 Compliance Calendar</button>
+    <button class="tab" data-view="extractor">🔍 Regulation Extractor</button>
+  </nav>
+
   <main>
-    <section class="picker">
-      <label for="country-select">Country / Region</label>
-      <select id="country-select">
-        <option value="">— select a country —</option>
-      </select>
+    <!-- ====================== CALENDAR VIEW ====================== -->
+    <section id="view-calendar">
+      <section class="picker">
+        <label for="calendar-country">Country / Region</label>
+        <select id="calendar-country">
+          <option value="">— select a country —</option>
+        </select>
 
-      <label for="regulation-select" id="regulation-label" hidden>Regulation</label>
-      <select id="regulation-select" hidden>
-        <option value="">— select a regulation —</option>
-      </select>
-    </section>
+        <label for="category-filter" id="category-filter-label" hidden>Category</label>
+        <select id="category-filter" hidden>
+          <option value="">All categories</option>
+        </select>
 
-    <section id="empty-state" class="empty-state">
-      <p>Choose a country to see the regulations it covers, then pick a regulation to view its compliance requirements.</p>
-      <p class="hint">Bundled samples: <strong>India</strong> (DPDP Act 2023), <strong>European Union</strong> (GDPR), <strong>United States</strong> (HIPAA).</p>
-    </section>
+        <label for="search-input" id="search-label" hidden>Search</label>
+        <input id="search-input" type="search" placeholder="form, authority, area…" hidden />
+      </section>
 
-    <section id="loading" class="loading" hidden>Loading requirements…</section>
-    <section id="error" class="error" hidden></section>
+      <section id="calendar-empty" class="empty-state">
+        <p>Pick a country to see every recurring and event-based compliance filing a remittance fintech is expected to track in that jurisdiction.</p>
+        <p class="hint">Covered: 🇮🇳 India · 🇪🇺 European Union · 🇺🇸 United States · 🇬🇧 United Kingdom · 🇦🇪 UAE · 🇸🇬 Singapore</p>
+      </section>
 
-    <section id="result" hidden>
-      <header class="result-header">
-        <div>
-          <h2 id="regulation-name"></h2>
-          <p class="scope" id="regulation-scope"></p>
+      <section id="calendar-loading" class="loading" hidden>Loading filings…</section>
+      <section id="calendar-error" class="error" hidden></section>
+
+      <section id="calendar-result" hidden>
+        <header class="result-header">
+          <div>
+            <h2 id="calendar-title"></h2>
+            <p class="scope" id="calendar-summary"></p>
+          </div>
+          <div class="counts" id="calendar-counts"></div>
+        </header>
+
+        <div class="table-scroll">
+          <table class="filings-table">
+            <thead>
+              <tr>
+                <th>S No</th>
+                <th>Geo</th>
+                <th>Category</th>
+                <th>Area</th>
+                <th>Form / Report</th>
+                <th>Authority</th>
+                <th>Frequency</th>
+                <th>Due date rule (CY)</th>
+                <th>Payment due</th>
+                <th>Applicability</th>
+                <th>Reason if N/A</th>
+                <th>Due date</th>
+                <th>Status</th>
+                <th>Filing ref</th>
+                <th>Comments</th>
+              </tr>
+            </thead>
+            <tbody id="filings-body"></tbody>
+          </table>
         </div>
-        <div class="counts" id="counts"></div>
-      </header>
+      </section>
+    </section>
 
-      <section class="verification" id="verification" hidden></section>
+    <!-- ====================== EXTRACTOR VIEW ====================== -->
+    <section id="view-extractor" hidden>
+      <section class="picker">
+        <label for="extractor-country">Country / Region</label>
+        <select id="extractor-country">
+          <option value="">— select a country —</option>
+        </select>
 
-      <section id="categories"></section>
+        <label for="regulation-select" id="regulation-label" hidden>Regulation</label>
+        <select id="regulation-select" hidden>
+          <option value="">— select a regulation —</option>
+        </select>
+      </section>
+
+      <section id="extractor-empty" class="empty-state">
+        <p>Pick a regulation to see its requirements extracted from the source text, grouped by category, with verification findings.</p>
+        <p class="hint">Useful when you want the underlying obligations behind a single law (e.g. "what does PDPA Section 24 actually require").</p>
+      </section>
+
+      <section id="extractor-loading" class="loading" hidden>Loading requirements…</section>
+      <section id="extractor-error" class="error" hidden></section>
+
+      <section id="extractor-result" hidden>
+        <header class="result-header">
+          <div>
+            <h2 id="regulation-name"></h2>
+            <p class="scope" id="regulation-scope"></p>
+          </div>
+          <div class="counts" id="counts"></div>
+        </header>
+
+        <section class="verification" id="verification" hidden></section>
+
+        <section id="categories"></section>
+      </section>
     </section>
   </main>
 
   <footer>
-    Built with FastAPI + vanilla JS. Default extraction is curated mock data —
-    set <code>COMPLIANCE_AGENT_LIVE=1</code> and <code>ANTHROPIC_API_KEY</code> to switch to live Claude extraction.
+    Compliance Calendar entries are curated; treat them as a starting checklist and confirm with counsel before relying on any specific due date.
+    Set <code>COMPLIANCE_AGENT_LIVE=1</code> and <code>ANTHROPIC_API_KEY</code> to switch the Regulation Extractor to live Claude calls.
   </footer>
 
   <script src="/static/app.js"></script>
