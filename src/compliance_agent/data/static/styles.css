@@ -215,7 +215,7 @@ main {
 .filings-table tbody tr:hover td { background: rgba(122,183,255,0.06); }
 
 .filings-table .col-sno   { width:  50px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
-.filings-table .col-geo   { width:  60px; font-size: 18px; text-align: center; }
+.filings-table .col-geo   { width: 110px; }
 .filings-table .col-cat   { width: 150px; }
 .filings-table .col-area  { width: 150px; }
 .filings-table .col-form  { width: 270px; }
@@ -225,6 +225,18 @@ main {
 .filings-table .col-pay   { width: 200px; }
 .filings-table .col-app   { width: 120px; }
 .filings-table .col-reason{ width: 200px; color: var(--muted); }
+
+.filings-table .col-geo .geo-flag {
+  display: inline-block;
+  font-size: 16px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.filings-table .col-geo .geo-name {
+  display: inline;
+  font-size: 12.5px;
+  color: var(--text);
+}
 
 .filings-table .blank {
   color: #495160;
@@ -245,16 +257,30 @@ main {
   word-break: break-word;
   border: 1px solid transparent;
 }
-.cat-Licensing    { color: #c2b3ff; background: rgba(179,163,255,0.08); border-color: rgba(179,163,255,0.25); }
-.cat-AML          { color: #ffa552; background: rgba(255,165,82,0.08);  border-color: rgba(255,165,82,0.25); }
-.cat-Direct       { color: #6dd99c; background: rgba(109,217,156,0.08); border-color: rgba(109,217,156,0.25); }
-.cat-Indirect     { color: #6dd99c; background: rgba(109,217,156,0.08); border-color: rgba(109,217,156,0.25); }
-.cat-Forex        { color: #7ab7ff; background: rgba(122,183,255,0.08); border-color: rgba(122,183,255,0.25); }
-.cat-Corporate    { color: #f5d76e; background: rgba(245,215,110,0.08); border-color: rgba(245,215,110,0.25); }
-.cat-Labor        { color: #ff8db0; background: rgba(255,141,176,0.08); border-color: rgba(255,141,176,0.25); }
-.cat-Data         { color: #7ee7d9; background: rgba(126,231,217,0.08); border-color: rgba(126,231,217,0.25); }
-.cat-Cybersecurity{ color: #ff5d6c; background: rgba(255,93,108,0.08);  border-color: rgba(255,93,108,0.25); }
-.cat-Consumer     { color: #c4a4ff; background: rgba(196,164,255,0.08); border-color: rgba(196,164,255,0.25); }
+/* category colour palette — slug-keyed (see catClass() in app.js) */
+.cat-regulatory             { color: #c2b3ff; background: rgba(179,163,255,0.08); border-color: rgba(179,163,255,0.25); }
+.cat-aml-cft                { color: #ffa552; background: rgba(255,165,82,0.08);  border-color: rgba(255,165,82,0.25); }
+.cat-corporate-tax          { color: #6dd99c; background: rgba(109,217,156,0.08); border-color: rgba(109,217,156,0.25); }
+.cat-information-returns    { color: #9dd1ff; background: rgba(157,209,255,0.08); border-color: rgba(157,209,255,0.25); }
+.cat-vat                    { color: #6dd99c; background: rgba(109,217,156,0.08); border-color: rgba(109,217,156,0.25); }
+.cat-gst-hst                { color: #6dd99c; background: rgba(109,217,156,0.08); border-color: rgba(109,217,156,0.25); }
+.cat-pst-qst                { color: #80e7c0; background: rgba(128,231,192,0.08); border-color: rgba(128,231,192,0.25); }
+.cat-sales-use-tax          { color: #80e7c0; background: rgba(128,231,192,0.08); border-color: rgba(128,231,192,0.25); }
+.cat-excise-tax             { color: #ffc278; background: rgba(255,194,120,0.08); border-color: rgba(255,194,120,0.25); }
+.cat-forex-cross-border     { color: #7ab7ff; background: rgba(122,183,255,0.08); border-color: rgba(122,183,255,0.25); }
+.cat-corporate-statutory    { color: #f5d76e; background: rgba(245,215,110,0.08); border-color: rgba(245,215,110,0.25); }
+.cat-payroll                { color: #ff8db0; background: rgba(255,141,176,0.08); border-color: rgba(255,141,176,0.25); }
+.cat-pensions               { color: #ffb3d1; background: rgba(255,179,209,0.08); border-color: rgba(255,179,209,0.25); }
+.cat-social-security        { color: #ff9bcc; background: rgba(255,155,204,0.08); border-color: rgba(255,155,204,0.25); }
+.cat-workers-compensation   { color: #ffb088; background: rgba(255,176,136,0.08); border-color: rgba(255,176,136,0.25); }
+.cat-data-protection-privacy{ color: #7ee7d9; background: rgba(126,231,217,0.08); border-color: rgba(126,231,217,0.25); }
+.cat-cybersecurity          { color: #ff5d6c; background: rgba(255,93,108,0.08);  border-color: rgba(255,93,108,0.25); }
+.cat-consumer-protection    { color: #c4a4ff; background: rgba(196,164,255,0.08); border-color: rgba(196,164,255,0.25); }
+.cat-cis                    { color: #d7c084; background: rgba(215,192,132,0.08); border-color: rgba(215,192,132,0.25); }
+.cat-statistics             { color: #8fd3ff; background: rgba(143,211,255,0.08); border-color: rgba(143,211,255,0.25); }
+.cat-eu-reporting           { color: #b3a3ff; background: rgba(179,163,255,0.08); border-color: rgba(179,163,255,0.25); }
+.cat-accounting-control     { color: #d4cf7a; background: rgba(212,207,122,0.08); border-color: rgba(212,207,122,0.25); }
+.cat-unclaimed-property     { color: #b9b9b9; background: rgba(185,185,185,0.08); border-color: rgba(185,185,185,0.25); }
 
 /* Applicability pill */
 .app-pill {

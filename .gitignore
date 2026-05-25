@@ -10,3 +10,24 @@ build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# CLI output artifacts (extract / diff / render results)
+/out.json
+/out.md
+/diff.md
+/diff.json
+/report.md
+/report.json
+
+# Local SQLite database (seeded per-machine via `compliance-agent seed`)
+compliance.db
+compliance.db-journal
+compliance.db-wal
+compliance.db-shm
+
+# Local-dev JWT signing secret (auto-generated on first run; never commit)
+.app_secret
+
+# Node / React frontend (added in Phase 2)
+node_modules/
+frontend/dist/

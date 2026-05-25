@@ -1,0 +1,340 @@
+"""Lithuania filing catalog for a remittance fintech (BoL-licensed EMI / PI)."""
+from __future__ import annotations
+
+from compliance_agent.fintech import FintechFiling
+
+
+def _build() -> list[FintechFiling]:
+    return [
+        # === Regulatory ===
+        FintechFiling(
+            s_no=0,
+            category="Regulatory",
+            area="EMI / PI licence",
+            form_name="Bank of Lithuania E-Money Institution / Payment Institution authorization",
+            authority="Bank of Lithuania (Lietuvos bankas)",
+            frequency="One-time + Event-based",
+            due_date_rule="Authorization before commencement; change-of-control and material-change notifications before completion.",
+            payment_due="Initial supervisory fee EUR 1,668; annual supervisory contribution capped at 0.0117% of average assets (BoL fee schedule).",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Regulatory",
+            area="Capital adequacy",
+            form_name="BoL Own-funds and capital-adequacy returns (EBA REP)",
+            authority="Bank of Lithuania",
+            frequency="Quarterly",
+            due_date_rule="6 weeks after quarter close per EBA calendar.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Regulatory",
+            area="Safeguarding",
+            form_name="Annual safeguarding audit report (client funds protection)",
+            authority="Bank of Lithuania",
+            frequency="Annual",
+            due_date_rule="Within 4 months of FY close.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Regulatory",
+            area="Periodic supervisory return",
+            form_name="BoL periodic supervisory return — transaction volumes & breakdown",
+            authority="Bank of Lithuania",
+            frequency="Quarterly",
+            due_date_rule="Within 21 calendar days of quarter close.",
+            applicability="Mandatory",
+        ),
+
+        # === AML / CFT ===
+        FintechFiling(
+            s_no=0,
+            category="AML / CFT",
+            area="Suspicious transactions",
+            form_name="STR / Threshold reports to FCIS",
+            authority="Financial Crime Investigation Service (FCIS) under MoI",
+            frequency="Event-based",
+            due_date_rule="Without delay on forming suspicion; threshold cash reports as set by FCIS instructions.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="AML / CFT",
+            area="Funds-transfer info",
+            form_name="EU Regulation 2015/847 / 2023/1113 (Travel Rule) — payer/payee data on transfers",
+            authority="BoL / FCIS",
+            frequency="Continuous",
+            due_date_rule="On every transfer; crypto-asset transfers under MiCA + Travel Rule from 30 Dec 2024.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="AML / CFT",
+            area="MLRO report",
+            form_name="Annual MLRO report to senior management / Board",
+            authority="Internal + BoL on request",
+            frequency="Annual",
+            due_date_rule="Within 90 days of FY close.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="AML / CFT",
+            area="Business-wide risk assessment",
+            form_name="Enterprise-wide ML/TF risk assessment refresh",
+            authority="BoL / FCIS",
+            frequency="Annual",
+            due_date_rule="At least annually and on material change.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="AML / CFT",
+            area="Sanctions",
+            form_name="EU + UN sanctions screening + reports of frozen funds",
+            authority="FCIS",
+            frequency="Continuous + Event-based",
+            due_date_rule="Continuous screening; immediate freeze and report of listed-person matches.",
+            applicability="Mandatory",
+        ),
+
+        # === Corporate Tax ===
+        FintechFiling(
+            s_no=0,
+            category="Corporate Tax",
+            area="CIT",
+            form_name="Annual CIT return Form PLN204 + advance payments",
+            authority="VMI (State Tax Inspectorate)",
+            frequency="Annual + Quarterly advance",
+            due_date_rule="Annual return + payment by 15 Jun following tax year; advance payments quarterly (15 Mar/Jun/Sep/Dec).",
+            payment_due="Standard CIT rate 15% (reduced 0%/5% for small entities meeting criteria). Late-payment interest 0.03% per day.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Corporate Tax",
+            area="Transfer Pricing",
+            form_name="Lithuanian Transfer Pricing documentation + CbCR (DAC4 transposition)",
+            authority="VMI",
+            frequency="Annual",
+            due_date_rule="TP documentation by Annual CIT return deadline; CbCR within 12 months of FY close.",
+            applicability="Conditional",
+            applicability_note="TP file required if related-party transactions > EUR 90,000; CbCR if group consolidated revenue ≥ EUR 750m.",
+        ),
+
+        # === VAT ===
+        FintechFiling(
+            s_no=0,
+            category="VAT",
+            area="VAT return",
+            form_name="VAT return Form FR0600",
+            authority="VMI",
+            frequency="Monthly / Quarterly / Half-yearly",
+            due_date_rule="Monthly: by 25th of next month; Quarterly: by 25th of month after quarter; Half-yearly: by 25 Jul / 25 Jan.",
+            payment_due="Standard 21%; reduced 9% / 5% / 0% per categories. Late-payment interest 0.03%/day + penalties for misdeclaration.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="VAT",
+            area="EC Sales / Intrastat",
+            form_name="EC Sales List (Form FR0564) + Intrastat (above thresholds)",
+            authority="VMI",
+            frequency="Monthly / Quarterly",
+            due_date_rule="By 25th of the month following the reporting period.",
+            applicability="Conditional",
+        ),
+
+        # === Information Returns ===
+        FintechFiling(
+            s_no=0,
+            category="Information Returns",
+            area="CRS / FATCA",
+            form_name="VMI CRS / FATCA annual reporting",
+            authority="VMI",
+            frequency="Annual",
+            due_date_rule="By 1 Jul following the reporting calendar year.",
+            applicability="Conditional",
+            applicability_note="Required if classified as a Reporting Financial Institution under CRS.",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Information Returns",
+            area="Withholding info",
+            form_name="VMI Form FR0573 / GPM313 (Withholding & PIT info)",
+            authority="VMI",
+            frequency="Monthly",
+            due_date_rule="By 15th of month following payment.",
+            applicability="Conditional",
+        ),
+
+        # === Payroll ===
+        FintechFiling(
+            s_no=0,
+            category="Payroll",
+            area="Personal Income Tax",
+            form_name="GPM (PIT) withholding + monthly declaration",
+            authority="VMI",
+            frequency="Monthly",
+            due_date_rule="Withhold + remit by the 15th of the following month.",
+            payment_due="GPM rates 20% (up to ~EUR 104,277 in 2024) / 32% above. Late-payment interest 0.03%/day.",
+            applicability="Mandatory",
+        ),
+
+        # === Social Security ===
+        FintechFiling(
+            s_no=0,
+            category="Social Security",
+            area="Sodra",
+            form_name="Sodra (State Social Insurance Fund) monthly declaration (SAM / GPM313)",
+            authority="Sodra (Lithuanian State Social Insurance Fund Board)",
+            frequency="Monthly",
+            due_date_rule="By the 15th of the following month.",
+            payment_due="Employer ~1.77% (or 2.49% with definite-term contracts) + employee 19.50% of gross. Capped at ~5 average salaries for higher earners.",
+            applicability="Mandatory",
+        ),
+
+        # === Pensions ===
+        FintechFiling(
+            s_no=0,
+            category="Pensions",
+            area="Pillar II / III pensions",
+            form_name="Voluntary occupational pension contributions (Pillar III / additional)",
+            authority="Sodra / scheme administrators",
+            frequency="Monthly",
+            due_date_rule="With Sodra remittance per scheme rules.",
+            payment_due="Employee 2.7% (Pillar II accumulation, optional from 2024); employer voluntary top-ups.",
+            applicability="Conditional",
+        ),
+
+        # === EU Reporting ===
+        FintechFiling(
+            s_no=0,
+            category="EU Reporting",
+            area="AnaCredit",
+            form_name="AnaCredit credit-data reporting (ECB)",
+            authority="Bank of Lithuania → ECB",
+            frequency="Monthly",
+            due_date_rule="Per BoL/ECB AnaCredit timetable (typically 10 working days after period close).",
+            applicability="Conditional",
+            applicability_note="Triggered only if the entity provides credit and meets reporting-population criteria.",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="EU Reporting",
+            area="DAC6",
+            form_name="DAC6 — reportable cross-border tax arrangements",
+            authority="VMI",
+            frequency="Event-based",
+            due_date_rule="Within 30 days of arrangement becoming reportable.",
+            applicability="Conditional",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="EU Reporting",
+            area="EBA Fraud Reporting",
+            form_name="EBA Fraud Reporting (PSD2 RTS on fraud reporting)",
+            authority="BoL → EBA",
+            frequency="Half-Yearly",
+            due_date_rule="Within 2 months of half-year close.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="EU Reporting",
+            area="OSS / IOSS",
+            form_name="One-Stop-Shop VAT return (if cross-EU B2C digital services)",
+            authority="VMI (as MSI)",
+            frequency="Quarterly",
+            due_date_rule="By end of month following quarter end.",
+            applicability="Conditional",
+        ),
+
+        # === Data Protection ===
+        FintechFiling(
+            s_no=0,
+            category="Data Protection & Privacy",
+            area="GDPR",
+            form_name="GDPR — DPO, ROPA, DPIAs, 72h breach reports",
+            authority="State Data Protection Inspectorate (VDAI)",
+            frequency="Continuous + Event-based",
+            due_date_rule="ROPA continuous; DPIA before high-risk processing; breach to VDAI within 72 hours of awareness.",
+            applicability="Mandatory",
+        ),
+
+        # === Cybersecurity ===
+        FintechFiling(
+            s_no=0,
+            category="Cybersecurity",
+            area="DORA",
+            form_name="DORA — ICT risk management, third-party register, TLPT, major incident reporting",
+            authority="Bank of Lithuania + ESAs",
+            frequency="Continuous + Event-based",
+            due_date_rule="Effective 17 Jan 2025; major ICT incident initial notification within 4 hours of classification (max 24h from detection).",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Cybersecurity",
+            area="Cyber incidents",
+            form_name="NKSC cyber-incident reporting (National Cyber Security Centre)",
+            authority="NKSC",
+            frequency="Event-based",
+            due_date_rule="As prescribed in the Cybersecurity Law and NKSC ordinances.",
+            applicability="Conditional",
+            applicability_note="Applies if classified as a critical-infrastructure entity under Lithuanian law / NIS2 transposition.",
+        ),
+
+        # === Statistics ===
+        FintechFiling(
+            s_no=0,
+            category="Statistics",
+            area="Balance of Payments",
+            form_name="BoL balance-of-payments survey + monetary financial statistics",
+            authority="Bank of Lithuania",
+            frequency="Monthly / Quarterly",
+            due_date_rule="Per BoL statistical-survey calendar.",
+            applicability="Conditional",
+        ),
+
+        # === Corporate & Statutory ===
+        FintechFiling(
+            s_no=0,
+            category="Corporate & Statutory",
+            area="Company register",
+            form_name="JADIS / Centre of Registers — annual financial statements + ROCs",
+            authority="Lithuanian Centre of Registers (Registrų centras)",
+            frequency="Annual + Event-based",
+            due_date_rule="Annual financial statements within 30 days of approval (≤ 6 months from FY close); other updates within prescribed days.",
+            payment_due="Filing fee EUR 6.95–14.49 per document depending on filing type.",
+            applicability="Mandatory",
+        ),
+        FintechFiling(
+            s_no=0,
+            category="Corporate & Statutory",
+            area="UBO",
+            form_name="JANGIS UBO register declaration",
+            authority="Centre of Registers (JANGIS)",
+            frequency="Event-based + Annual confirm",
+            due_date_rule="Updates within 10 working days of any change; annual confirmation as required.",
+            applicability="Mandatory",
+        ),
+
+        # === Consumer Protection ===
+        FintechFiling(
+            s_no=0,
+            category="Consumer Protection",
+            area="VVTAT",
+            form_name="State Consumer Rights Protection Authority (VVTAT) — complaints handling",
+            authority="VVTAT",
+            frequency="Continuous + Event-based",
+            due_date_rule="Cooperation on consumer disputes per Consumer Protection Law.",
+            applicability="Mandatory",
+        ),
+    ]
+
+
+FILINGS = _build()

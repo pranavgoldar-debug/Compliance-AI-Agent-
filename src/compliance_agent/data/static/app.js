@@ -123,7 +123,7 @@ function renderCalendar() {
       .some((v) => (v || "").toLowerCase().includes(q));
   });
 
-  calendarTitle.textContent = `${currentCountry.flag}  ${currentCountry.country_name} — Compliance Calendar`;
+  calendarTitle.textContent = `${currentCountry.flag}  ${currentCountry.country_name} — Compliance`;
   calendarSummary.textContent =
     `${filtered.length} of ${currentFilings.length} filings shown. ` +
     `Status / Filing reference / Comments are blank for you to fill in.`;
@@ -153,8 +153,11 @@ function mkPill(value, label) {
 }
 
 function catClass(category) {
-  const first = (category || "").split(/[\s&/(]/)[0];
-  return `cat-${first}`;
+  const slug = (category || "")
+    .toLowerCase()
+    .replace(/[^\w]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `cat-${slug}`;
 }
 function appClass(app) {
   return `app-${(app || "").split(/[\s-]/)[0]}`;
@@ -167,7 +170,7 @@ function renderRow(f) {
   const tr = document.createElement("tr");
   tr.innerHTML = `
     <td class="col-sno">${f.s_no}</td>
-    <td class="col-geo">${currentCountry.flag}</td>
+    <td class="col-geo"><span class="geo-flag">${currentCountry.flag}</span><span class="geo-name">${escapeHtml(currentCountry.country_name)}</span></td>
     <td class="col-cat"><span class="cat-pill ${catClass(f.category)}">${escapeHtml(f.category)}</span></td>
     <td class="col-area">${escapeHtml(f.area)}</td>
     <td class="col-form"><strong>${escapeHtml(f.form_name)}</strong></td>
@@ -257,7 +260,16 @@ regulationSelect.addEventListener("change", async () => {
   setVisibility(extractorLoading, true);
   try {
     const r = await fetch(`/api/regulations/${encodeURIComponent(regId)}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+      let detail = `HTTP ${r.status}`;
+      try {
+        const body = await r.json();
+        if (body && body.detail) detail += ` — ${body.detail}`;
+      } catch (_) {
+        try { detail += ` — ${await r.text()}`; } catch (_) { /* ignore */ }
+      }
+      throw new Error(detail);
+    }
     const data = await r.json();
     renderExtractor(data);
     setVisibility(extractorLoading, false);

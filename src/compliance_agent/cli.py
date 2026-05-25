@@ -7,6 +7,16 @@ from typing import Optional
 
 import click
 
+# Auto-load .env from the current working directory (and parents) if present.
+# This is a convenience for local dev; the .env file is git-ignored, so it
+# never travels with the code. In production, set env vars via your platform.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 from compliance_agent.diff import compute_diff
 from compliance_agent.extractor import read_document
 from compliance_agent.mock import mock_extract, mock_verify
@@ -188,9 +198,14 @@ def render(input_json: Path, output: Optional[Path]) -> None:
 @click.option("--port", default=8000, show_default=True, type=int)
 @click.option("--live", is_flag=True, default=False, help="Use live Claude extraction (requires ANTHROPIC_API_KEY).")
 @click.option("--reload", is_flag=True, default=False, help="Auto-reload on code changes (dev).")
-def serve(host: str, port: int, live: bool, reload: bool) -> None:
+@click.option("--no-browser", is_flag=True, default=False, help="Do not auto-open the browser.")
+def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> None:
     """Launch the country-picker web UI on http://HOST:PORT."""
     import os
+    import threading
+    import time
+    import webbrowser
+
     import uvicorn
 
     if live:
@@ -200,8 +215,70 @@ def serve(host: str, port: int, live: bool, reload: bool) -> None:
         os.environ.pop("COMPLIANCE_AGENT_LIVE", None)
         click.echo("Mock mode — no API key required.", err=True)
 
-    click.echo(f"Serving on http://{host}:{port}", err=True)
+    # Resolve a browser-friendly host. 0.0.0.0 / :: are server-bind addresses,
+    # not browsable — point the browser at localhost in that case.
+    browser_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    url = f"http://{browser_host}:{port}"
+
+    if not no_browser:
+        def _open_browser() -> None:
+            time.sleep(1.2)  # let uvicorn finish binding before we open the tab
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+    click.echo(f"Serving on {url}", err=True)
     uvicorn.run("compliance_agent.web:app", host=host, port=port, reload=reload)
+
+
+@main.command()
+def seed() -> None:
+    """Seed the SQLite database with demo Aspora entities, rules, and users.
+
+    Idempotent — safe to re-run. Creates compliance.db in the working directory
+    if it doesn't exist. Demo logins:
+       admin@aspora.com / admin123
+       employee@aspora.com / employee123
+    """
+    from compliance_agent.db.seed import run_seed
+
+    click.echo("Seeding database…", err=True)
+    counts = run_seed()
+    click.echo(f"  users:                {counts['users']}", err=True)
+    click.echo(f"  entities:             {counts['entities']}", err=True)
+    click.echo(f"  rules:                {counts['rules']}", err=True)
+    click.echo(f"  obligations created:  {counts['obligations_created']}", err=True)
+    click.echo("Done.", err=True)
+
+
+@main.command(name="create-user")
+@click.option("--email", required=True)
+@click.option("--password", required=True, prompt=True, hide_input=True, confirmation_prompt=False)
+@click.option("--full-name", default="")
+@click.option("--role", type=click.Choice(["admin", "employee"]), default="employee")
+def create_user(email: str, password: str, full_name: str, role: str) -> None:
+    """Create a new user account."""
+    from compliance_agent.auth.passwords import hash_password
+    from compliance_agent.db import Role, User, init_db, session_scope
+
+    init_db()
+    with session_scope() as db:
+        from sqlalchemy import select
+
+        if db.execute(select(User).where(User.email == email)).scalar_one_or_none():
+            raise click.ClickException(f"User {email} already exists.")
+        db.add(
+            User(
+                email=email,
+                password_hash=hash_password(password),
+                full_name=full_name,
+                role=Role(role),
+            )
+        )
+    click.echo(f"Created user {email} ({role}).", err=True)
 
 
 if __name__ == "__main__":
