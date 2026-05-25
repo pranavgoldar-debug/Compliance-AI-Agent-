@@ -1,0 +1,41 @@
+ACME CORP — INFORMATION SECURITY POLICY (v4.0)
+
+Section 4. Access Control
+
+4.1 All employee access to production systems must be provisioned through the
+identity provider (Okta). Direct local accounts on production hosts are
+prohibited except for break-glass accounts, which must be stored in the
+corporate password vault and rotated within 12 hours of any use.
+
+4.2 Access reviews must be conducted at least once per calendar quarter. The
+system owner is responsible for attesting to the appropriateness of each
+user's access. Reviews must be retained for a minimum of seven years.
+
+4.3 Multi-factor authentication is required for all access to corporate
+systems, regardless of whether they process customer data. SMS-based MFA is
+not permitted; only TOTP, WebAuthn, or hardware security keys are
+acceptable.
+
+4.4 Privileged access (root, sudo, administrator) to production systems must
+be brokered through a just-in-time access tool. Standing privileged access
+is prohibited.
+
+Section 5. Data Retention
+
+5.1 Customer personal data must be deleted within 30 days of account closure,
+except where retention is required by law (e.g. tax records, which are
+retained for seven years).
+
+5.2 Backups containing personal data must be encrypted at rest using AES-256
+or stronger and stored in a region that complies with the customer's
+contractual data residency requirements.
+
+Section 6. Incident Response
+
+6.1 Security incidents involving suspected unauthorized access to customer
+data must be reported to the Security team within 30 minutes of detection
+and to affected customers within 72 hours of confirmation.
+
+6.2 A post-incident review must be conducted within 10 business days of
+incident closure. Findings and remediation owners are tracked in the
+incident management system.

@@ -7,57 +7,30 @@ from typing import Optional
 
 import click
 
+from compliance_agent.diff import compute_diff
 from compliance_agent.extractor import read_document
 from compliance_agent.mock import mock_extract, mock_verify
+from compliance_agent.models import ExtractionResult
+from compliance_agent.report import render_diff_markdown, render_extraction_markdown
 
 
-@click.command()
-@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option(
-    "--framework",
-    "framework_hint",
-    default=None,
-    help="Optional framework hint (e.g. 'SOC 2', 'GDPR', 'HIPAA').",
-)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(dir_okay=False, path_type=Path),
-    default=None,
-    help="Write JSON to this path instead of stdout.",
-)
-@click.option(
-    "--model",
-    default="claude-opus-4-7",
-    show_default=True,
-    help="Claude model ID (only used with --live).",
-)
-@click.option(
-    "--verify",
-    is_flag=True,
-    default=False,
-    help="Run a second-pass verifier that grades each extracted requirement against the source.",
-)
-@click.option(
-    "--live",
-    is_flag=True,
-    default=False,
-    help="Call the Anthropic API. Requires ANTHROPIC_API_KEY. Default is mock mode (stub output, no API call).",
-)
-def main(
+@click.group()
+def main() -> None:
+    """Compliance AI Agent — extract, verify, diff, and render policy requirements."""
+
+
+def _run_extraction(
     source: Path,
-    framework_hint: Optional[str],
-    output: Optional[Path],
-    model: str,
-    verify: bool,
+    *,
     live: bool,
-) -> None:
-    """Extract structured compliance requirements from a policy or regulation document."""
+    model: str,
+    framework_hint: Optional[str],
+    verify: bool,
+) -> tuple[ExtractionResult, Optional[object]]:
     source_text = read_document(source)
 
     if live:
         from compliance_agent.extractor import ComplianceExtractor
-        from compliance_agent.verifier import ComplianceVerifier
 
         click.echo(f"Extracting requirements from {source} (live, {model})...", err=True)
         extraction = ComplianceExtractor(model=model).extract(source_text, framework_hint=framework_hint)
@@ -67,10 +40,11 @@ def main(
 
     click.echo(f"  → {len(extraction.requirements)} requirements extracted.", err=True)
 
-    payload: dict = {"extraction": extraction.model_dump(mode="json")}
-
+    verification = None
     if verify:
         if live:
+            from compliance_agent.verifier import ComplianceVerifier
+
             click.echo("Verifying extraction against source (live)...", err=True)
             verification = ComplianceVerifier(model=model).verify(source_text, extraction)
         else:
@@ -85,14 +59,128 @@ def main(
             f"missed={len(verification.missed_requirements)}",
             err=True,
         )
-        payload["verification"] = verification.model_dump(mode="json")
 
-    rendered = json.dumps(payload, indent=2)
+    return extraction, verification
+
+
+def _write_or_print(rendered: str, output: Optional[Path]) -> None:
     if output:
         output.write_text(rendered, encoding="utf-8")
         click.echo(f"Wrote results to {output}", err=True)
     else:
-        sys.stdout.write(rendered + "\n")
+        sys.stdout.write(rendered if rendered.endswith("\n") else rendered + "\n")
+
+
+@main.command()
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--framework", "framework_hint", default=None, help="Optional framework hint.")
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=None)
+@click.option("--model", default="claude-opus-4-7", show_default=True, help="Claude model (live only).")
+@click.option("--verify", is_flag=True, default=False, help="Run the verifier pass.")
+@click.option("--live", is_flag=True, default=False, help="Call Anthropic API; default is mock mode.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "markdown"]),
+    default="json",
+    show_default=True,
+)
+def extract(
+    source: Path,
+    framework_hint: Optional[str],
+    output: Optional[Path],
+    model: str,
+    verify: bool,
+    live: bool,
+    output_format: str,
+) -> None:
+    """Extract structured compliance requirements from a policy document."""
+    extraction, verification = _run_extraction(
+        source, live=live, model=model, framework_hint=framework_hint, verify=verify
+    )
+
+    if output_format == "markdown":
+        rendered = render_extraction_markdown(extraction, verification)
+    else:
+        payload: dict = {"extraction": extraction.model_dump(mode="json")}
+        if verification is not None:
+            payload["verification"] = verification.model_dump(mode="json")
+        rendered = json.dumps(payload, indent=2)
+
+    _write_or_print(rendered, output)
+
+
+@main.command()
+@click.argument("old_source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("new_source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--framework", "framework_hint", default=None, help="Optional framework hint.")
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=None)
+@click.option("--model", default="claude-opus-4-7", show_default=True, help="Claude model (live only).")
+@click.option("--live", is_flag=True, default=False, help="Call Anthropic API; default is mock mode.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "markdown"]),
+    default="markdown",
+    show_default=True,
+)
+def diff(
+    old_source: Path,
+    new_source: Path,
+    framework_hint: Optional[str],
+    output: Optional[Path],
+    model: str,
+    live: bool,
+    output_format: str,
+) -> None:
+    """Diff two policy versions — show added, removed, and changed requirements."""
+    old_extraction, _ = _run_extraction(
+        old_source, live=live, model=model, framework_hint=framework_hint, verify=False
+    )
+    new_extraction, _ = _run_extraction(
+        new_source, live=live, model=model, framework_hint=framework_hint, verify=False
+    )
+
+    diff_result = compute_diff(old_extraction, new_extraction)
+    click.echo(
+        f"  → added={len(diff_result.added)}  removed={len(diff_result.removed)}  "
+        f"changed={len(diff_result.changed)}",
+        err=True,
+    )
+
+    if output_format == "markdown":
+        rendered = render_diff_markdown(diff_result)
+    else:
+        rendered = json.dumps(diff_result.model_dump(mode="json"), indent=2)
+
+    _write_or_print(rendered, output)
+
+
+@main.command()
+@click.argument("input_json", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=None)
+def render(input_json: Path, output: Optional[Path]) -> None:
+    """Render an existing extraction JSON (from `extract -o out.json`) as Markdown."""
+    payload = json.loads(input_json.read_text(encoding="utf-8"))
+
+    if "extraction" in payload:
+        extraction = ExtractionResult.model_validate(payload["extraction"])
+        verification = None
+        if "verification" in payload:
+            from compliance_agent.models import VerificationResult
+
+            verification = VerificationResult.model_validate(payload["verification"])
+        rendered = render_extraction_markdown(extraction, verification)
+    elif "added" in payload and "removed" in payload and "changed" in payload:
+        from compliance_agent.diff import DiffResult
+
+        rendered = render_diff_markdown(DiffResult.model_validate(payload))
+    else:
+        raise click.ClickException(
+            f"Could not detect input shape in {input_json}. Expected an extraction or diff JSON."
+        )
+
+    _write_or_print(rendered, output)
 
 
 if __name__ == "__main__":

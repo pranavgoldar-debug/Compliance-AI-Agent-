@@ -26,6 +26,7 @@ from compliance_agent.verifier import check_quote_verbatim
 
 
 _ACME_MARKER = "ACME CORP"
+_ACME_V4_MARKER = "v4.0"
 
 
 def _acme_sample_requirements() -> list[ComplianceRequirement]:
@@ -135,20 +136,152 @@ def _acme_sample_requirements() -> list[ComplianceRequirement]:
     ]
 
 
+def _acme_v4_sample_requirements() -> list[ComplianceRequirement]:
+    """v4.0 variant — tighter rotation, expanded MFA scope, longer retention,
+    a new JIT privileged-access requirement, and a faster incident SLA. Useful
+    as a diff target against the v3.2 baseline."""
+    return [
+        ComplianceRequirement(
+            requirement_id="ACME-4.1",
+            title="Provision production access through the identity provider",
+            summary="All employee access to production systems must flow through Okta. Direct local accounts are forbidden except break-glass accounts, which must be vaulted and rotated within 12 hours of use.",
+            source_quote="All employee access to production systems must be provisioned through the\nidentity provider (Okta). Direct local accounts on production hosts are\nprohibited except for break-glass accounts, which must be stored in the\ncorporate password vault and rotated within 12 hours of any use.",
+            category="access_control",
+            severity=Severity.high,
+            applies_to=["production systems", "break-glass accounts"],
+            evidence_artifacts=[
+                "Okta provisioning logs",
+                "break-glass vault audit trail",
+                "rotation timestamps",
+            ],
+            section_reference="Section 4.1",
+        ),
+        ComplianceRequirement(
+            requirement_id="ACME-4.2",
+            title="Quarterly access reviews with seven-year retention",
+            summary="System owners must attest to each user's access at least once per calendar quarter. Review records must be retained for a minimum of seven years.",
+            source_quote="Access reviews must be conducted at least once per calendar quarter. The\nsystem owner is responsible for attesting to the appropriateness of each\nuser's access. Reviews must be retained for a minimum of seven years.",
+            category="access_control",
+            severity=Severity.medium,
+            applies_to=["system owners", "all users with system access"],
+            evidence_artifacts=[
+                "quarterly access review reports",
+                "owner attestation signatures",
+                "retention archive",
+            ],
+            section_reference="Section 4.2",
+        ),
+        ComplianceRequirement(
+            requirement_id="ACME-4.3",
+            title="Phishing-resistant MFA for all corporate systems",
+            summary="MFA is mandatory for all access to corporate systems, regardless of whether they process customer data. SMS factors are prohibited; only TOTP, WebAuthn, or hardware security keys are acceptable.",
+            source_quote="Multi-factor authentication is required for all access to corporate\nsystems, regardless of whether they process customer data. SMS-based MFA is\nnot permitted; only TOTP, WebAuthn, or hardware security keys are\nacceptable.",
+            category="access_control",
+            severity=Severity.critical,
+            applies_to=["all corporate systems"],
+            evidence_artifacts=[
+                "IdP MFA enforcement policy",
+                "MFA factor inventory excluding SMS",
+                "hardware key issuance log",
+            ],
+            section_reference="Section 4.3",
+        ),
+        ComplianceRequirement(
+            requirement_id="ACME-4.4",
+            title="Just-in-time privileged access; no standing privilege",
+            summary="Privileged access (root, sudo, administrator) to production systems must be brokered through a just-in-time access tool. Standing privileged access is prohibited.",
+            source_quote="Privileged access (root, sudo, administrator) to production systems must\nbe brokered through a just-in-time access tool. Standing privileged access\nis prohibited.",
+            category="access_control",
+            severity=Severity.critical,
+            applies_to=["privileged accounts on production systems"],
+            evidence_artifacts=[
+                "JIT access tool audit log",
+                "standing-privilege exception register",
+            ],
+            section_reference="Section 4.4",
+        ),
+        ComplianceRequirement(
+            requirement_id="ACME-5.1",
+            title="30-day customer data deletion after account closure",
+            summary="Customer personal data must be deleted within 30 days of account closure. Legally required retention (e.g. tax records — 7 years) is exempt.",
+            source_quote="Customer personal data must be deleted within 30 days of account closure,\nexcept where retention is required by law (e.g. tax records, which are\nretained for seven years).",
+            category="data_retention",
+            severity=Severity.high,
+            applies_to=["customer personal data"],
+            evidence_artifacts=[
+                "deletion job logs",
+                "account-closure-to-deletion timing report",
+                "legal hold register",
+            ],
+            section_reference="Section 5.1",
+        ),
+        ComplianceRequirement(
+            requirement_id="ACME-5.2",
+            title="AES-256 backup encryption with contractual data residency",
+            summary="Backups containing personal data must be encrypted at rest with AES-256 or stronger and stored in regions matching customer contractual data residency requirements.",
+            source_quote="Backups containing personal data must be encrypted at rest using AES-256\nor stronger and stored in a region that complies with the customer's\ncontractual data residency requirements.",
+            category="encryption",
+            severity=Severity.critical,
+            applies_to=["backups containing personal data"],
+            evidence_artifacts=[
+                "KMS key configuration",
+                "backup region inventory",
+                "customer residency contract clauses",
+            ],
+            section_reference="Section 5.2",
+        ),
+        ComplianceRequirement(
+            requirement_id="ACME-6.1",
+            title="30-minute internal / 72-hour customer incident notification",
+            summary="Suspected unauthorized access to customer data must be reported to the Security team within 30 minutes of detection and to affected customers within 72 hours of confirmation.",
+            source_quote="Security incidents involving suspected unauthorized access to customer\ndata must be reported to the Security team within 30 minutes of detection\nand to affected customers within 72 hours of confirmation.",
+            category="incident_response",
+            severity=Severity.critical,
+            applies_to=["security team", "affected customers"],
+            evidence_artifacts=[
+                "incident ticket timestamps",
+                "customer notification log",
+            ],
+            section_reference="Section 6.1",
+        ),
+        ComplianceRequirement(
+            requirement_id="ACME-6.2",
+            title="Post-incident review within 10 business days",
+            summary="Every incident requires a post-incident review within 10 business days of closure, with findings and remediation owners tracked in the incident management system.",
+            source_quote="A post-incident review must be conducted within 10 business days of\nincident closure. Findings and remediation owners are tracked in the\nincident management system.",
+            category="incident_response",
+            severity=Severity.medium,
+            applies_to=["incident response team"],
+            evidence_artifacts=[
+                "post-incident review documents",
+                "remediation tracking entries",
+            ],
+            section_reference="Section 6.2",
+        ),
+    ]
+
+
 def mock_extract(document_text: str, *, framework_hint: str | None = None) -> ExtractionResult:
     """Return a stub extraction.
 
-    When the input is the bundled ACME sample policy, returns 7 realistic
-    requirements covering access control, retention, encryption, and incident
-    response. For any other input, returns a generic 2-item stub so downstream
-    code paths still exercise correctly.
+    Recognizes two bundled ACME variants (v3.2 baseline, v4.0 tightened) and
+    returns curated requirements for each so the `diff` command has a
+    meaningful demo. Any other input gets a generic 2-item stub.
     """
+    if _ACME_MARKER in document_text and _ACME_V4_MARKER in document_text:
+        return ExtractionResult(
+            document_title="ACME Corp — Information Security Policy (v4.0)",
+            framework=framework_hint or "Internal Policy",
+            requirements=_acme_v4_sample_requirements(),
+            extraction_notes="MOCK MODE — returned curated requirements for the bundled ACME v4.0 sample. Run with --live for real extraction.",
+        )
+
     if _ACME_MARKER in document_text:
         return ExtractionResult(
             document_title="ACME Corp — Information Security Policy (v3.2)",
             framework=framework_hint or "Internal Policy",
             requirements=_acme_sample_requirements(),
-            extraction_notes="MOCK MODE — returned curated requirements for the bundled ACME sample. Run with --live for real extraction.",
+            extraction_notes="MOCK MODE — returned curated requirements for the bundled ACME v3.2 sample. Run with --live for real extraction.",
         )
 
     preview = document_text.strip().splitlines()[0] if document_text.strip() else "Untitled"
