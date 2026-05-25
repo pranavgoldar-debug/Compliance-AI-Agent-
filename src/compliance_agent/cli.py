@@ -7,6 +7,16 @@ from typing import Optional
 
 import click
 
+# Auto-load .env from the current working directory (and parents) if present.
+# This is a convenience for local dev; the .env file is git-ignored, so it
+# never travels with the code. In production, set env vars via your platform.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 from compliance_agent.diff import compute_diff
 from compliance_agent.extractor import read_document
 from compliance_agent.mock import mock_extract, mock_verify
