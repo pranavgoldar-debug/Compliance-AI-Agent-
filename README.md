@@ -12,9 +12,19 @@ pip install -e .
 
 Mock mode runs without an API key. Pass `--live` (and set `ANTHROPIC_API_KEY`) to call Claude.
 
+## Web UI
+
+```bash
+compliance-agent serve
+```
+
+Open `http://127.0.0.1:8000`. Pick a country → pick a regulation → see requirements grouped by category, with severity badges and verification findings.
+
+Bundled regulations: **India** (DPDP Act 2023), **European Union** (GDPR), **United States** (HIPAA). All run on curated mock extractions by default — pass `--live` (with `ANTHROPIC_API_KEY`) to re-extract with Claude.
+
 ## CLI
 
-Three subcommands: `extract`, `diff`, `render`.
+Four subcommands: `extract`, `diff`, `render`, `serve`.
 
 ```bash
 # Extract requirements

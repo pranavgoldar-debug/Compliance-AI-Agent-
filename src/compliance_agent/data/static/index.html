@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Compliance AI Agent</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🛡️</span>
+      <h1>Compliance AI Agent</h1>
+    </div>
+    <span class="mode-badge" id="mode-badge">Mock mode</span>
+  </header>
+
+  <main>
+    <section class="picker">
+      <label for="country-select">Country / Region</label>
+      <select id="country-select">
+        <option value="">— select a country —</option>
+      </select>
+
+      <label for="regulation-select" id="regulation-label" hidden>Regulation</label>
+      <select id="regulation-select" hidden>
+        <option value="">— select a regulation —</option>
+      </select>
+    </section>
+
+    <section id="empty-state" class="empty-state">
+      <p>Choose a country to see the regulations it covers, then pick a regulation to view its compliance requirements.</p>
+      <p class="hint">Bundled samples: <strong>India</strong> (DPDP Act 2023), <strong>European Union</strong> (GDPR), <strong>United States</strong> (HIPAA).</p>
+    </section>
+
+    <section id="loading" class="loading" hidden>Loading requirements…</section>
+    <section id="error" class="error" hidden></section>
+
+    <section id="result" hidden>
+      <header class="result-header">
+        <div>
+          <h2 id="regulation-name"></h2>
+          <p class="scope" id="regulation-scope"></p>
+        </div>
+        <div class="counts" id="counts"></div>
+      </header>
+
+      <section class="verification" id="verification" hidden></section>
+
+      <section id="categories"></section>
+    </section>
+  </main>
+
+  <footer>
+    Built with FastAPI + vanilla JS. Default extraction is curated mock data —
+    set <code>COMPLIANCE_AGENT_LIVE=1</code> and <code>ANTHROPIC_API_KEY</code> to switch to live Claude extraction.
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

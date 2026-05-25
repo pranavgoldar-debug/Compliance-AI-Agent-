@@ -183,5 +183,26 @@ def render(input_json: Path, output: Optional[Path]) -> None:
     _write_or_print(rendered, output)
 
 
+@main.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True, type=int)
+@click.option("--live", is_flag=True, default=False, help="Use live Claude extraction (requires ANTHROPIC_API_KEY).")
+@click.option("--reload", is_flag=True, default=False, help="Auto-reload on code changes (dev).")
+def serve(host: str, port: int, live: bool, reload: bool) -> None:
+    """Launch the country-picker web UI on http://HOST:PORT."""
+    import os
+    import uvicorn
+
+    if live:
+        os.environ["COMPLIANCE_AGENT_LIVE"] = "1"
+        click.echo("Live mode — requests will call Anthropic API.", err=True)
+    else:
+        os.environ.pop("COMPLIANCE_AGENT_LIVE", None)
+        click.echo("Mock mode — no API key required.", err=True)
+
+    click.echo(f"Serving on http://{host}:{port}", err=True)
+    uvicorn.run("compliance_agent.web:app", host=host, port=port, reload=reload)
+
+
 if __name__ == "__main__":
     main()
