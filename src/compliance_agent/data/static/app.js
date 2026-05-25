@@ -260,7 +260,16 @@ regulationSelect.addEventListener("change", async () => {
   setVisibility(extractorLoading, true);
   try {
     const r = await fetch(`/api/regulations/${encodeURIComponent(regId)}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+      let detail = `HTTP ${r.status}`;
+      try {
+        const body = await r.json();
+        if (body && body.detail) detail += ` — ${body.detail}`;
+      } catch (_) {
+        try { detail += ` — ${await r.text()}`; } catch (_) { /* ignore */ }
+      }
+      throw new Error(detail);
+    }
     const data = await r.json();
     renderExtractor(data);
     setVisibility(extractorLoading, false);
