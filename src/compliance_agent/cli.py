@@ -188,9 +188,14 @@ def render(input_json: Path, output: Optional[Path]) -> None:
 @click.option("--port", default=8000, show_default=True, type=int)
 @click.option("--live", is_flag=True, default=False, help="Use live Claude extraction (requires ANTHROPIC_API_KEY).")
 @click.option("--reload", is_flag=True, default=False, help="Auto-reload on code changes (dev).")
-def serve(host: str, port: int, live: bool, reload: bool) -> None:
+@click.option("--no-browser", is_flag=True, default=False, help="Do not auto-open the browser.")
+def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> None:
     """Launch the country-picker web UI on http://HOST:PORT."""
     import os
+    import threading
+    import time
+    import webbrowser
+
     import uvicorn
 
     if live:
@@ -200,7 +205,22 @@ def serve(host: str, port: int, live: bool, reload: bool) -> None:
         os.environ.pop("COMPLIANCE_AGENT_LIVE", None)
         click.echo("Mock mode — no API key required.", err=True)
 
-    click.echo(f"Serving on http://{host}:{port}", err=True)
+    # Resolve a browser-friendly host. 0.0.0.0 / :: are server-bind addresses,
+    # not browsable — point the browser at localhost in that case.
+    browser_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    url = f"http://{browser_host}:{port}"
+
+    if not no_browser:
+        def _open_browser() -> None:
+            time.sleep(1.2)  # let uvicorn finish binding before we open the tab
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+    click.echo(f"Serving on {url}", err=True)
     uvicorn.run("compliance_agent.web:app", host=host, port=port, reload=reload)
 
 

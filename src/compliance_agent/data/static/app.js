@@ -170,7 +170,7 @@ function renderRow(f) {
   const tr = document.createElement("tr");
   tr.innerHTML = `
     <td class="col-sno">${f.s_no}</td>
-    <td class="col-geo">${currentCountry.flag}</td>
+    <td class="col-geo"><span class="geo-flag">${currentCountry.flag}</span><span class="geo-name">${escapeHtml(currentCountry.country_name)}</span></td>
     <td class="col-cat"><span class="cat-pill ${catClass(f.category)}">${escapeHtml(f.category)}</span></td>
     <td class="col-area">${escapeHtml(f.area)}</td>
     <td class="col-form"><strong>${escapeHtml(f.form_name)}</strong></td>
