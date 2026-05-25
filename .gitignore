@@ -10,3 +10,11 @@ build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# CLI output artifacts (extract / diff / render results)
+/out.json
+/out.md
+/diff.md
+/diff.json
+/report.md
+/report.json
