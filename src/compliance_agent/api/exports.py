@@ -301,6 +301,7 @@ def export_rules(
     format: str = Query("csv"),
     status: Optional[RuleStatus] = Query(None),
     jurisdiction_code: Optional[str] = Query(None),
+    applicability: Optional[str] = Query(None),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
@@ -309,6 +310,8 @@ def export_rules(
         stmt = stmt.where(Rule.status == status)
     if jurisdiction_code:
         stmt = stmt.where(Rule.jurisdiction_code == jurisdiction_code)
+    if applicability:
+        stmt = stmt.where(Rule.applicability == applicability)
     rules = db.execute(stmt).scalars().all()
 
     headers = [

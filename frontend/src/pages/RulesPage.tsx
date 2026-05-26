@@ -36,22 +36,24 @@ import { PageHeader } from "@/components/PageHeader";
 import { AddRuleFromTextDialog } from "@/components/AddRuleFromTextDialog";
 import { fmtRelative, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Rule, RuleStatus } from "@/types/api";
+import type { Applicability, Rule, RuleStatus } from "@/types/api";
 
 export function RulesPage() {
   const [tab, setTab] = useState<RuleStatus>("production");
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
+  const [applicability, setApplicability] = useState<Applicability | "">("");
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const navigate = useNavigate();
 
   const { data: rules, isLoading } = useQuery({
-    queryKey: ["rules", tab, jurisdictionCode, category],
+    queryKey: ["rules", tab, jurisdictionCode, category, applicability],
     queryFn: () => {
       const params = new URLSearchParams({ status: tab });
       if (jurisdictionCode) params.set("jurisdiction_code", jurisdictionCode);
       if (category) params.set("category", category);
+      if (applicability) params.set("applicability", applicability);
       return api.get<Rule[]>(`/api/rules?${params.toString()}`);
     },
   });
@@ -95,6 +97,7 @@ export function RulesPage() {
               params={{
                 status: tab,
                 jurisdiction_code: jurisdictionCode || undefined,
+                applicability: applicability || undefined,
               }}
             />
             <Button variant="outline" disabled title="Coming later">
@@ -167,6 +170,33 @@ export function RulesPage() {
             </option>
           ))}
         </select>
+        <select
+          value={applicability}
+          onChange={(e) => setApplicability(e.target.value as Applicability | "")}
+          className={cn(
+            "h-10 rounded-lg border border-input bg-background px-3 text-sm",
+            applicability && "border-aspora-300 bg-aspora-50 text-aspora-800 font-medium",
+          )}
+          title="Filter by whether the filing is mandatory, conditional, or sector-specific"
+        >
+          <option value="">All applicability</option>
+          <option value="Mandatory">Mandatory only</option>
+          <option value="Conditional">Conditional only</option>
+          <option value="Sector-specific">Sector-specific only</option>
+        </select>
+        {(jurisdictionCode || category || applicability || q) && (
+          <button
+            onClick={() => {
+              setJurisdictionCode("");
+              setCategory("");
+              setApplicability("");
+              setQ("");
+            }}
+            className="text-xs text-aspora-700 hover:underline ml-1"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {isLoading ? (

@@ -11,6 +11,7 @@ from compliance_agent.api._helpers import log_activity, serialize_user
 from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleSnapshotOut, RuleUpdate
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Applicability,
     Entity,
     Rule,
     RuleSnapshot,
@@ -52,6 +53,7 @@ def list_rules(
     jurisdiction_code: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     status: Optional[RuleStatus] = Query(None),
+    applicability: Optional[Applicability] = Query(None),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ) -> list[RuleOut]:
@@ -62,6 +64,8 @@ def list_rules(
         stmt = stmt.where(Rule.category == category)
     if status:
         stmt = stmt.where(Rule.status == status)
+    if applicability:
+        stmt = stmt.where(Rule.applicability == applicability)
     stmt = stmt.order_by(Rule.jurisdiction_code, Rule.category, Rule.name)
     return [_serialize_rule(r) for r in db.execute(stmt).scalars().all()]
 
