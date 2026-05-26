@@ -53,6 +53,9 @@ export interface Rule {
   applicability: Applicability;
   applicability_note: string | null;
   status: RuleStatus;
+  source_url: string | null;
+  source_text: string | null;
+  source_changed_at: string | null;
   entity_ids: number[];
   created_at: string;
   updated_at: string;
@@ -213,4 +216,63 @@ export interface SystemInfo {
 export interface BulkUpdateResult {
   updated: number;
   skipped: number[];
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 — AI assist
+// ---------------------------------------------------------------------------
+export interface DocumentExtractionSuggestion {
+  filing_reference: string | null;
+  payment_amount: string | null;
+  payment_reference: string | null;
+  completed_at: string | null;
+  notes_suggestion: string | null;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface DocumentExtractionResult {
+  available: boolean;
+  excerpt: string | null;
+  suggestion: DocumentExtractionSuggestion | null;
+  error: string | null;
+}
+
+export interface SecondOpinion {
+  verdict: "approve" | "needs_more_info" | "reject";
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+  suggested_next_steps: string[];
+  risk_flags: string[];
+}
+
+export interface SecondOpinionResult {
+  available: boolean;
+  opinion: SecondOpinion | null;
+  error: string | null;
+}
+
+export interface RuleSourceCheckResult {
+  fetched_at: string;
+  http_status: number | null;
+  error: string | null;
+  changed: boolean;
+  is_first_snapshot: boolean;
+  content_length: number;
+  content_hash: string | null;
+  new_excerpt: string | null;
+  prev_excerpt: string | null;
+  diff_excerpt: string | null;
+  change_summary: string | null;
+}
+
+export interface RuleSnapshot {
+  id: number;
+  rule_id: number;
+  fetched_at: string;
+  fetched_by: UserBrief | null;
+  http_status: number | null;
+  content_length: number;
+  content_hash: string;
+  content_excerpt: string | null;
+  change_summary: string | null;
 }

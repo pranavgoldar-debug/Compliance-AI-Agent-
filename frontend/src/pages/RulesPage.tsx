@@ -12,10 +12,12 @@ import {
   CircleHelp,
   ExternalLink,
   FileText,
+  RefreshCw,
   Search,
   Sparkles,
   Upload,
 } from "lucide-react";
+import { RuleChangeCheckDialog } from "@/components/RuleChangeCheckDialog";
 import { api } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -210,10 +212,11 @@ export function RulesPage() {
 // Production table
 // ---------------------------------------------------------------------------
 function ProductionTable({ rules }: { rules: Rule[] }) {
+  const [checking, setChecking] = useState<Rule | null>(null);
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[1100px]">
+        <table className="w-full text-sm min-w-[1200px]">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
               <th className="px-3 py-2.5 text-left font-medium">Jurisdiction</th>
@@ -224,6 +227,8 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-right font-medium">Entities</th>
               <th className="px-3 py-2.5 text-left font-medium">Last update</th>
+              <th className="px-3 py-2.5 text-left font-medium">Source</th>
+              <th className="px-3 py-2.5 w-8" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -241,7 +246,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   <Badge variant="neutral">{r.category}</Badge>
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.frequency}</td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[260px] truncate">
+                <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[240px] truncate">
                   {r.due_date_rule}
                 </td>
                 <td className="px-3 py-2.5 text-right text-xs tabular-nums">
@@ -249,6 +254,27 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {fmtRelative(r.updated_at)}
+                </td>
+                <td className="px-3 py-2.5 text-xs">
+                  {r.source_changed_at ? (
+                    <Badge variant="alert" title={`Source changed ${fmtRelative(r.source_changed_at)}`}>
+                      Changed
+                    </Badge>
+                  ) : r.source_url ? (
+                    <span className="text-muted-foreground">tracked</span>
+                  ) : (
+                    <span className="text-muted-foreground italic">no URL</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setChecking(r)}
+                    title="Check the regulator page for changes"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -259,6 +285,13 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
         <div className="p-3 text-center text-xs text-muted-foreground border-t border-border">
           Showing first 200 of {rules.length}.
         </div>
+      )}
+      {checking && (
+        <RuleChangeCheckDialog
+          rule={checking}
+          open={!!checking}
+          onOpenChange={(v) => !v && setChecking(null)}
+        />
       )}
     </Card>
   );

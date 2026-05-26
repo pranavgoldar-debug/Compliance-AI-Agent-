@@ -44,6 +44,7 @@ import { DaysRemainingCounter } from "@/components/DaysRemainingCounter";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { DocumentList } from "@/components/DocumentList";
 import { MentionTextarea, renderCommentBody } from "@/components/MentionTextarea";
+import { SecondOpinionPanel } from "@/components/SecondOpinionPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { fmtDate, fmtRelative, userInitials, EFFORT_BANDS } from "@/lib/format";
@@ -327,10 +328,12 @@ function Body({
   onPatch: (p: Partial<Obligation>) => void;
   variant: "drawer" | "page";
 }) {
+  const showSecondOpinion = obligation.status === "pending_review";
   if (variant === "drawer") {
     return (
       <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
         <MainContent obligation={obligation} />
+        {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
         <Sidebar obligation={obligation} users={users} onPatch={onPatch} />
         <FilingFields obligation={obligation} onPatch={onPatch} />
         <CommentsSection obligationId={obligation.id} />
@@ -342,6 +345,7 @@ function Body({
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 p-6">
       <div className="space-y-6 min-w-0">
         <MainContent obligation={obligation} />
+        {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
         <FilingFields obligation={obligation} onPatch={onPatch} />
         <CommentsSection obligationId={obligation.id} />
         <ActivityFeed obligationId={obligation.id} />
