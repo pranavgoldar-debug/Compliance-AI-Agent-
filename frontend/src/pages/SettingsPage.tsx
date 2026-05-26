@@ -1,9 +1,10 @@
 // Settings — proper tabbed shell. Profile is available to every user; the
 // rest are admin-only (visible to non-admins with a Lock badge but read-only).
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
+  Copy,
   Lock,
   Mail,
   Slack,
@@ -16,6 +17,10 @@ import {
   CheckCheck,
   Building2,
   ListChecks,
+  Loader2,
+  Trash2,
+  Pencil,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -28,7 +33,15 @@ import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/contexts/AuthContext";
 import { JURISDICTIONS, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Entity, Rule, UserBrief } from "@/types/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { ApiError } from "@/lib/api";
+import type { Entity, Role, Rule, UserBrief, UserOut } from "@/types/api";
 
 
 type TabKey =
@@ -194,7 +207,100 @@ function ProfileTab({ user }: { user: UserBrief }) {
           </div>
         </CardContent>
       </Card>
+
+      <ChangePasswordCard />
     </div>
+  );
+}
+
+
+function ChangePasswordCard() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirmNext, setConfirmNext] = useState("");
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  const changeMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean }>("/api/auth/change-password", {
+        current_password: current,
+        new_password: next,
+      }),
+    onSuccess: () => {
+      setCurrent("");
+      setNext("");
+      setConfirmNext("");
+      setMessage({ tone: "ok", text: "Password updated." });
+    },
+    onError: (e) =>
+      setMessage({
+        tone: "err",
+        text: e instanceof ApiError ? e.message : String(e),
+      }),
+  });
+
+  function submit() {
+    setMessage(null);
+    if (next.length < 6) {
+      setMessage({ tone: "err", text: "Password must be at least 6 characters." });
+      return;
+    }
+    if (next !== confirmNext) {
+      setMessage({ tone: "err", text: "Confirm password doesn't match." });
+      return;
+    }
+    changeMutation.mutate();
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Change password
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
+          <Input
+            type="password"
+            placeholder="Current password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+          />
+          <Input
+            type="password"
+            placeholder="New password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+          />
+          <Input
+            type="password"
+            placeholder="Confirm new password"
+            value={confirmNext}
+            onChange={(e) => setConfirmNext(e.target.value)}
+          />
+        </div>
+        {message && (
+          <div
+            className={cn(
+              "rounded-lg px-3 py-2 text-sm",
+              message.tone === "ok"
+                ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border border-destructive/30 bg-destructive/5 text-destructive",
+            )}
+          >
+            {message.text}
+          </div>
+        )}
+        <div>
+          <Button
+            onClick={submit}
+            disabled={!current || !next || !confirmNext || changeMutation.isPending}
+          >
+            {changeMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Update password
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -246,12 +352,21 @@ function ToggleRow({
 
 
 // ---------------------------------------------------------------------------
-// Users & Roles
+// Users & Roles — admin CRUD
 // ---------------------------------------------------------------------------
 function UsersTab() {
+  const queryClient = useQueryClient();
+  const { user: me } = useAuth();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{
+    email: string;
+    password: string;
+  } | null>(null);
+  const [editing, setEditing] = useState<UserOut | null>(null);
+
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ["users"],
-    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    queryKey: ["users", "admin"],
+    queryFn: () => api.get<UserOut[]>("/api/users/admin"),
   });
 
   return (
@@ -261,10 +376,10 @@ function UsersTab() {
           <div>
             <div className="font-semibold">Workspace users</div>
             <div className="text-xs text-muted-foreground">
-              Real CRUD UI ships in Phase 5 — use `compliance-agent create-user` CLI in the meantime.
+              Admin creates with an initial password; the user changes it on first sign-in.
             </div>
           </div>
-          <Button disabled>
+          <Button onClick={() => setInviteOpen(true)}>
             <Plus className="h-3.5 w-3.5" />
             Invite user
           </Button>
@@ -282,13 +397,14 @@ function UsersTab() {
                 <th className="px-5 py-2.5 text-left font-medium">Name</th>
                 <th className="px-5 py-2.5 text-left font-medium">Email</th>
                 <th className="px-5 py-2.5 text-left font-medium">Role</th>
+                <th className="px-5 py-2.5 text-left font-medium">Last active</th>
                 <th className="px-5 py-2.5 text-left font-medium">Status</th>
                 <th className="px-5 py-2.5 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {users.map((u) => (
-                <tr key={u.id} className="hover:bg-secondary/30">
+                <tr key={u.id} className={cn("hover:bg-secondary/30", !u.is_active && "opacity-60")}>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
                       <Avatar className="h-7 w-7">
@@ -296,20 +412,38 @@ function UsersTab() {
                           {userInitials(u.full_name)}
                         </AvatarFallback>
                       </Avatar>
-                      <span>{u.full_name}</span>
+                      <span className="truncate">{u.full_name}</span>
+                      {u.id === me?.id && (
+                        <Badge variant="default" className="text-[10px]">
+                          you
+                        </Badge>
+                      )}
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-muted-foreground">{u.email}</td>
+                  <td className="px-5 py-3 text-muted-foreground truncate">{u.email}</td>
                   <td className="px-5 py-3">
                     <Badge variant={u.role === "admin" ? "default" : "neutral"} className="capitalize">
                       {u.role}
                     </Badge>
                   </td>
+                  <td className="px-5 py-3 text-xs text-muted-foreground">
+                    {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
+                  </td>
                   <td className="px-5 py-3">
-                    <Badge variant="completed">Active</Badge>
+                    {u.is_active ? (
+                      <Badge variant="completed">Active</Badge>
+                    ) : (
+                      <Badge variant="neutral">Inactive</Badge>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <Button variant="ghost" size="sm" disabled>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditing(u)}
+                      disabled={u.id === me?.id && !u.is_active}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
                       Edit
                     </Button>
                   </td>
@@ -319,7 +453,402 @@ function UsersTab() {
           </table>
         )}
       </CardContent>
+
+      <InviteUserDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        onCreated={(email, password) => {
+          setCreatedCredentials({ email, password });
+          queryClient.invalidateQueries({ queryKey: ["users"] });
+        }}
+      />
+      <CredentialsRevealedDialog
+        creds={createdCredentials}
+        onClose={() => setCreatedCredentials(null)}
+      />
+      <EditUserDialog
+        user={editing}
+        onClose={() => setEditing(null)}
+        meId={me?.id ?? null}
+      />
     </Card>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Invite (create) dialog — admin sets initial password.
+// ---------------------------------------------------------------------------
+function InviteUserDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreated: (email: string, password: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [role, setRole] = useState<Role>("employee");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function generatePassword() {
+    const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let out = "";
+    const buf = new Uint32Array(12);
+    crypto.getRandomValues(buf);
+    for (const n of buf) out += chars[n % chars.length];
+    setPassword(out);
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      api.post<UserOut>("/api/users/admin", {
+        email: email.trim().toLowerCase(),
+        full_name: fullName.trim(),
+        role,
+        password,
+      }),
+    onSuccess: (u) => {
+      onCreated(u.email, password);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setEmail("");
+      setFullName("");
+      setRole("employee");
+      setPassword("");
+      setError(null);
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) setError(null); onOpenChange(v); }}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Invite user</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Email</label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="finance.lead@aspora.com"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Full name</label>
+            <Input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Riya Mehta"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Role</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="employee">Employee</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Initial password</label>
+            <div className="flex gap-2">
+              <Input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                className="font-mono"
+              />
+              <Button variant="outline" type="button" onClick={generatePassword}>
+                Generate
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              You'll see this password once on the next screen — copy it before closing. The
+              user can change it from their Profile.
+            </p>
+          </div>
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => createMutation.mutate()}
+            disabled={
+              !email.trim() || !password || password.length < 6 || createMutation.isPending
+            }
+          >
+            {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Create user
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Show the freshly-created credentials once.
+// ---------------------------------------------------------------------------
+function CredentialsRevealedDialog({
+  creds,
+  onClose,
+}: {
+  creds: { email: string; password: string } | null;
+  onClose: () => void;
+}) {
+  if (!creds) return null;
+  return (
+    <Dialog open={!!creds} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>User created</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <p className="text-sm">
+            Share these credentials with{" "}
+            <span className="font-medium">{creds.email}</span>. You won't see them again.
+          </p>
+          <CredCopyRow label="Email" value={creds.email} />
+          <CredCopyRow label="Password" value={creds.password} mono />
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+function CredCopyRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          readOnly
+          className={mono ? "font-mono" : undefined}
+        />
+        <Button variant="outline" type="button" onClick={copy}>
+          {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Edit user dialog
+// ---------------------------------------------------------------------------
+function EditUserDialog({
+  user,
+  onClose,
+  meId,
+}: {
+  user: UserOut | null;
+  onClose: () => void;
+  meId: number | null;
+}) {
+  const queryClient = useQueryClient();
+  const [fullName, setFullName] = useState(user?.full_name ?? "");
+  const [role, setRole] = useState<Role>(user?.role ?? "employee");
+  const [newPassword, setNewPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+
+  // Reset state when the dialog opens with a new user.
+  useEffect(() => {
+    if (user) {
+      setFullName(user.full_name);
+      setRole(user.role);
+      setNewPassword("");
+      setError(null);
+      setConfirmDeactivate(false);
+    }
+  }, [user]);
+
+  const patchMutation = useMutation({
+    mutationFn: () => {
+      if (!user) throw new Error("No user");
+      const body: Record<string, unknown> = {};
+      if (fullName !== user.full_name) body.full_name = fullName;
+      if (role !== user.role) body.role = role;
+      if (newPassword) body.password = newPassword;
+      return api.patch<UserOut>(`/api/users/admin/${user.id}`, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClose();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: () => api.delete<void>(`/api/users/admin/${user!.id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClose();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: () => api.patch<UserOut>(`/api/users/admin/${user!.id}`, { is_active: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClose();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  if (!user) return null;
+  const isSelf = user.id === meId;
+
+  return (
+    <Dialog open={!!user} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Edit user — {user.email}</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Full name</label>
+            <Input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Role</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+              disabled={isSelf}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="employee">Employee</option>
+              <option value="admin">Admin</option>
+            </select>
+            {isSelf && (
+              <p className="text-[11px] text-muted-foreground">
+                You can't demote your own account.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Reset password</label>
+            <Input
+              type="text"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Leave blank to keep current"
+              className="font-mono"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          {!isSelf && (
+            <div className="pt-3 border-t border-border">
+              {user.is_active ? (
+                confirmDeactivate ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2">
+                    <div className="text-sm font-medium text-red-800">
+                      Deactivate {user.full_name}?
+                    </div>
+                    <div className="text-xs text-red-700/80">
+                      They lose access immediately. Obligations they own keep referencing them.
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmDeactivate(false)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="bg-red-600 hover:bg-red-700"
+                        onClick={() => deactivateMutation.mutate()}
+                        disabled={deactivateMutation.isPending}
+                      >
+                        {deactivateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        Yes, deactivate
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDeactivate(true)}
+                    className="text-red-700 border-red-200 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Deactivate user
+                  </Button>
+                )
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => reactivateMutation.mutate()}
+                  disabled={reactivateMutation.isPending}
+                >
+                  {reactivateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Reactivate
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => patchMutation.mutate()} disabled={patchMutation.isPending}>
+            {patchMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

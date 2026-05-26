@@ -52,4 +52,34 @@ export const api = {
   patch: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T,>(path: string) => request<T>(path, { method: "DELETE" }),
+  /**
+   * Multipart upload — bypasses the JSON Content-Type so the browser can
+   * set the proper multipart boundary itself.
+   */
+  upload: async <T,>(path: string, form: FormData): Promise<T> => {
+    const res = await fetch(path, {
+      credentials: "include",
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      let detail: unknown = undefined;
+      try {
+        detail = await res.json();
+      } catch {
+        try {
+          detail = await res.text();
+        } catch {
+          // ignore
+        }
+      }
+      const message =
+        typeof detail === "object" && detail && "detail" in detail
+          ? String((detail as { detail: unknown }).detail)
+          : res.statusText || `HTTP ${res.status}`;
+      throw new ApiError(res.status, message, detail);
+    }
+    if (res.status === 204) return undefined as T;
+    return res.json();
+  },
 };

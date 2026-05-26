@@ -11,11 +11,8 @@ import {
   Lock,
   MoreHorizontal,
   History,
-  ScrollText,
   UserCheck,
   KeyRound,
-  FolderOpen,
-  Upload,
   Plus,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -36,11 +33,12 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { EmptyState } from "@/components/EmptyState";
+import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Entity, Obligation } from "@/types/api";
+import type { ActivityOut, Entity, Obligation } from "@/types/api";
 
 
 function StatTile({
@@ -150,7 +148,7 @@ export function EntityDetailPage() {
         </TabsContent>
 
         <TabsContent value="documents">
-          <DocumentsTab />
+          <DocumentsTab entity={entity} />
         </TabsContent>
 
         <TabsContent value="people">
@@ -558,45 +556,19 @@ function ObligationsTab({
 
 
 // ---------------------------------------------------------------------------
-// Documents tab (Phase 5 stub)
+// Documents tab — wired to /api/documents via DocumentList.
 // ---------------------------------------------------------------------------
-function DocumentsTab() {
+function DocumentsTab({ entity }: { entity: Entity }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4">
-      <Card>
-        <CardContent className="p-3 space-y-1">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground px-2 py-1">
-            Folders
-          </div>
-          {["Formation", "Filings", "Contracts", "Expert notes", "Other"].map((f) => (
-            <button
-              key={f}
-              className="w-full text-left px-2 py-1.5 rounded-md hover:bg-secondary text-sm"
-              disabled
-            >
-              <FolderOpen className="h-3.5 w-3.5 inline mr-2 text-muted-foreground" />
-              {f}
-              <span className="text-[11px] text-muted-foreground ml-1">(0)</span>
-            </button>
-          ))}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-8">
-          <EmptyState
-            icon={<Upload className="h-6 w-6" />}
-            title="No documents yet"
-            description="Drag-and-drop PDFs here to attach them to this entity. Document storage ships in Phase 5."
-            action={
-              <Button variant="outline" disabled>
-                <Upload className="h-4 w-4" />
-                Upload — coming soon
-              </Button>
-            }
-          />
-        </CardContent>
-      </Card>
-    </div>
+    <Card>
+      <CardContent className="p-5">
+        <DocumentList
+          scope={{ kind: "entity", entityId: entity.id }}
+          title="All documents for this entity"
+          hint="Upload formation papers, prior filings, contracts, or expert notes. Max 25 MB per file."
+        />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -654,23 +626,69 @@ function KeyPersonsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }
 
 
 // ---------------------------------------------------------------------------
-// Activity / Audit log tab (Phase 5 stub)
+// Activity / Audit log tab — wired to /api/activities scoped to this entity.
 // ---------------------------------------------------------------------------
 function ActivityTab({ entity }: { entity: Entity }) {
+  const { data: activities = [], isLoading } = useQuery({
+    queryKey: ["activities", "entity", entity.id],
+    queryFn: () =>
+      api.get<ActivityOut[]>(`/api/activities?entity_id=${entity.id}&limit=100`),
+  });
+
   return (
     <Card>
-      <CardContent className="p-10">
-        <EmptyState
-          icon={<ScrollText className="h-6 w-6" />}
-          title="Audit log for this entity ships in Phase 5"
-          description={
-            <>
-              Every status change, assignment, document upload, and rule edit
-              touching {entity.name} will appear here as an immutable feed —
-              with before → after pills and a filter by actor and action type.
-            </>
-          }
-        />
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Activity log</h3>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {activities.length} event{activities.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+          </div>
+        ) : activities.length === 0 ? (
+          <EmptyState
+            icon={<History className="h-5 w-5" />}
+            title="No activity in the selected range"
+            description="Update an obligation or upload a document to see the audit trail here."
+          />
+        ) : (
+          <ul className="space-y-2">
+            {activities.map((a) => (
+              <li
+                key={a.id}
+                className="flex items-start gap-3 text-sm rounded-lg px-2 py-1.5 hover:bg-secondary/30"
+              >
+                <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                  <AvatarFallback className="text-[10px]">
+                    {userInitials(a.actor?.full_name || "—")}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <div className="leading-snug">
+                    <span className="font-medium">
+                      {a.actor?.full_name || "System"}
+                    </span>{" "}
+                    <span className="text-muted-foreground">{a.action.replace(/\./g, " ")}</span>
+                    {a.target_label && (
+                      <>
+                        <span className="text-muted-foreground"> · </span>
+                        <span className="font-medium">{a.target_label}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <span className="text-xs text-muted-foreground whitespace-nowrap mt-1">
+                  {fmtRelative(a.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );

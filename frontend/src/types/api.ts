@@ -127,3 +127,57 @@ export interface Comment {
   body: string;
   created_at: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5 — documents, activities, users
+// ---------------------------------------------------------------------------
+export type DocumentCategory =
+  | "Formation"
+  | "Filings"
+  | "Contracts"
+  | "Expert notes"
+  | "Other";
+
+export const DOCUMENT_CATEGORIES: DocumentCategory[] = [
+  "Formation",
+  "Filings",
+  "Contracts",
+  "Expert notes",
+  "Other",
+];
+
+export interface DocumentOut {
+  id: number;
+  entity_id: number;
+  entity_name: string | null;
+  obligation_id: number | null;
+  obligation_form_name: string | null;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number;
+  category: DocumentCategory;
+  tags: string | null;
+  uploaded_by: UserBrief | null;
+  created_at: string;
+}
+
+export interface ActivityOut {
+  id: number;
+  actor: UserBrief | null;
+  action: string;
+  target_type: string | null;
+  target_id: number | null;
+  target_label: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface UserOut {
+  id: number;
+  email: string;
+  full_name: string;
+  role: Role;
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}

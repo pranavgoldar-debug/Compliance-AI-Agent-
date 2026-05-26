@@ -10,7 +10,6 @@ import {
   Building2,
   CheckCircle2,
   ExternalLink,
-  FileText,
   Loader2,
   MessageCircle,
   MoreHorizontal,
@@ -22,8 +21,8 @@ import {
   Slack,
   Mail,
   ListChecks,
-  History,
   Tag,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,11 +42,13 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { DaysRemainingCounter } from "@/components/DaysRemainingCounter";
 import { AssigneeChip } from "@/components/AssigneeChip";
+import { DocumentList } from "@/components/DocumentList";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { fmtDate, fmtRelative, userInitials, EFFORT_BANDS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
+  ActivityOut,
   Comment as ApiComment,
   EffortBand,
   Obligation,
@@ -395,23 +396,19 @@ function MainContent({ obligation }: { obligation: Obligation }) {
         </section>
 
         <section>
-          <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Form template
+          <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            Filing documents
           </h3>
-          <div className="rounded-lg border border-dashed border-border bg-secondary/30 px-4 py-6 text-center text-sm text-muted-foreground">
-            <FileText className="h-5 w-5 mx-auto mb-1.5 opacity-60" />
-            Template uploads ship with Documents in Phase 5.
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Prior year filings
-          </h3>
-          <div className="rounded-lg border border-dashed border-border bg-secondary/30 px-4 py-6 text-center text-sm text-muted-foreground">
-            <History className="h-5 w-5 mx-auto mb-1.5 opacity-60" />
-            Prior submissions appear here once Documents ship.
-          </div>
+          <DocumentList
+            scope={{
+              kind: "obligation",
+              obligationId: obligation.id,
+              entityId: obligation.entity_id,
+            }}
+            hint="Attach proof-of-filing, receipts, or supporting docs. Max 25 MB per file."
+            layout="rows"
+          />
         </section>
 
         <section>
@@ -841,20 +838,108 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
 
 
 // ---------------------------------------------------------------------------
-// Activity feed (stub — wires to /api/activities/obligation/{id} in Phase 5)
+// Activity feed — chronological events for this obligation.
 // ---------------------------------------------------------------------------
-function ActivityFeed({ obligationId: _ }: { obligationId: number }) {
+function ActivityFeed({ obligationId }: { obligationId: number }) {
+  const { data: activities = [], isLoading } = useQuery({
+    queryKey: ["activities", "obligation", obligationId],
+    queryFn: () =>
+      api.get<ActivityOut[]>(
+        `/api/activities?obligation_id=${obligationId}&limit=50`,
+      ),
+  });
+
   return (
     <Card>
       <CardContent className="p-5 space-y-3">
         <h3 className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
           <ActivityIcon className="h-3.5 w-3.5" />
           Activity
+          <Badge variant="neutral">{activities.length}</Badge>
         </h3>
-        <div className="rounded-lg border border-dashed border-border bg-secondary/30 px-4 py-6 text-center text-sm text-muted-foreground">
-          The chronological audit log for this obligation ships in Phase 5.
-        </div>
+
+        {isLoading ? (
+          <div className="space-y-1.5">
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+          </div>
+        ) : activities.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-secondary/30 px-4 py-6 text-center text-sm text-muted-foreground">
+            No activity recorded yet for this obligation.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {activities.map((a) => (
+              <li
+                key={a.id}
+                className="flex items-start gap-2.5 text-sm rounded-lg px-2 py-1.5 hover:bg-secondary/30"
+              >
+                <Avatar className="h-6 w-6 shrink-0 mt-0.5">
+                  <AvatarFallback className="text-[10px]">
+                    {userInitials(a.actor?.full_name || "—")}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <div className="leading-snug">
+                    <span className="font-medium">
+                      {a.actor?.full_name?.split(" ")[0] || "System"}
+                    </span>{" "}
+                    <span className="text-muted-foreground">
+                      {humaniseAction(a.action)}
+                    </span>{" "}
+                    {a.payload && Object.keys(a.payload).length > 0 && (
+                      <PayloadPills payload={a.payload} />
+                    )}
+                  </div>
+                </div>
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap mt-1">
+                  {fmtRelative(a.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+
+function humaniseAction(action: string): string {
+  switch (action) {
+    case "obligation.updated":
+      return "updated this obligation";
+    case "comment.added":
+      return "added a comment";
+    case "document.uploaded":
+      return "attached a document";
+    case "document.updated":
+      return "renamed a document";
+    case "document.deleted":
+      return "deleted a document";
+    default:
+      return action;
+  }
+}
+
+
+function PayloadPills({ payload }: { payload: Record<string, unknown> }) {
+  // Show changed_fields when present (from obligation.updated), else short summary.
+  const fields = (payload.changed_fields ?? payload.fields) as string[] | undefined;
+  if (Array.isArray(fields) && fields.length > 0) {
+    return (
+      <>
+        {fields.slice(0, 4).map((f) => (
+          <Badge key={f} variant="neutral" className="ml-0.5">
+            {f}
+          </Badge>
+        ))}
+      </>
+    );
+  }
+  if (typeof payload.filename === "string") {
+    return <Badge variant="neutral">{payload.filename}</Badge>;
+  }
+  return null;
 }
