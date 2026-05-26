@@ -81,7 +81,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <img
               src="/static/brand/aspora-mark.svg"
               alt="Aspora"
-              className="h-9 w-9 rounded-md"
+              className="h-9 w-9"
             />
           ) : (
             <img src="/static/brand/aspora-wordmark.png" alt="Aspora" className="h-7" />
