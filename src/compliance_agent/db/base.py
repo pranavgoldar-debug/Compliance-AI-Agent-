@@ -76,9 +76,9 @@ def init_db() -> None:
 
 def _add_missing_columns() -> None:
     """Add any new columns declared on existing models that aren't yet in
-    the live DB. Idempotent. Works on SQLite and Postgres — both accept
-    ALTER TABLE ADD COLUMN. When we move to Alembic (next round) this will
-    be replaced by versioned migrations."""
+    the live DB, then run any one-shot data fix-ups. Idempotent. Works on
+    SQLite and Postgres — both accept ALTER TABLE ADD COLUMN. When we move
+    to Alembic (next round) this will be replaced by versioned migrations."""
     from sqlalchemy import inspect, text
 
     inspector = inspect(engine)
@@ -89,10 +89,13 @@ def _add_missing_columns() -> None:
     varchar = lambda n: f"VARCHAR({n})"
     datetime_type = "TIMESTAMP" if is_pg else "DATETIME"
 
+    # SQLAlchemy's SAEnum stores enum NAMES in the DB by default. EffortBand
+    # has names like `w4` and values like `4w` — different — so the DEFAULT
+    # here MUST be the name.
     table_additions: dict[str, list[tuple[str, str]]] = {
         # Phase 5: effort bands on obligations
         "obligations": [
-            ("effort_band", f"{varchar(8)} NOT NULL DEFAULT '4w'"),
+            ("effort_band", f"{varchar(8)} NOT NULL DEFAULT 'w4'"),
             ("effort_band_reason", text_type),
         ],
         # Phase 7: source provenance on rules
@@ -116,6 +119,27 @@ def _add_missing_columns() -> None:
                 guard = "IF NOT EXISTS " if is_pg else ""
                 conn.execute(
                     text(f"ALTER TABLE {table} ADD COLUMN {guard}{col_name} {col_def}")
+                )
+
+        # One-shot data fix: an earlier release shipped with DEFAULT '4w'
+        # (the enum VALUE), but SAEnum reads the NAME. Migrate legacy rows
+        # so SAEnum stops choking with `'4w' is not among the defined enum
+        # values`. Idempotent — re-runs are no-ops.
+        if "obligations" in tables:
+            band_value_to_name = {
+                "1w": "w1",
+                "2w": "w2",
+                "4w": "w4",
+                "8w": "w8",
+                "12w": "w12",
+            }
+            for bad, good in band_value_to_name.items():
+                conn.execute(
+                    text(
+                        "UPDATE obligations SET effort_band = :good "
+                        "WHERE effort_band = :bad"
+                    ),
+                    {"good": good, "bad": bad},
                 )
 
 
