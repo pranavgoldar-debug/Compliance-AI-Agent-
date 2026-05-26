@@ -2,7 +2,7 @@
 // multi-select filter bar, date-range picker (month / quarter / custom up to
 // 92 days), bulk actions, and a right-rail detail panel.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addDays,
   addMonths,
@@ -18,13 +18,15 @@ import {
   subMonths,
 } from "date-fns";
 import {
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Download,
   LayoutGrid,
   List,
+  Loader2,
   Search,
+  UserCheck,
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -33,6 +35,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -41,11 +51,14 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { EmptyState } from "@/components/EmptyState";
+import { ExportMenu } from "@/components/ExportMenu";
+import { InlineStatusMenu } from "@/components/InlineStatusMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { JURISDICTIONS, fmtDate } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
 import type {
+  BulkUpdateResult,
   CalendarObligation,
   Entity,
   ObligationStatus,
@@ -217,10 +230,17 @@ export function CalendarPage() {
                 List
               </button>
             </div>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
+            <ExportMenu
+              kind="obligations"
+              params={{
+                due_from: format(start, "yyyy-MM-dd"),
+                due_to: format(end, "yyyy-MM-dd"),
+                jurisdiction_code:
+                  filters.jurisdictions.length === 1 ? filters.jurisdictions[0] : undefined,
+                category:
+                  filters.categories.length === 1 ? filters.categories[0] : undefined,
+              }}
+            />
           </div>
         }
       />
@@ -885,7 +905,11 @@ function ListView({
                       <EffortBandBadge band={ob.effort_band} />
                     </td>
                     <td className="px-3 py-2.5">
-                      <StatusPill status={ob.status} isOverdue={ob.is_overdue} />
+                      <InlineStatusMenu
+                        obligationId={ob.id}
+                        status={ob.status}
+                        isOverdue={ob.is_overdue}
+                      />
                     </td>
                     <td className="px-3 py-2.5">
                       <AssigneeChip user={ob.assignee} size="sm" showName />
@@ -912,29 +936,114 @@ function ListView({
       </Card>
 
       {selected.size > 0 && (
-        <div className="sticky bottom-4 z-30 flex justify-center">
-          <div className="bg-foreground text-background rounded-full shadow-xl px-4 py-2 flex items-center gap-3 text-sm">
-            <span className="font-medium">{selected.size} selected</span>
-            <span className="opacity-30">|</span>
-            <button className="hover:underline" disabled>
-              Assign…
-            </button>
-            <button className="hover:underline" disabled>
-              Change status…
-            </button>
-            <button className="hover:underline" disabled>
-              Push to ClickUp
-            </button>
-            <button
-              onClick={() => setSelected(new Set())}
-              className="opacity-70 hover:opacity-100"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
+        <BulkActionBar selected={selected} onClear={() => setSelected(new Set())} />
       )}
     </>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Bulk action bar — wired to /api/obligations/bulk-update
+// ---------------------------------------------------------------------------
+function BulkActionBar({
+  selected,
+  onClear,
+}: {
+  selected: Set<number>;
+  onClear: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+  });
+
+  const mutation = useMutation({
+    mutationFn: (body: {
+      obligation_ids: number[];
+      status?: ObligationStatus;
+      assignee_id?: number | null;
+      clear_assignee?: boolean;
+    }) => api.post<BulkUpdateResult>("/api/obligations/bulk-update", body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-task-count"] });
+      onClear();
+    },
+  });
+
+  const ids = Array.from(selected);
+
+  function setStatus(status: ObligationStatus) {
+    mutation.mutate({ obligation_ids: ids, status });
+  }
+  function assignTo(userId: number | null) {
+    if (userId === null) {
+      mutation.mutate({ obligation_ids: ids, clear_assignee: true });
+    } else {
+      mutation.mutate({ obligation_ids: ids, assignee_id: userId });
+    }
+  }
+
+  return (
+    <div className="sticky bottom-4 z-30 flex justify-center">
+      <div className="bg-foreground text-background rounded-full shadow-xl px-4 py-2 flex items-center gap-3 text-sm">
+        <span className="font-medium">
+          {selected.size} selected
+          {mutation.isPending && <Loader2 className="inline-block h-3 w-3 ml-2 animate-spin" />}
+        </span>
+        <span className="opacity-30">|</span>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="hover:underline inline-flex items-center gap-1" disabled={mutation.isPending}>
+              <UserCheck className="h-3.5 w-3.5" />
+              Assign…
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuLabel>Assign all to…</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => assignTo(null)}>Unassigned</DropdownMenuItem>
+            {users.map((u) => (
+              <DropdownMenuItem key={u.id} onClick={() => assignTo(u.id)}>
+                {u.full_name || u.email}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="hover:underline inline-flex items-center gap-1" disabled={mutation.isPending}>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Change status…
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuLabel>Change all to…</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setStatus("not_started")}>Not started</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setStatus("in_progress")}>In progress</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setStatus("pending_review")}>Pending review</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setStatus("completed")}>Completed</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <button
+          onClick={onClear}
+          className="opacity-70 hover:opacity-100"
+          aria-label="Clear selection"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtRelative, userInitials, JURISDICTIONS } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
@@ -81,17 +82,25 @@ export function EntitiesPage() {
         title="Entities"
         description="Every Aspora legal entity, with active obligation counts and country leads."
         actions={
-          isAdmin ? (
-            <Button>
-              <Plus className="h-4 w-4" />
-              Add entity
-            </Button>
-          ) : (
-            <Button variant="outline" disabled title="Admin only">
-              <Lock className="h-3.5 w-3.5" />
-              Add entity
-            </Button>
-          )
+          <div className="flex items-center gap-2">
+            <ExportMenu
+              kind="entities"
+              params={{
+                jurisdiction_code: jurisdictions.length === 1 ? jurisdictions[0] : undefined,
+              }}
+            />
+            {isAdmin ? (
+              <Button>
+                <Plus className="h-4 w-4" />
+                Add entity
+              </Button>
+            ) : (
+              <Button variant="outline" disabled title="Admin only">
+                <Lock className="h-3.5 w-3.5" />
+                Add entity
+              </Button>
+            )}
+          </div>
         }
       />
 

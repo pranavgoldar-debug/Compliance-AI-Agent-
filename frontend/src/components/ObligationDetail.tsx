@@ -43,6 +43,7 @@ import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { DaysRemainingCounter } from "@/components/DaysRemainingCounter";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { DocumentList } from "@/components/DocumentList";
+import { MentionTextarea, renderCommentBody } from "@/components/MentionTextarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { fmtDate, fmtRelative, userInitials, EFFORT_BANDS } from "@/lib/format";
@@ -806,21 +807,26 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
                   </div>
                   <span className="text-muted-foreground">{fmtRelative(c.created_at)}</span>
                 </div>
-                <div className="mt-2 text-sm whitespace-pre-wrap">{c.body}</div>
+                <div className="mt-2 text-sm whitespace-pre-wrap">
+                  {renderCommentBody(c.body)}
+                </div>
               </li>
             ))}
           </ul>
         )}
 
         <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <textarea
+          <MentionTextarea
             rows={2}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add a comment…"
-            className="block w-full px-3 py-2 text-sm focus:outline-none resize-none border-0"
+            onChange={setDraft}
+            placeholder="Add a comment… type @ to mention a teammate"
+            className="border-0"
           />
-          <div className="flex justify-end px-2 py-2 border-t border-border bg-secondary/30">
+          <div className="flex justify-between items-center px-2 py-2 border-t border-border bg-secondary/30">
+            <span className="text-[11px] text-muted-foreground pl-2">
+              Mention with <kbd className="px-1 bg-background border border-border rounded">@</kbd>
+            </span>
             <Button size="sm" onClick={submit} disabled={!draft.trim() || postMutation.isPending}>
               {postMutation.isPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

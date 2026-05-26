@@ -1,7 +1,20 @@
 import { useEffect, useState } from "react";
-import { Bell, Search, LogOut, Settings as SettingsIcon, ChevronRight, BellRing, AlertCircle, AtSign } from "lucide-react";
+import {
+  Bell,
+  Search,
+  LogOut,
+  Settings as SettingsIcon,
+  ChevronRight,
+  BellRing,
+  AlertCircle,
+  AtSign,
+  UserCheck,
+  CheckCircle2,
+  Sparkles,
+  Beaker,
+} from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -16,11 +29,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { fmtRelative, userInitials } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
-import type { DashboardStats, Obligation } from "@/types/api";
+import type { NotificationOut, Obligation, SystemInfo } from "@/types/api";
 
 
 // ---------------------------------------------------------------------------
@@ -35,6 +49,7 @@ const ROUTE_LABELS: Record<string, string> = {
   documents: "Documents",
   "audit-log": "Audit Log",
   settings: "Settings",
+  obligations: "Obligation",
 };
 
 function useBreadcrumbs() {
@@ -48,8 +63,6 @@ function useBreadcrumbs() {
   segments.forEach((seg, idx) => {
     path += `/${seg}`;
     const isLast = idx === segments.length - 1;
-    // If the segment looks like an id (number) we keep the previous crumb
-    // label and skip; the page itself usually renders the resource name.
     const label = ROUTE_LABELS[seg] ?? (isLast && /^\d+$/.test(seg) ? null : seg);
     if (label) crumbs.push({ label, to: path });
   });
@@ -82,64 +95,105 @@ function Breadcrumbs() {
 
 
 // ---------------------------------------------------------------------------
-// Notifications
+// Mode badge — auto-flips to Live (Claude) when the server has the key set.
 // ---------------------------------------------------------------------------
-type NotifKind = "alert" | "overdue" | "mention";
-
-interface DerivedNotif {
-  id: string;
-  kind: NotifKind;
-  title: string;
-  body: string;
-  href: string;
-  whenIso: string;
-  obligationId?: number;
+function ModeBadge() {
+  const { data } = useQuery({
+    queryKey: ["system-info"],
+    queryFn: () => api.get<SystemInfo>("/api/system/info"),
+    staleTime: 5 * 60_000,
+  });
+  if (!data) return null;
+  const live = data.mode === "live";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={cn(
+            "hidden md:inline-flex items-center gap-1 px-2 h-7 rounded-md text-[11px] font-medium border",
+            live
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-slate-200 bg-slate-50 text-slate-600",
+          )}
+        >
+          {live ? <Sparkles className="h-3 w-3" /> : <Beaker className="h-3 w-3" />}
+          {live ? "Live (Claude)" : "Mock mode"}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        {live
+          ? "Ask Aspora + Add Rule from text use the real Claude API."
+          : "AI features run from curated mocks. Set COMPLIANCE_AGENT_LIVE=1 + ANTHROPIC_API_KEY to switch."}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
-function deriveNotifications(stats: DashboardStats | undefined): DerivedNotif[] {
-  if (!stats) return [];
-  const items: DerivedNotif[] = [];
-  for (const o of stats.open_tasks) {
-    if (o.is_overdue) {
-      items.push({
-        id: `overdue-${o.id}`,
-        kind: "overdue",
-        title: `${o.rule_form_name} is overdue`,
-        body: `${o.entity_name} · ${Math.abs(o.days_remaining)} day${Math.abs(o.days_remaining) === 1 ? "" : "s"} late`,
-        href: "/tasks",
-        whenIso: o.updated_at,
-        obligationId: o.id,
-      });
-    } else if (o.is_in_alert_window) {
-      items.push({
-        id: `alert-${o.id}`,
-        kind: "alert",
-        title: `${o.rule_form_name} entering alert window`,
-        body: `${o.entity_name} · ${o.days_remaining} day${o.days_remaining === 1 ? "" : "s"} to file`,
-        href: "/tasks",
-        whenIso: o.updated_at,
-        obligationId: o.id,
-      });
-    }
+
+// ---------------------------------------------------------------------------
+// Notifications panel — wired to /api/notifications
+// ---------------------------------------------------------------------------
+function iconFor(kind: NotificationOut["kind"]) {
+  switch (kind) {
+    case "overdue":
+      return { Icon: AlertCircle, classes: "bg-red-100 text-red-700" };
+    case "alert_window":
+      return { Icon: BellRing, classes: "bg-amber-100 text-amber-700" };
+    case "mention":
+      return { Icon: AtSign, classes: "bg-blue-100 text-blue-700" };
+    case "assigned":
+      return { Icon: UserCheck, classes: "bg-aspora-100 text-aspora-700" };
+    case "status_change":
+      return { Icon: CheckCircle2, classes: "bg-emerald-100 text-emerald-700" };
   }
-  // Cap so the panel doesn't explode.
-  return items.slice(0, 20);
 }
 
 
-function NotificationPanel({ stats }: { stats: DashboardStats | undefined }) {
+function NotificationPanel({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<"all" | "mentions" | "alerts">("all");
   const { openObligation } = useObligationDrawer();
-  const notifs = deriveNotifications(stats);
-  const visible = notifs.filter((n) =>
-    tab === "all" ? true : tab === "alerts" ? n.kind !== "mention" : n.kind === "mention",
-  );
+  const queryClient = useQueryClient();
+
+  const { data: notifications = [], isLoading } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => api.get<NotificationOut[]>("/api/notifications"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: (ids: number[]) => api.post("/api/notifications/read", { ids }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+  const markAllReadMutation = useMutation({
+    mutationFn: () => api.post("/api/notifications/read-all"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+
+  const visible = notifications.filter((n) => {
+    if (tab === "all") return true;
+    if (tab === "mentions") return n.kind === "mention";
+    return n.kind === "overdue" || n.kind === "alert_window" || n.kind === "status_change";
+  });
+
+  const unread = notifications.filter((n) => !n.read);
 
   return (
-    <div className="w-[380px] -m-2">
+    <div className="w-[400px] -m-2">
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-        <div className="font-semibold text-sm">Notifications</div>
-        <button className="text-xs text-aspora-700 hover:underline" disabled>
+        <div className="font-semibold text-sm flex items-center gap-1.5">
+          Notifications
+          {unread.length > 0 && (
+            <Badge variant="default" className="text-[10px]">
+              {unread.length} new
+            </Badge>
+          )}
+        </div>
+        <button
+          className="text-xs text-aspora-700 hover:underline disabled:opacity-50"
+          disabled={markAllReadMutation.isPending || unread.length === 0}
+          onClick={() => markAllReadMutation.mutate()}
+        >
           Mark all as read
         </button>
       </div>
@@ -150,55 +204,66 @@ function NotificationPanel({ stats }: { stats: DashboardStats | undefined }) {
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
         </TabsList>
       </Tabs>
-      <div className="max-h-[420px] overflow-y-auto scrollbar-thin border-t border-border">
-        {visible.length === 0 ? (
+      <div className="max-h-[460px] overflow-y-auto scrollbar-thin border-t border-border">
+        {isLoading ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">Loading…</div>
+        ) : visible.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">
             {tab === "mentions"
               ? "No one's mentioned you yet. Quiet."
-              : "No notifications. Inbox zero."}
+              : tab === "alerts"
+                ? "No alerts. Smooth sailing."
+                : "Inbox zero."}
           </div>
         ) : (
           <ul className="divide-y divide-border">
-            {visible.map((n) => (
-              <li key={n.id}>
-                <button
-                  type="button"
-                  className="w-full text-left px-4 py-3 hover:bg-secondary/50 flex items-start gap-3"
-                  onClick={() => {
-                    if (n.obligationId) openObligation(n.obligationId);
-                  }}
-                >
-                  <span
+            {visible.map((n) => {
+              const { Icon, classes } = iconFor(n.kind);
+              return (
+                <li key={`${n.kind}-${n.id ?? n.obligation_id}-${n.created_at}`}>
+                  <button
+                    type="button"
                     className={cn(
-                      "mt-0.5 h-7 w-7 grid place-items-center rounded-full shrink-0",
-                      n.kind === "overdue" && "bg-red-100 text-red-700",
-                      n.kind === "alert" && "bg-amber-100 text-amber-700",
-                      n.kind === "mention" && "bg-blue-100 text-blue-700",
+                      "w-full text-left px-4 py-3 hover:bg-secondary/50 flex items-start gap-3",
+                      !n.read && "bg-aspora-50/30",
                     )}
+                    onClick={() => {
+                      if (n.id) markReadMutation.mutate([n.id]);
+                      if (n.obligation_id) {
+                        openObligation(n.obligation_id);
+                        onClose();
+                      }
+                    }}
                   >
-                    {n.kind === "overdue" ? (
-                      <AlertCircle className="h-4 w-4" />
-                    ) : n.kind === "alert" ? (
-                      <BellRing className="h-4 w-4" />
-                    ) : (
-                      <AtSign className="h-4 w-4" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{n.title}</div>
-                    <div className="text-xs text-muted-foreground truncate">{n.body}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {fmtRelative(n.whenIso)}
+                    <span
+                      className={cn(
+                        "mt-0.5 h-7 w-7 grid place-items-center rounded-full shrink-0",
+                        classes,
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{n.title}</div>
+                      {n.body && (
+                        <div className="text-xs text-muted-foreground line-clamp-2">{n.body}</div>
+                      )}
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {fmtRelative(n.created_at)}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              </li>
-            ))}
+                    {!n.read && (
+                      <span className="mt-2 h-2 w-2 rounded-full bg-aspora-600 shrink-0" />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
       <div className="px-4 py-2 border-t border-border text-center">
-        <Link to="/tasks" className="text-xs text-aspora-700 hover:underline">
+        <Link to="/tasks" className="text-xs text-aspora-700 hover:underline" onClick={onClose}>
           View all in Tasks →
         </Link>
       </div>
@@ -229,8 +294,6 @@ function GlobalSearch() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Light-touch search: load tasks+entities and filter client-side.
-  // Cheap because both lists are small (<2k rows) and already cached.
   const { data: obligations } = useQuery({
     queryKey: ["search-obligations"],
     queryFn: () => api.get<Obligation[]>("/api/tasks?scope=all"),
@@ -348,16 +411,19 @@ function GlobalSearch() {
 export function Topbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const { data: stats } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => api.get<DashboardStats>("/api/dashboard"),
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => api.get<NotificationOut[]>("/api/notifications"),
     enabled: !!user,
     staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
   if (!user) return null;
 
-  const unreadCount = (stats?.overdue ?? 0) + (stats?.in_alert_window ?? 0);
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <header className="h-14 border-b border-border bg-white flex items-center gap-4 px-6 sticky top-0 z-30">
@@ -367,8 +433,10 @@ export function Topbar() {
 
       <GlobalSearch />
 
-      <div className="flex items-center gap-1.5">
-        <Popover>
+      <div className="flex items-center gap-2">
+        <ModeBadge />
+
+        <Popover open={notifOpen} onOpenChange={setNotifOpen}>
           <PopoverTrigger asChild>
             <button
               className="relative p-2 rounded-md hover:bg-secondary text-muted-foreground"
@@ -383,7 +451,7 @@ export function Topbar() {
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="p-2 w-auto">
-            <NotificationPanel stats={stats} />
+            <NotificationPanel onClose={() => setNotifOpen(false)} />
           </PopoverContent>
         </Popover>
 
@@ -426,4 +494,3 @@ export function Topbar() {
     </header>
   );
 }
-

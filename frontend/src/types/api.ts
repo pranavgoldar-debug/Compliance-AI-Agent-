@@ -181,3 +181,36 @@ export interface UserOut {
   created_at: string;
   last_login_at: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 6 — notifications, bulk, system info
+// ---------------------------------------------------------------------------
+export type NotificationKind =
+  | "mention"
+  | "assigned"
+  | "overdue"
+  | "alert_window"
+  | "status_change";
+
+export interface NotificationOut {
+  id: number | null;
+  kind: NotificationKind;
+  title: string;
+  body: string | null;
+  link_url: string | null;
+  obligation_id: number | null;
+  actor: UserBrief | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface SystemInfo {
+  mode: "live" | "mock";
+  ai_available: boolean;
+  version: string;
+}
+
+export interface BulkUpdateResult {
+  updated: number;
+  skipped: number[];
+}

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { AddRuleFromTextDialog } from "@/components/AddRuleFromTextDialog";
 import { fmtRelative, JURISDICTIONS } from "@/lib/format";
@@ -83,7 +84,14 @@ export function RulesPage() {
         description="Templates that generate per-entity obligations. The most critical data asset in the product."
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" disabled title="Coming in Phase 5">
+            <ExportMenu
+              kind="rules"
+              params={{
+                status: tab,
+                jurisdiction_code: jurisdictionCode || undefined,
+              }}
+            />
+            <Button variant="outline" disabled title="Coming later">
               <Upload className="h-4 w-4" />
               Import template
             </Button>
