@@ -9,6 +9,7 @@ from compliance_agent.api.obligations import (
 from compliance_agent.api.rules import router as rules_router
 from compliance_agent.api.rules_ai import router as rules_ai_router
 from compliance_agent.api.tasks import router as tasks_router
+from compliance_agent.api.users import router as users_router
 
 __all__ = [
     "chat_router",
@@ -19,4 +20,5 @@ __all__ = [
     "rules_router",
     "rules_ai_router",
     "tasks_router",
+    "users_router",
 ]

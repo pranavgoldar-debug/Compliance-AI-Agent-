@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtShortDate, userInitials } from "@/lib/format";
+import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
+import { fmtShortDate } from "@/lib/format";
 import type { Obligation } from "@/types/api";
 
 type Scope = "assigned" | "watching" | "completed" | "all";
@@ -42,10 +41,12 @@ function groupTasks(tasks: Obligation[]) {
 }
 
 function TaskRow({ ob }: { ob: Obligation }) {
+  const { openObligation } = useObligationDrawer();
   return (
-    <Link
-      to={`/entities/${ob.entity_id}`}
-      className="grid grid-cols-[1.4fr_2fr_140px_140px_140px] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm"
+    <button
+      type="button"
+      onClick={() => openObligation(ob.id)}
+      className="w-full text-left grid grid-cols-[1.4fr_2fr_140px_140px_140px] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm"
     >
       <div className="flex items-center gap-2 min-w-0">
         <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
@@ -68,7 +69,7 @@ function TaskRow({ ob }: { ob: Obligation }) {
         showDays
       />
       <StatusPill status={ob.status} isOverdue={ob.is_overdue} />
-    </Link>
+    </button>
   );
 }
 

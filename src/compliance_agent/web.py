@@ -29,6 +29,7 @@ from compliance_agent.api import (
     rules_ai_router,
     rules_router,
     tasks_router,
+    users_router,
 )
 from compliance_agent.auth import auth_router
 from compliance_agent.catalog import CATALOG, Country, Regulation, get_regulation
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(obligations_router)
     app.include_router(calendar_router)
     app.include_router(tasks_router)
+    app.include_router(users_router)
     app.include_router(chat_router)  # Ask Aspora chat assistant
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))

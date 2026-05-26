@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { AskAspora } from "@/components/AskAspora";
+import { ObligationDrawer } from "@/components/ObligationDrawer";
 import { cn } from "@/lib/utils";
 
 export function AppShell() {
@@ -19,6 +20,7 @@ export function AppShell() {
           </div>
         </main>
       </div>
+      <ObligationDrawer />
       <AskAspora />
     </div>
   );

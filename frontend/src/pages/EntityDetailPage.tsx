@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
-import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
+import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
+import { fmtDate, fmtShortDate, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Entity, Obligation } from "@/types/api";
 
@@ -45,6 +46,7 @@ function StatTile({
 export function EntityDetailPage() {
   const { entityId } = useParams();
   const [tab, setTab] = useState("overview");
+  const { openObligation } = useObligationDrawer();
 
   const { data: entity, isLoading: loadingEntity } = useQuery({
     queryKey: ["entity", entityId],
@@ -232,9 +234,11 @@ export function EntityDetailPage() {
                   <div>Assignee</div>
                 </div>
                 {obligations.slice(0, 100).map((ob) => (
-                  <div
+                  <button
                     key={ob.id}
-                    className="grid grid-cols-[2fr_1.5fr_1fr_120px_120px_120px] gap-3 px-4 py-3 items-center text-sm"
+                    type="button"
+                    onClick={() => openObligation(ob.id)}
+                    className="w-full text-left grid grid-cols-[2fr_1.5fr_1fr_120px_120px_120px] gap-3 px-4 py-3 items-center text-sm hover:bg-secondary/40 transition-colors"
                   >
                     <div>
                       <div className="font-medium truncate">{ob.rule_form_name}</div>
@@ -271,7 +275,7 @@ export function EntityDetailPage() {
                         <span className="text-xs text-muted-foreground italic">Unassigned</span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 ))}
                 {obligations.length > 100 && (
                   <div className="p-3 text-center text-xs text-muted-foreground">

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowUpRight, AlertCircle, BellRing, ShieldCheck, UserPlus } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,10 +86,12 @@ function AlertBanner({ overdue }: { overdue: number }) {
 }
 
 function ObligationRow({ ob, showAssignee = true }: { ob: Obligation; showAssignee?: boolean }) {
+  const { openObligation } = useObligationDrawer();
   return (
-    <Link
-      to={`/entities/${ob.entity_id}`}
-      className="grid grid-cols-[1fr_2fr_120px_110px_110px_auto] gap-4 items-center px-4 py-3 hover:bg-secondary/50 transition-colors text-sm"
+    <button
+      type="button"
+      onClick={() => openObligation(ob.id)}
+      className="w-full text-left grid grid-cols-[1fr_2fr_120px_110px_110px_auto] gap-4 items-center px-4 py-3 hover:bg-secondary/50 transition-colors text-sm"
     >
       <div className="flex items-center gap-2 min-w-0">
         <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
@@ -118,7 +121,7 @@ function ObligationRow({ ob, showAssignee = true }: { ob: Obligation; showAssign
           )}
         </div>
       )}
-    </Link>
+    </button>
   );
 }
 
@@ -150,6 +153,7 @@ function SectionHeader({
 }
 
 function ThisWeekStrip({ items }: { items: Obligation[] }) {
+  const { openObligation } = useObligationDrawer();
   // Group obligations by date label.
   const byDay = new Map<string, Obligation[]>();
   for (const ob of items) {
@@ -176,16 +180,17 @@ function ThisWeekStrip({ items }: { items: Obligation[] }) {
           </div>
           <div className="space-y-2">
             {dayItems.slice(0, 4).map((ob) => (
-              <Link
+              <button
                 key={ob.id}
-                to={`/entities/${ob.entity_id}`}
-                className="block group"
+                type="button"
+                onClick={() => openObligation(ob.id)}
+                className="block w-full text-left group"
               >
                 <div className="text-sm font-medium truncate group-hover:text-aspora-700">
                   {ob.rule_form_name}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">{ob.entity_name}</div>
-              </Link>
+              </button>
             ))}
             {dayItems.length > 4 && (
               <div className="text-xs text-muted-foreground">+{dayItems.length - 4} more</div>

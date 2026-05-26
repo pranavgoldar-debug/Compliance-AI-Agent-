@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import {
   addMonths,
   endOfMonth,
@@ -8,7 +7,6 @@ import {
   format,
   isSameDay,
   isSameMonth,
-  parseISO,
   startOfMonth,
   startOfWeek,
   subMonths,
@@ -19,8 +17,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { JURISDICTIONS, fmtDate, jurisdiction } from "@/lib/format";
+import { JURISDICTIONS, fmtDate } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
+import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
 import type { CalendarObligation, ObligationStatus } from "@/types/api";
 
@@ -43,6 +42,7 @@ export function CalendarPage() {
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selected, setSelected] = useState<Date>(new Date());
+  const { openObligation } = useObligationDrawer();
 
   // Calendar grid range — fill out the surrounding weeks.
   const monthStart = startOfMonth(cursor);
@@ -243,15 +243,13 @@ export function CalendarPage() {
               </div>
             ) : (
               selectedItems.map((ob) => (
-                <Link
+                <button
                   key={ob.id}
-                  to={`/entities/${ob.entity_id}`}
-                  className="block px-4 py-3 hover:bg-secondary/40"
+                  type="button"
+                  onClick={() => openObligation(ob.id)}
+                  className="block w-full text-left px-4 py-3 hover:bg-secondary/40"
                 >
                   <div className="flex items-start gap-2">
-                    <span aria-hidden className="text-base leading-none mt-0.5">
-                      {jurisdiction(ob.entity_id ? "" : "").flag /* placeholder */}
-                    </span>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs text-muted-foreground truncate">
                         {ob.entity_name}
@@ -275,7 +273,7 @@ export function CalendarPage() {
                       </div>
                     </div>
                   </div>
-                </Link>
+                </button>
               ))
             )}
           </div>

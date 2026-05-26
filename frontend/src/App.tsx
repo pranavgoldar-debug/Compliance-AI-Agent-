@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ObligationDrawerProvider } from "@/contexts/ObligationDrawerContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/AppShell";
 import { LoginPage } from "@/pages/LoginPage";
@@ -26,6 +27,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <ObligationDrawerProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
 
@@ -61,6 +63,7 @@ export default function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ObligationDrawerProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
