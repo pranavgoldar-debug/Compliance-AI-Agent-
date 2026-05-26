@@ -86,6 +86,10 @@ DEMO_USERS = [
 # ---------------------------------------------------------------------------
 # Entities (demo data — editable from the UI later)
 # ---------------------------------------------------------------------------
+# Mirrors the Aspora Global Compliance Tracker — one entity per CSV
+# (UK / UAE / Canada / Lithuania) plus the two USA legal entities listed in
+# the USA tab. India / Singapore / EU are not in the tracker and are
+# intentionally absent.
 DEMO_ENTITIES = [
     {
         "name": "Aspora UK Ltd",
@@ -97,16 +101,6 @@ DEMO_ENTITIES = [
         "country_lead_email": "pranavgoldar.iitb@gmail.com",
     },
     {
-        "name": "Aspora US Inc",
-        "legal_type": "Delaware C-Corp",
-        "jurisdiction_code": "us",
-        "registration_number": "DE-78451293",
-        "incorporation_date": date(2019, 6, 12),
-        "fiscal_year_end": "31-Dec",
-        "country_lead_email": "pranav.goldar@aspora.com",
-    },
-    {
-        # From the Aspora Global Compliance Tracker — USA tab.
         "name": "Vance Inc",
         "legal_type": "C-Corporation",
         "jurisdiction_code": "us",
@@ -116,13 +110,13 @@ DEMO_ENTITIES = [
         "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
-        "name": "Aspora India Pvt Ltd",
-        "legal_type": "Private Limited",
-        "jurisdiction_code": "india",
-        "registration_number": "U72900KA2019PTC123456",
-        "incorporation_date": date(2019, 8, 22),
-        "fiscal_year_end": "31-Mar",
-        "country_lead_email": "pranavgoldar@gmail.com",
+        "name": "Vance Money Services",
+        "legal_type": "Money Services Business",
+        "jurisdiction_code": "us",
+        "registration_number": "US-VMS-2022",
+        "incorporation_date": date(2022, 1, 1),
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
         "name": "Aspora DMCC",
@@ -130,15 +124,6 @@ DEMO_ENTITIES = [
         "jurisdiction_code": "uae",
         "registration_number": "DMCC-987654",
         "incorporation_date": date(2020, 5, 5),
-        "fiscal_year_end": "31-Dec",
-        "country_lead_email": "pranavgoldar.moodi@gmail.com",
-    },
-    {
-        "name": "Aspora Singapore Pte Ltd",
-        "legal_type": "Private Limited",
-        "jurisdiction_code": "singapore",
-        "registration_number": "202012345A",
-        "incorporation_date": date(2020, 11, 2),
         "fiscal_year_end": "31-Dec",
         "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
@@ -159,15 +144,6 @@ DEMO_ENTITIES = [
         "incorporation_date": date(2022, 1, 20),
         "fiscal_year_end": "31-Dec",
         "country_lead_email": "pranav.goldar@aspora.com",
-    },
-    {
-        "name": "Aspora SARL",
-        "legal_type": "Société à Responsabilité Limitée",
-        "jurisdiction_code": "eu",
-        "registration_number": "B-LUX-245678",
-        "incorporation_date": date(2022, 9, 8),
-        "fiscal_year_end": "31-Dec",
-        "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
 ]
 

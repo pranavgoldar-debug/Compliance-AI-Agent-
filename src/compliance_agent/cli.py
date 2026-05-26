@@ -315,6 +315,67 @@ def seed() -> None:
     click.echo("Done.", err=True)
 
 
+@main.command(name="prune-entities")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip the confirmation prompt.",
+)
+def prune_entities(yes: bool) -> None:
+    """Delete entities not present in seed.DEMO_ENTITIES.
+
+    Use this after pulling a seed change that removes entities (e.g. when
+    syncing to the Aspora Global Compliance Tracker) — `seed` itself is
+    additive only, so it won't remove rows that disappeared from the
+    canonical list. This command does.
+
+    Cascades:
+      rule_entities, documents, licenses → CASCADE on FK
+      obligations → no FK cascade, removed explicitly
+    """
+    from sqlalchemy import select
+
+    from compliance_agent.db import (
+        Entity,
+        Obligation,
+        init_db,
+        session_scope,
+    )
+    from compliance_agent.db.seed import DEMO_ENTITIES
+
+    init_db()
+    keep = {e["name"] for e in DEMO_ENTITIES}
+    with session_scope() as db:
+        all_entities = db.execute(select(Entity)).scalars().all()
+        stale = [e for e in all_entities if e.name not in keep]
+        if not stale:
+            click.echo("No stale entities — DB already matches DEMO_ENTITIES.", err=True)
+            return
+
+        click.echo("Will delete:", err=True)
+        for e in stale:
+            ob_count = db.execute(
+                select(Obligation).where(Obligation.entity_id == e.id)
+            ).scalars().all()
+            click.echo(
+                f"  - {e.name} ({e.jurisdiction_code}) — {len(ob_count)} obligations",
+                err=True,
+            )
+
+        if not yes and not click.confirm("Proceed?", default=False):
+            click.echo("Aborted.", err=True)
+            return
+
+        for e in stale:
+            # Remove obligations first (no FK cascade on entity_id).
+            db.execute(
+                Obligation.__table__.delete().where(Obligation.entity_id == e.id)
+            )
+            db.delete(e)
+        click.echo(f"Pruned {len(stale)} entity/entities.", err=True)
+
+
 @main.command(name="create-user")
 @click.option("--email", required=True)
 @click.option("--password", required=True, prompt=True, hide_input=True, confirmation_prompt=False)
