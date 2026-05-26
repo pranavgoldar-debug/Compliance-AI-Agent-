@@ -312,6 +312,23 @@ def seed() -> None:
     click.echo(f"  entities:             {counts['entities']}", err=True)
     click.echo(f"  rules:                {counts['rules']}", err=True)
     click.echo(f"  obligations created:  {counts['obligations_created']}", err=True)
+    click.echo(f"  source URLs filled:   {counts.get('source_urls_backfilled', 0)}", err=True)
+    click.echo("Done.", err=True)
+
+
+@main.command(name="backfill-source-urls")
+def backfill_source_urls_cmd() -> None:
+    """Populate rule.source_url for every rule the curated URL map covers.
+
+    Idempotent — never overwrites a URL an admin already set in the UI.
+    Use this after editing src/compliance_agent/fintech/source_urls.py on
+    a workspace that's already seeded.
+    """
+    from compliance_agent.db.seed import run_source_url_backfill_only
+
+    click.echo("Backfilling rule.source_url from curated map…", err=True)
+    touched = run_source_url_backfill_only()
+    click.echo(f"  rules updated: {touched}", err=True)
     click.echo("Done.", err=True)
 
 

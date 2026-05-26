@@ -390,6 +390,25 @@ def _backfill_effort_bands(db: Session) -> int:
     return touched
 
 
+def backfill_source_urls(db: Session) -> int:
+    """Fill rule.source_url from the curated map for any rule that doesn't
+    already have one. Idempotent — never overwrites a manually-set URL."""
+    from compliance_agent.fintech.source_urls import find_source_url
+
+    rows = db.execute(
+        select(Rule).where((Rule.source_url.is_(None)) | (Rule.source_url == ""))
+    ).scalars().all()
+    touched = 0
+    for r in rows:
+        url = find_source_url(r.jurisdiction_code, r.form_name)
+        if url:
+            r.source_url = url
+            touched += 1
+    if touched:
+        db.flush()
+    return touched
+
+
 def run_seed() -> dict[str, int]:
     """Idempotent seed. Returns counts of created objects."""
     from compliance_agent.db import init_db
@@ -401,13 +420,24 @@ def run_seed() -> dict[str, int]:
         rules = _ensure_rules(db, list(entities_map.values()))
         ob_count = _ensure_obligations(db, rules, users)
         backfilled = _backfill_effort_bands(db)
+        urls_filled = backfill_source_urls(db)
     return {
         "users": len(users),
         "entities": len(entities_map),
         "rules": len(rules),
         "obligations_created": ob_count,
         "effort_bands_backfilled": backfilled,
+        "source_urls_backfilled": urls_filled,
     }
+
+
+def run_source_url_backfill_only() -> int:
+    """CLI entry-point — backfill URLs on an existing DB without re-seeding."""
+    from compliance_agent.db import init_db
+
+    init_db()
+    with session_scope() as db:
+        return backfill_source_urls(db)
 
 
 if __name__ == "__main__":

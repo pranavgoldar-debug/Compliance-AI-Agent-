@@ -2,9 +2,10 @@
 // obligations. Two tabs: Production (flat table) and Staging (side-by-side
 // review cards with confidence indicators).
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
@@ -12,10 +13,13 @@ import {
   CircleHelp,
   ExternalLink,
   FileText,
+  Loader2,
+  Pencil,
   RefreshCw,
   Search,
   Sparkles,
   Upload,
+  X,
 } from "lucide-react";
 import { RuleChangeCheckDialog } from "@/components/RuleChangeCheckDialog";
 import { api } from "@/lib/api";
@@ -256,15 +260,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   {fmtRelative(r.updated_at)}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
-                  {r.source_changed_at ? (
-                    <Badge variant="alert" title={`Source changed ${fmtRelative(r.source_changed_at)}`}>
-                      Changed
-                    </Badge>
-                  ) : r.source_url ? (
-                    <span className="text-muted-foreground">tracked</span>
-                  ) : (
-                    <span className="text-muted-foreground italic">no URL</span>
-                  )}
+                  <SourceCell rule={r} />
                 </td>
                 <td className="px-3 py-2.5 text-right">
                   <Button
@@ -464,6 +460,111 @@ function ExtractedField({
           readOnly
         />
       )}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// SourceCell — inline editor for rule.source_url right in the table row.
+// ---------------------------------------------------------------------------
+function SourceCell({ rule }: { rule: Rule }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(rule.source_url ?? "");
+
+  const saveMutation = useMutation({
+    mutationFn: (next: string) =>
+      api.patch<Rule>(`/api/rules/${rule.id}`, { source_url: next || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      setEditing(false);
+    },
+  });
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5 min-w-[280px]">
+        <Input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="https://www.regulator.gov/…"
+          className="h-7 text-xs font-mono"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") saveMutation.mutate(draft.trim());
+            if (e.key === "Escape") {
+              setDraft(rule.source_url ?? "");
+              setEditing(false);
+            }
+          }}
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => saveMutation.mutate(draft.trim())}
+          disabled={saveMutation.isPending}
+          title="Save"
+        >
+          {saveMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Check className="h-3.5 w-3.5 text-emerald-600" />
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => {
+            setDraft(rule.source_url ?? "");
+            setEditing(false);
+          }}
+          title="Cancel"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group flex items-center gap-1.5 min-w-0">
+      {rule.source_changed_at ? (
+        <Badge
+          variant="alert"
+          title={`Source changed ${fmtRelative(rule.source_changed_at)}`}
+        >
+          Changed
+        </Badge>
+      ) : rule.source_url ? (
+        <a
+          href={rule.source_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-aspora-700 hover:underline truncate max-w-[200px]"
+          onClick={(e) => e.stopPropagation()}
+          title={rule.source_url}
+        >
+          <ExternalLink className="h-3 w-3 shrink-0" />
+          <span className="truncate">tracked</span>
+        </a>
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="text-muted-foreground italic hover:text-aspora-700 hover:underline"
+        >
+          Add URL
+        </button>
+      )}
+      <button
+        onClick={() => setEditing(true)}
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-secondary text-muted-foreground"
+        title="Edit source URL"
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
     </div>
   );
 }
