@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,9 +125,11 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <div className="text-xs text-muted-foreground">
-            Trouble signing in? Ask your Aspora admin to reset your password
-            via the <code className="bg-secondary px-1 py-0.5 rounded">compliance-agent create-user</code> CLI.
+          <div className="text-xs text-muted-foreground flex items-center justify-between">
+            <Link to="/forgot-password" className="text-aspora-700 hover:underline">
+              Forgot password?
+            </Link>
+            <span>Need access? Ask your Aspora admin.</span>
           </div>
         </div>
       </div>

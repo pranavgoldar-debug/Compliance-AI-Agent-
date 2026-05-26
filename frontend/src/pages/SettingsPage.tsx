@@ -50,6 +50,7 @@ type TabKey =
   | "integrations"
   | "jurisdictions"
   | "alerts"
+  | "retention"
   | "api";
 
 
@@ -59,6 +60,7 @@ const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.Compo
   { key: "integrations", label: "Integrations", adminOnly: true, icon: Slack },
   { key: "jurisdictions", label: "Jurisdictions", adminOnly: true, icon: Globe },
   { key: "alerts", label: "Alert policies", adminOnly: true, icon: ListChecks },
+  { key: "retention", label: "Audit retention", adminOnly: true, icon: Trash2 },
   { key: "api", label: "API & Webhooks", adminOnly: true, icon: Key },
 ];
 
@@ -107,6 +109,7 @@ export function SettingsPage() {
           {tab === "integrations" && isAdmin && <IntegrationsTab />}
           {tab === "jurisdictions" && isAdmin && <JurisdictionsTab />}
           {tab === "alerts" && isAdmin && <AlertPoliciesTab />}
+          {tab === "retention" && isAdmin && <RetentionTab />}
           {tab === "api" && isAdmin && <ApiTab />}
         </div>
       </div>
@@ -1099,6 +1102,153 @@ function ApiTab() {
           />
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Audit retention
+// ---------------------------------------------------------------------------
+interface RetentionStatus {
+  retention_days: number;
+  total_activities: number;
+  older_than_window: number;
+  oldest_at: string | null;
+}
+
+
+function RetentionTab() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["retention"],
+    queryFn: () => api.get<RetentionStatus>("/api/admin/retention"),
+  });
+
+  const purgeMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ deleted: number; retention_days: number }>("/api/admin/retention/purge"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["retention"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-log"] });
+    },
+  });
+
+  const [confirming, setConfirming] = useState(false);
+
+  if (isLoading || !data) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-sm text-muted-foreground">Loading…</CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        <div>
+          <h3 className="font-semibold">Audit log retention</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Activity rows older than the retention window can be purged. The window is set
+            via{" "}
+            <code className="font-mono text-[11px] bg-secondary/60 px-1.5 py-0.5 rounded">
+              COMPLIANCE_AUDIT_RETENTION_DAYS
+            </code>{" "}
+            (min 30, default 365).
+          </p>
+        </div>
+
+        <dl className="grid grid-cols-3 gap-3 text-sm">
+          <Stat label="Retention window" value={`${data.retention_days} days`} />
+          <Stat label="Total events" value={data.total_activities.toLocaleString()} />
+          <Stat
+            label="Older than window"
+            value={data.older_than_window.toLocaleString()}
+            tone={data.older_than_window > 0 ? "warn" : "neutral"}
+          />
+        </dl>
+
+        {data.oldest_at && (
+          <p className="text-xs text-muted-foreground">
+            Oldest event: {new Date(data.oldest_at).toLocaleString()}
+          </p>
+        )}
+
+        {purgeMutation.data && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            Purged {purgeMutation.data.deleted.toLocaleString()} events older than{" "}
+            {purgeMutation.data.retention_days} days.
+          </div>
+        )}
+
+        <div className="pt-3 border-t border-border">
+          {!confirming ? (
+            <Button
+              variant="outline"
+              onClick={() => setConfirming(true)}
+              disabled={data.older_than_window === 0}
+              className={data.older_than_window > 0 ? "text-red-700 border-red-200 hover:bg-red-50" : ""}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {data.older_than_window > 0
+                ? `Purge ${data.older_than_window.toLocaleString()} old events`
+                : "Nothing to purge"}
+            </Button>
+          ) : (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2">
+              <div className="text-sm font-medium text-red-800">
+                Permanently delete {data.older_than_window.toLocaleString()} events?
+              </div>
+              <div className="text-xs text-red-700/80">
+                This can't be undone. The purge itself will be logged.
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700"
+                  onClick={() => {
+                    purgeMutation.mutate();
+                    setConfirming(false);
+                  }}
+                  disabled={purgeMutation.isPending}
+                >
+                  {purgeMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Yes, purge
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function Stat({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "warn";
+}) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div
+        className={cn(
+          "text-xl font-semibold tabular-nums",
+          tone === "warn" ? "text-amber-700" : "text-foreground",
+        )}
+      >
+        {value}
+      </div>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-0.5">{label}</div>
     </div>
   );
 }
