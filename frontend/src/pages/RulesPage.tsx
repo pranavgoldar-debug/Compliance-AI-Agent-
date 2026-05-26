@@ -227,10 +227,10 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Form / Report</th>
               <th className="px-3 py-2.5 text-left font-medium">Authority</th>
               <th className="px-3 py-2.5 text-left font-medium">Category</th>
+              <th className="px-3 py-2.5 text-left font-medium">Applicability</th>
               <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-right font-medium">Entities</th>
-              <th className="px-3 py-2.5 text-left font-medium">Last update</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
               <th className="px-3 py-2.5 w-8" />
             </tr>
@@ -249,15 +249,15 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                 <td className="px-3 py-2.5">
                   <Badge variant="neutral">{r.category}</Badge>
                 </td>
+                <td className="px-3 py-2.5">
+                  <ApplicabilityBadge rule={r} />
+                </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.frequency}</td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[240px] truncate">
                   {r.due_date_rule}
                 </td>
                 <td className="px-3 py-2.5 text-right text-xs tabular-nums">
                   {r.entity_ids.length}
-                </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {fmtRelative(r.updated_at)}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
                   <SourceCell rule={r} />
@@ -566,5 +566,24 @@ function SourceCell({ rule }: { rule: Rule }) {
         <Pencil className="h-3 w-3" />
       </button>
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// ApplicabilityBadge — surfaces whether a rule is Mandatory, Conditional, or
+// Sector-specific, with the applicability_note as a tooltip when present.
+// ---------------------------------------------------------------------------
+function ApplicabilityBadge({ rule }: { rule: Rule }) {
+  const variant =
+    rule.applicability === "Mandatory"
+      ? ("overdue" as const)
+      : rule.applicability === "Conditional"
+        ? ("alert" as const)
+        : ("neutral" as const);
+  return (
+    <Badge variant={variant} title={rule.applicability_note ?? undefined}>
+      {rule.applicability}
+    </Badge>
   );
 }
