@@ -290,6 +290,14 @@ class DocumentCategory(str, enum.Enum):
     other = "Other"
 
 
+class NotificationKind(str, enum.Enum):
+    mention = "mention"
+    assigned = "assigned"
+    overdue = "overdue"           # derived on read; not persisted
+    alert_window = "alert_window" # derived on read; not persisted
+    status_change = "status_change"
+
+
 class Document(Base):
     """A file uploaded to the system. Always attached to one entity; optionally
     to a specific obligation as proof-of-filing."""
@@ -325,3 +333,46 @@ class Document(Base):
     entity: Mapped[Entity] = relationship("Entity")
     obligation: Mapped[Optional[Obligation]] = relationship("Obligation")
     uploaded_by: Mapped[Optional[User]] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Notifications — in-app inbox (Phase 6)
+# ---------------------------------------------------------------------------
+class Notification(Base):
+    """An item in a user's notification inbox.
+
+    Persisted kinds (mention / assigned / status_change) live in this table.
+    Live-derived kinds (overdue / alert_window) are computed on read from
+    the user's open obligations and never stored.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[NotificationKind] = mapped_column(
+        SAEnum(NotificationKind), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Where the notification deep-links (e.g. /obligations/123).
+    link_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    obligation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("obligations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    comment_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("comments.id", ondelete="SET NULL"), nullable=True
+    )
+    actor_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), index=True
+    )
+
+    actor: Mapped[Optional[User]] = relationship("User", foreign_keys=[actor_id])
+    obligation: Mapped[Optional[Obligation]] = relationship("Obligation")

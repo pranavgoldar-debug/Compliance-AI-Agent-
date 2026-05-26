@@ -8,12 +8,15 @@ from compliance_agent.api.documents import (
     router as documents_router,
 )
 from compliance_agent.api.entities import router as entities_router
+from compliance_agent.api.exports import router as exports_router
+from compliance_agent.api.notifications import router as notifications_router
 from compliance_agent.api.obligations import (
     calendar_router,
     router as obligations_router,
 )
 from compliance_agent.api.rules import router as rules_router
 from compliance_agent.api.rules_ai import router as rules_ai_router
+from compliance_agent.api.system import router as system_router
 from compliance_agent.api.tasks import router as tasks_router
 from compliance_agent.api.users import router as users_router
 
@@ -25,10 +28,13 @@ __all__ = [
     "document_entity_upload_router",
     "document_obligation_upload_router",
     "entities_router",
+    "exports_router",
+    "notifications_router",
     "obligations_router",
     "calendar_router",
     "rules_router",
     "rules_ai_router",
+    "system_router",
     "tasks_router",
     "users_router",
 ]
