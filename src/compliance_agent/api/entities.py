@@ -99,3 +99,25 @@ def archive_entity(
     db.commit()
     db.refresh(entity)
     return serialize_entity(entity, db)
+
+
+@router.post("/{entity_id}/unarchive", response_model=EntityOut)
+def unarchive_entity(
+    entity_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> EntityOut:
+    entity = db.get(Entity, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found.")
+    entity.archived_at = None
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="entity.unarchived",
+        target_type="entity",
+        target_id=entity.id,
+    )
+    db.commit()
+    db.refresh(entity)
+    return serialize_entity(entity, db)

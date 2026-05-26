@@ -1,13 +1,14 @@
 // Entity Detail — one specific legal entity with tabs: Overview, Registrations,
 // Compliance Items, Documents, Key Persons, Activity / Audit Log. Most tabs
 // are filled with realistic demo content; real CRUD lands in Phase 5+.
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Archive,
   Edit,
+  Loader2,
   Lock,
   MoreHorizontal,
   History,
@@ -15,13 +16,21 @@ import {
   KeyRound,
   Plus,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,17 +47,21 @@ import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, Entity, Obligation } from "@/types/api";
+import type { ActivityOut, Entity, Obligation, UserBrief } from "@/types/api";
 
 
 function StatTile({
   value,
   label,
   tone = "neutral",
+  onClick,
+  active,
 }: {
   value: number | string;
   label: string;
   tone?: "neutral" | "overdue" | "alert" | "completed";
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const toneClasses = {
     neutral: "text-foreground",
@@ -56,20 +69,38 @@ function StatTile({
     alert: "text-amber-600",
     completed: "text-emerald-600",
   }[tone];
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3 min-w-[110px]">
+    <Tag
+      onClick={onClick}
+      className={cn(
+        "rounded-lg border bg-card px-4 py-3 min-w-[110px] text-left transition-colors",
+        onClick
+          ? "hover:border-aspora-400 hover:bg-aspora-50/40 cursor-pointer"
+          : "border-border",
+        active && "border-aspora-500 bg-aspora-50/60 ring-1 ring-aspora-300",
+      )}
+    >
       <div className={cn("text-2xl font-semibold tabular-nums leading-tight", toneClasses)}>
         {value}
       </div>
       <div className="text-[11px] text-muted-foreground uppercase tracking-wide mt-0.5">{label}</div>
-    </div>
+    </Tag>
   );
 }
+
+
+// Which subset of this entity's obligations the Compliance Items tab is
+// showing. Driven by the stat tiles in the hero.
+type ObligationFilter = "all" | "overdue" | "alert" | "completed";
 
 
 export function EntityDetailPage() {
   const { entityId } = useParams();
   const [tab, setTab] = useState("overview");
+  const [obFilter, setObFilter] = useState<ObligationFilter>("all");
+  const [editOpen, setEditOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -84,6 +115,16 @@ export function EntityDetailPage() {
     queryFn: () => api.get<Obligation[]>(`/api/obligations?entity_id=${entityId}&limit=200`),
     enabled: !!entityId,
   });
+
+  // Clicking a stat tile jumps to the Compliance Items tab pre-filtered.
+  function jumpToObs(filter: ObligationFilter) {
+    setObFilter(filter);
+    setTab("obligations");
+    // Scroll to the tab so the click feels like navigation.
+    requestAnimationFrame(() => {
+      document.querySelector('[role="tablist"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   if (loadingEntity) {
     return (
@@ -118,7 +159,14 @@ export function EntityDetailPage() {
         Back to entities
       </Link>
 
-      <EntityHero entity={entity} isAdmin={isAdmin} />
+      <EntityHero
+        entity={entity}
+        isAdmin={isAdmin}
+        activeFilter={obFilter}
+        onStatClick={jumpToObs}
+        onEdit={() => setEditOpen(true)}
+        onArchive={() => setArchiveOpen(true)}
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -144,7 +192,12 @@ export function EntityDetailPage() {
         </TabsContent>
 
         <TabsContent value="obligations">
-          <ObligationsTab obligations={obligations} loading={loadingObs} />
+          <ObligationsTab
+            obligations={obligations}
+            loading={loadingObs}
+            filter={obFilter}
+            onFilterChange={setObFilter}
+          />
         </TabsContent>
 
         <TabsContent value="documents">
@@ -159,6 +212,17 @@ export function EntityDetailPage() {
           <ActivityTab entity={entity} />
         </TabsContent>
       </Tabs>
+
+      <EditEntityDialog
+        entity={entity}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
+      <ArchiveEntityDialog
+        entity={entity}
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+      />
     </div>
   );
 }
@@ -167,7 +231,21 @@ export function EntityDetailPage() {
 // ---------------------------------------------------------------------------
 // Hero
 // ---------------------------------------------------------------------------
-function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+function EntityHero({
+  entity,
+  isAdmin,
+  activeFilter,
+  onStatClick,
+  onEdit,
+  onArchive,
+}: {
+  entity: Entity;
+  isAdmin: boolean;
+  activeFilter: ObligationFilter;
+  onStatClick: (f: ObligationFilter) => void;
+  onEdit: () => void;
+  onArchive: () => void;
+}) {
   return (
     <Card>
       <CardContent className="p-6">
@@ -181,6 +259,7 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
                 <h1 className="text-2xl font-semibold tracking-tight">{entity.name}</h1>
                 <JurisdictionBadge code={entity.jurisdiction_code} />
                 <Badge variant="default">{entity.legal_type}</Badge>
+                {entity.archived_at && <Badge variant="neutral">Archived</Badge>}
               </div>
               <div className="text-sm text-muted-foreground mt-1 flex items-center gap-4 flex-wrap">
                 <span>
@@ -194,13 +273,25 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={!isAdmin} title={isAdmin ? undefined : "Admin only"}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!isAdmin}
+              title={isAdmin ? "Edit name, type, registration #, fiscal year end, country lead" : "Admin only"}
+              onClick={onEdit}
+            >
               {isAdmin ? <Edit className="h-4 w-4" /> : <Lock className="h-3.5 w-3.5" />}
               Edit
             </Button>
-            <Button variant="outline" size="sm" disabled={!isAdmin} title={isAdmin ? undefined : "Admin only"}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!isAdmin}
+              title={isAdmin ? (entity.archived_at ? "Restore this entity" : "Archive — hides from active lists, keeps history") : "Admin only"}
+              onClick={onArchive}
+            >
               <Archive className="h-4 w-4" />
-              Archive
+              {entity.archived_at ? "Restore" : "Archive"}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -217,13 +308,32 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <StatTile value={entity.active_obligations_count} label="Total active" />
-          <StatTile value={entity.overdue_obligations_count} label="Overdue" tone="overdue" />
-          <StatTile value={entity.in_alert_window_count} label="In alert window" tone="alert" />
+          <StatTile
+            value={entity.active_obligations_count}
+            label="Total active"
+            onClick={() => onStatClick("all")}
+            active={activeFilter === "all"}
+          />
+          <StatTile
+            value={entity.overdue_obligations_count}
+            label="Overdue"
+            tone="overdue"
+            onClick={() => onStatClick("overdue")}
+            active={activeFilter === "overdue"}
+          />
+          <StatTile
+            value={entity.in_alert_window_count}
+            label="In alert window"
+            tone="alert"
+            onClick={() => onStatClick("alert")}
+            active={activeFilter === "alert"}
+          />
           <StatTile
             value={entity.last_filed_at ? fmtShortDate(entity.last_filed_at) : "—"}
             label="Last filed"
             tone="completed"
+            onClick={() => onStatClick("completed")}
+            active={activeFilter === "completed"}
           />
         </div>
       </CardContent>
@@ -462,14 +572,37 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
 // ---------------------------------------------------------------------------
 // Compliance Items tab
 // ---------------------------------------------------------------------------
+const FILTER_LABELS: Record<ObligationFilter, string> = {
+  all: "All active",
+  overdue: "Overdue",
+  alert: "In alert window",
+  completed: "Completed (last filed)",
+};
+
+
 function ObligationsTab({
   obligations,
   loading,
+  filter,
+  onFilterChange,
 }: {
   obligations: Obligation[] | undefined;
   loading: boolean;
+  filter: ObligationFilter;
+  onFilterChange: (f: ObligationFilter) => void;
 }) {
   const { openObligation } = useObligationDrawer();
+
+  // Apply the filter sourced from the hero stat tiles.
+  const visible = (obligations ?? []).filter((o) => {
+    if (filter === "overdue") return o.is_overdue;
+    if (filter === "alert") return o.is_in_alert_window;
+    if (filter === "completed") return o.status === "completed";
+    // "all" = every active item (drops completed + n/a so the count matches
+    // the Total active tile).
+    return o.status !== "completed" && o.status !== "not_applicable";
+  });
+
   if (loading) {
     return (
       <Card>
@@ -491,7 +624,43 @@ function ObligationsTab({
   }
   return (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
+      {/* Filter chip strip — mirrors the stat-tile selection */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-secondary/30 flex-wrap">
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+          Showing
+        </span>
+        {(["all", "overdue", "alert", "completed"] as ObligationFilter[]).map((f) => (
+          <button
+            key={f}
+            onClick={() => onFilterChange(f)}
+            className={cn(
+              "h-7 px-2.5 rounded-full text-xs font-medium border transition-colors",
+              f === filter
+                ? "bg-aspora-600 border-aspora-600 text-white"
+                : "bg-background border-border hover:bg-secondary",
+            )}
+          >
+            {FILTER_LABELS[f]}
+          </button>
+        ))}
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+          {visible.length} item{visible.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {visible.length === 0 ? (
+        <div className="p-10 text-center text-sm text-muted-foreground">
+          {filter === "overdue"
+            ? "No overdue items — nice."
+            : filter === "alert"
+              ? "No items in the alert window right now."
+              : filter === "completed"
+                ? "No completed items yet."
+                : "Nothing matches this filter."}
+        </div>
+      ) : (
+        <>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
@@ -505,7 +674,7 @@ function ObligationsTab({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {obligations.slice(0, 100).map((ob) => (
+            {visible.slice(0, 100).map((ob) => (
               <tr
                 key={ob.id}
                 className="hover:bg-secondary/30 cursor-pointer"
@@ -545,10 +714,12 @@ function ObligationsTab({
           </tbody>
         </table>
       </div>
-      {obligations.length > 100 && (
+      {visible.length > 100 && (
         <div className="p-3 text-center text-xs text-muted-foreground border-t border-border">
-          Showing first 100 of {obligations.length}. Open the calendar to filter further.
+          Showing first 100 of {visible.length}. Open the calendar to filter further.
         </div>
+      )}
+        </>
       )}
     </Card>
   );
@@ -695,3 +866,216 @@ function ActivityTab({ entity }: { entity: Entity }) {
 }
 
 
+
+
+// ---------------------------------------------------------------------------
+// Edit + Archive — admin-only dialogs wired to /api/entities/{id}
+// ---------------------------------------------------------------------------
+function EditEntityDialog({
+  entity,
+  open,
+  onOpenChange,
+}: {
+  entity: Entity;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(entity.name);
+  const [legalType, setLegalType] = useState(entity.legal_type);
+  const [regNumber, setRegNumber] = useState(entity.registration_number ?? "");
+  const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
+  const [leadId, setLeadId] = useState<number | null>(entity.country_lead?.id ?? null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName(entity.name);
+      setLegalType(entity.legal_type);
+      setRegNumber(entity.registration_number ?? "");
+      setFye(entity.fiscal_year_end ?? "");
+      setLeadId(entity.country_lead?.id ?? null);
+      setError(null);
+    }
+  }, [open, entity]);
+
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    enabled: open,
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, {
+        name: name.trim(),
+        legal_type: legalType.trim(),
+        registration_number: regNumber.trim() || null,
+        fiscal_year_end: fye.trim() || null,
+        country_lead_id: leadId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity", String(entity.id)] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>Edit entity</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <Field label="Legal name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </Field>
+          <Field label="Legal type">
+            <Input
+              value={legalType}
+              onChange={(e) => setLegalType(e.target.value)}
+              placeholder="Private Limited / DMCC / C-Corp …"
+            />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Registration number">
+              <Input
+                value={regNumber}
+                onChange={(e) => setRegNumber(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </Field>
+            <Field label="Fiscal year end">
+              <Input
+                value={fye}
+                onChange={(e) => setFye(e.target.value)}
+                placeholder="31-Mar / 31-Dec"
+              />
+            </Field>
+          </div>
+          <Field label="Country lead">
+            <select
+              value={leadId ?? ""}
+              onChange={(e) => setLeadId(e.target.value ? Number(e.target.value) : null)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => mutation.mutate()} disabled={!name.trim() || mutation.isPending}>
+            {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+function ArchiveEntityDialog({
+  entity,
+  open,
+  onOpenChange,
+}: {
+  entity: Entity;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const archived = !!entity.archived_at;
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post<Entity>(
+        archived
+          ? `/api/entities/${entity.id}/unarchive`
+          : `/api/entities/${entity.id}/archive`,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity", String(entity.id)] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      onOpenChange(false);
+      if (!archived) navigate("/entities");  // archived flow exits the detail page
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>{archived ? "Restore entity" : "Archive entity"}</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3 text-sm">
+          {archived ? (
+            <p>
+              Restore <strong>{entity.name}</strong>? It will reappear in the active entities
+              list and on dashboards. Its history (obligations, documents, audit trail) is
+              already preserved.
+            </p>
+          ) : (
+            <>
+              <p>
+                Archive <strong>{entity.name}</strong>? This:
+              </p>
+              <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                <li>Hides it from the Entities list, Dashboard, and Calendar.</li>
+                <li>Keeps every obligation, document, and audit log row intact.</li>
+                <li>Stops generating new obligations from its rules.</li>
+                <li>Is fully reversible — just click <strong>Restore</strong>.</li>
+              </ul>
+            </>
+          )}
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            className={archived ? undefined : "bg-red-600 hover:bg-red-700"}
+          >
+            {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {archived ? "Restore" : "Yes, archive"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</label>
+      {children}
+    </div>
+  );
+}
