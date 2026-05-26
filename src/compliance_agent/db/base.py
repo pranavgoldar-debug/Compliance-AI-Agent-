@@ -42,11 +42,43 @@ class Base(DeclarativeBase):
 
 
 def init_db() -> None:
-    """Create all tables. Idempotent. Safe to call on every boot."""
+    """Create all tables. Idempotent. Safe to call on every boot.
+
+    Also runs a tiny ad-hoc migration for SQLite to add columns we add
+    after the initial release — full Alembic comes later.
+    """
     # Import here so the model module is registered before create_all.
     from compliance_agent.db import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    """Add any new columns declared on existing models that aren't yet in
+    the live SQLite file. Idempotent. No-op on non-SQLite backends."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "obligations" not in inspector.get_table_names():
+        return
+
+    existing_cols = {col["name"] for col in inspector.get_columns("obligations")}
+
+    # Columns added after Phase 4b — keep in sync with models.Obligation.
+    additions: list[tuple[str, str]] = [
+        ("effort_band", "VARCHAR(8) NOT NULL DEFAULT '4w'"),
+        ("effort_band_reason", "TEXT"),
+    ]
+
+    with engine.begin() as conn:
+        for col_name, col_def in additions:
+            if col_name in existing_cols:
+                continue
+            conn.execute(text(f"ALTER TABLE obligations ADD COLUMN {col_name} {col_def}"))
 
 
 def get_session() -> Iterator[Session]:

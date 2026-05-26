@@ -59,6 +59,26 @@ class Applicability(str, enum.Enum):
     sector_specific = "Sector-specific"
 
 
+class EffortBand(str, enum.Enum):
+    """Lead-time band for an obligation. Alerts fire at ~2× this window
+    before the due date (e.g. a 4-week band → alert 8 weeks out)."""
+    w1 = "1w"
+    w2 = "2w"
+    w4 = "4w"
+    w8 = "8w"
+    w12 = "12w"
+
+
+# How many days each effort band represents (lead-time = 2× this).
+EFFORT_BAND_DAYS: dict[EffortBand, int] = {
+    EffortBand.w1: 7,
+    EffortBand.w2: 14,
+    EffortBand.w4: 28,
+    EffortBand.w8: 56,
+    EffortBand.w12: 84,
+}
+
+
 # ---------------------------------------------------------------------------
 # Users
 # ---------------------------------------------------------------------------
@@ -195,6 +215,10 @@ class Obligation(Base):
     status: Mapped[ObligationStatus] = mapped_column(
         SAEnum(ObligationStatus), nullable=False, default=ObligationStatus.not_started, index=True
     )
+    effort_band: Mapped[EffortBand] = mapped_column(
+        SAEnum(EffortBand), nullable=False, default=EffortBand.w4
+    )
+    effort_band_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     assignee_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     assignee: Mapped[Optional[User]] = relationship(
         "User", back_populates="assigned_obligations", foreign_keys=[assignee_id]
@@ -253,3 +277,51 @@ class Activity(Base):
     )
 
     actor: Mapped[Optional[User]] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Documents — uploaded files attached to entities and/or obligations
+# ---------------------------------------------------------------------------
+class DocumentCategory(str, enum.Enum):
+    formation = "Formation"
+    filings = "Filings"
+    contracts = "Contracts"
+    expert_notes = "Expert notes"
+    other = "Other"
+
+
+class Document(Base):
+    """A file uploaded to the system. Always attached to one entity; optionally
+    to a specific obligation as proof-of-filing."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    obligation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("obligations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # Filename the user uploaded; preserved for display.
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    # On-disk relative path (under uploads/) — opaque, not user-facing.
+    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    content_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    category: Mapped[DocumentCategory] = mapped_column(
+        SAEnum(DocumentCategory), nullable=False, default=DocumentCategory.other, index=True
+    )
+    tags: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # comma-separated
+
+    uploaded_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), index=True
+    )
+
+    entity: Mapped[Entity] = relationship("Entity")
+    obligation: Mapped[Optional[Obligation]] = relationship("Obligation")
+    uploaded_by: Mapped[Optional[User]] = relationship("User")

@@ -1,0 +1,487 @@
+// Tasks — personal work inbox. Urgency-grouped, sub-tabbed scope, filter bar,
+// sort dropdown, hover quick actions.
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Coffee, ChevronDown, MoreHorizontal } from "lucide-react";
+import { api } from "@/lib/api";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { StatusPill } from "@/components/StatusPill";
+import { JurisdictionBadge } from "@/components/JurisdictionBadge";
+import { EffortBandBadge } from "@/components/EffortBandBadge";
+import { AssigneeChip } from "@/components/AssigneeChip";
+import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
+import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
+import { fmtShortDate, JURISDICTIONS } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import type { Entity, Obligation, ObligationStatus } from "@/types/api";
+
+type Scope = "assigned" | "watching" | "completed" | "all";
+type SortKey = "due_date" | "recently_updated" | "priority";
+
+const SCOPES: { key: Scope; label: string }[] = [
+  { key: "assigned", label: "Assigned to me" },
+  { key: "watching", label: "Watching" },
+  { key: "completed", label: "Completed" },
+  { key: "all", label: "All" },
+];
+
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "due_date", label: "Due date (default)" },
+  { key: "recently_updated", label: "Recently updated" },
+  { key: "priority", label: "Priority" },
+];
+
+
+// Priority order — overdue first, then alert window, then by due date.
+function priorityScore(o: Obligation): number {
+  if (o.is_overdue) return -10000 + o.days_remaining; // more negative = more urgent
+  if (o.is_in_alert_window) return -5000 + o.days_remaining;
+  if (o.status === "completed") return 100000;
+  return o.days_remaining;
+}
+
+
+interface Filters {
+  entityIds: number[];
+  jurisdictions: string[];
+  statuses: ObligationStatus[];
+  dueWithinDays: number | null;
+}
+
+function emptyFilters(): Filters {
+  return { entityIds: [], jurisdictions: [], statuses: [], dueWithinDays: null };
+}
+
+
+function groupByUrgency(tasks: Obligation[]): Record<string, Obligation[]> {
+  const groups: Record<string, Obligation[]> = {
+    Overdue: [],
+    "In alert window": [],
+    "In progress": [],
+    Upcoming: [],
+    Completed: [],
+  };
+  for (const t of tasks) {
+    if (t.status === "completed") groups.Completed.push(t);
+    else if (t.is_overdue) groups.Overdue.push(t);
+    else if (t.is_in_alert_window) groups["In alert window"].push(t);
+    else if (t.status === "in_progress" || t.status === "pending_review")
+      groups["In progress"].push(t);
+    else groups.Upcoming.push(t);
+  }
+  return groups;
+}
+
+
+function TaskRow({ ob }: { ob: Obligation }) {
+  const { openObligation } = useObligationDrawer();
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => openObligation(ob.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") openObligation(ob.id);
+      }}
+      className="group w-full grid grid-cols-[1.4fr_2fr_120px_120px_90px_60px] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm cursor-pointer"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
+        <div className="min-w-0">
+          <div className="font-medium truncate">{ob.entity_name}</div>
+          <div className="text-xs text-muted-foreground truncate">{ob.rule_authority}</div>
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="truncate font-medium">{ob.rule_form_name}</div>
+        <div className="text-xs text-muted-foreground truncate">
+          {ob.rule_category} · {ob.period_label || ob.rule_frequency}
+        </div>
+      </div>
+      <div className="tabular-nums">{fmtShortDate(ob.due_date)}</div>
+      <StatusPill
+        status={ob.status}
+        isOverdue={ob.is_overdue}
+        daysRemaining={ob.days_remaining}
+        showDays
+      />
+      <EffortBandBadge band={ob.effort_band} />
+
+      <div className="flex items-center justify-end gap-1.5">
+        <AssigneeChip user={ob.assignee} size="sm" />
+        <div onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-7 w-7 grid place-items-center rounded-md hover:bg-secondary text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled>Mark as filed</DropdownMenuItem>
+              <DropdownMenuItem disabled>Reassign…</DropdownMenuItem>
+              <DropdownMenuItem disabled>Snooze 1 day</DropdownMenuItem>
+              <DropdownMenuItem disabled>Snooze 1 week</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function GroupSection({ title, items }: { title: string; items: Obligation[] }) {
+  if (items.length === 0) return null;
+  const tone =
+    title === "Overdue"
+      ? "overdue"
+      : title === "In alert window"
+        ? "alert"
+        : title === "Completed"
+          ? "completed"
+          : title === "In progress"
+            ? "progress"
+            : "neutral";
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-secondary/30">
+        <Badge variant={tone as never}>{title}</Badge>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {items.length} item{items.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="divide-y divide-border">
+        {items.map((ob) => (
+          <TaskRow key={ob.id} ob={ob} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+export function TasksPage() {
+  const [scope, setScope] = useState<Scope>("assigned");
+  const [filters, setFilters] = useState<Filters>(emptyFilters());
+  const [sortKey, setSortKey] = useState<SortKey>("due_date");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["tasks", scope],
+    queryFn: () => api.get<Obligation[]>(`/api/tasks?scope=${scope}`),
+  });
+  const { data: entities = [] } = useQuery({
+    queryKey: ["entities"],
+    queryFn: () => api.get<Entity[]>("/api/entities"),
+  });
+
+  // Apply filters + sort.
+  const visible = useMemo(() => {
+    let arr = data ?? [];
+    if (filters.entityIds.length)
+      arr = arr.filter((o) => filters.entityIds.includes(o.entity_id));
+    if (filters.jurisdictions.length)
+      arr = arr.filter((o) => filters.jurisdictions.includes(o.entity_jurisdiction_code));
+    if (filters.statuses.length)
+      arr = arr.filter((o) => filters.statuses.includes(o.status));
+    if (filters.dueWithinDays != null)
+      arr = arr.filter(
+        (o) => o.days_remaining <= (filters.dueWithinDays as number) && o.days_remaining >= 0,
+      );
+
+    const dir = 1;
+    arr = [...arr].sort((a, b) => {
+      switch (sortKey) {
+        case "recently_updated":
+          return dir * b.updated_at.localeCompare(a.updated_at);
+        case "priority":
+          return dir * (priorityScore(a) - priorityScore(b));
+        default:
+          return dir * a.due_date.localeCompare(b.due_date);
+      }
+    });
+    return arr;
+  }, [data, filters, sortKey]);
+
+  const groups = visible ? groupByUrgency(visible) : null;
+  const activeFilterCount =
+    filters.entityIds.length +
+    filters.jurisdictions.length +
+    filters.statuses.length +
+    (filters.dueWithinDays != null ? 1 : 0);
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Tasks"
+        description="Your work inbox — overdue first, alert window next, the rest after."
+      />
+
+      <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>
+        <TabsList>
+          {SCOPES.map((s) => (
+            <TabsTrigger key={s.key} value={s.key}>
+              {s.label}
+              {data && scope === s.key && (
+                <Badge variant="neutral" className="ml-1">
+                  {data.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* Filter + sort bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterPopover
+          label="Entity"
+          options={entities.map((e) => ({ value: String(e.id), label: e.name }))}
+          selected={filters.entityIds.map(String)}
+          onChange={(vals) =>
+            setFilters((f) => ({ ...f, entityIds: vals.map((v) => Number(v)) }))
+          }
+          searchable
+        />
+        <FilterPopover
+          label="Jurisdiction"
+          options={Object.entries(JURISDICTIONS).map(([code, j]) => ({
+            value: code,
+            label: `${j.flag} ${j.name}`,
+          }))}
+          selected={filters.jurisdictions}
+          onChange={(vals) => setFilters((f) => ({ ...f, jurisdictions: vals }))}
+        />
+        <FilterPopover
+          label="Status"
+          options={[
+            { value: "not_started", label: "Not started" },
+            { value: "in_progress", label: "In progress" },
+            { value: "pending_review", label: "Pending review" },
+            { value: "completed", label: "Completed" },
+          ]}
+          selected={filters.statuses}
+          onChange={(vals) => setFilters((f) => ({ ...f, statuses: vals as ObligationStatus[] }))}
+        />
+        <DueRangePopover
+          value={filters.dueWithinDays}
+          onChange={(v) => setFilters((f) => ({ ...f, dueWithinDays: v }))}
+        />
+        {activeFilterCount > 0 && (
+          <button
+            onClick={() => setFilters(emptyFilters())}
+            className="text-xs text-aspora-700 hover:underline ml-1"
+          >
+            Clear ({activeFilterCount})
+          </button>
+        )}
+
+        <div className="ml-auto inline-flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Sort:</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                {SORTS.find((s) => s.key === sortKey)!.label}
+                <ChevronDown className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {SORTS.map((s) => (
+                <DropdownMenuItem
+                  key={s.key}
+                  onClick={() => setSortKey(s.key)}
+                  className={cn(sortKey === s.key && "bg-aspora-50")}
+                >
+                  {s.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-16" />
+          <Skeleton className="h-16" />
+          <Skeleton className="h-16" />
+        </div>
+      ) : !visible || visible.length === 0 ? (
+        <Card>
+          <div className="p-10">
+            <EmptyState
+              icon={<Coffee className="h-6 w-6" />}
+              title={
+                scope === "assigned"
+                  ? "Nothing on your plate"
+                  : scope === "completed"
+                    ? "No completed items yet"
+                    : "All caught up"
+              }
+              description={
+                scope === "assigned"
+                  ? "All caught up. Time for a coffee."
+                  : scope === "watching"
+                    ? "Comment on or open an obligation to start watching it."
+                    : "No tasks match the current filters."
+              }
+            />
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {groups &&
+            ["Overdue", "In alert window", "In progress", "Upcoming", "Completed"].map((g) => (
+              <GroupSection key={g} title={g} items={groups[g]} />
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Filter popover helpers
+// ---------------------------------------------------------------------------
+function FilterPopover({
+  label,
+  options,
+  selected,
+  onChange,
+  searchable,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  searchable?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const visible = q
+    ? options.filter((o) => o.label.toLowerCase().includes(q.toLowerCase()))
+    : options;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            selected.length > 0 && "bg-aspora-50 border-aspora-200 text-aspora-800",
+          )}
+        >
+          {label}
+          {selected.length > 0 && (
+            <Badge variant="default" className="ml-1.5 -mr-1">
+              {selected.length}
+            </Badge>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 ml-1" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-60 p-0">
+        {searchable && (
+          <div className="border-b border-border p-2">
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search…"
+              className="h-8"
+              autoFocus
+            />
+          </div>
+        )}
+        <div className="max-h-60 overflow-auto scrollbar-thin py-1">
+          {visible.map((o) => {
+            const checked = selected.includes(o.value);
+            return (
+              <button
+                key={o.value}
+                onClick={() =>
+                  onChange(
+                    checked ? selected.filter((v) => v !== o.value) : [...selected, o.value],
+                  )
+                }
+                className="w-full text-left px-2 py-1.5 hover:bg-secondary flex items-center gap-2 text-sm"
+              >
+                <Checkbox checked={checked} readOnly />
+                <span className="truncate">{o.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+
+function DueRangePopover({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+}) {
+  const PRESETS = [
+    { v: 7, label: "Next 7 days" },
+    { v: 14, label: "Next 14 days" },
+    { v: 30, label: "Next 30 days" },
+    { v: 90, label: "Next 90 days" },
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(value != null && "bg-aspora-50 border-aspora-200 text-aspora-800")}
+        >
+          Due date
+          {value != null && (
+            <Badge variant="default" className="ml-1.5 -mr-1">
+              {value}d
+            </Badge>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 ml-1" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-44 p-1">
+        {PRESETS.map((p) => (
+          <button
+            key={p.v}
+            onClick={() => onChange(p.v === value ? null : p.v)}
+            className={cn(
+              "w-full text-left px-2 py-1.5 rounded-md text-sm hover:bg-secondary",
+              value === p.v && "bg-aspora-50 text-aspora-700",
+            )}
+          >
+            {p.label}
+          </button>
+        ))}
+        {value != null && (
+          <button
+            onClick={() => onChange(null)}
+            className="w-full text-left px-2 py-1.5 rounded-md text-xs text-aspora-700 hover:underline mt-1"
+          >
+            Clear
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}

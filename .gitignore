@@ -31,3 +31,7 @@ compliance.db-shm
 # Node / React frontend (added in Phase 2)
 node_modules/
 frontend/dist/
+frontend/*.tsbuildinfo
+
+# Uploaded user documents (Phase 5)
+uploads/

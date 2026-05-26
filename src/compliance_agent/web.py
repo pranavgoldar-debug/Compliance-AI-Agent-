@@ -21,12 +21,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from compliance_agent.api import (
+    activities_router,
     calendar_router,
+    chat_router,
     dashboard_router,
+    document_entity_upload_router,
+    document_obligation_upload_router,
+    documents_router,
     entities_router,
     obligations_router,
+    rules_ai_router,
     rules_router,
     tasks_router,
+    users_router,
 )
 from compliance_agent.auth import auth_router
 from compliance_agent.catalog import CATALOG, Country, Regulation, get_regulation
@@ -72,9 +79,16 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(entities_router)
     app.include_router(rules_router)
+    app.include_router(rules_ai_router)  # AI Rule extraction (admin)
     app.include_router(obligations_router)
     app.include_router(calendar_router)
     app.include_router(tasks_router)
+    app.include_router(users_router)
+    app.include_router(documents_router)
+    app.include_router(document_entity_upload_router)
+    app.include_router(document_obligation_upload_router)
+    app.include_router(activities_router)
+    app.include_router(chat_router)  # Ask Aspora chat assistant
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))
 
@@ -136,11 +150,43 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Unknown country: {country_code}")
         return cf
 
-    @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(static_dir / "index.html")
-
+    # /static keeps serving package-bundled assets — brand, the legacy
+    # vanilla-JS UI, regulation text files, etc.
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    # ------------------------------------------------------------------
+    # React frontend (Phase 2+)
+    #
+    # When `frontend/dist/` exists (i.e. someone has run `npm run build`),
+    # serve it as the root SPA. React Router handles client-side routing,
+    # so anything that doesn't match /api/* or /static/* falls through to
+    # index.html. When the bundle isn't built (fresh clone, dev mode), we
+    # fall back to the legacy vanilla-JS index.
+    # ------------------------------------------------------------------
+    react_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    react_index = react_dist / "index.html"
+
+    if react_index.exists():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=str(react_dist / "assets")),
+            name="react_assets",
+        )
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        def react_spa(full_path: str) -> FileResponse:
+            # Direct asset hits (favicon, vite.svg, etc.) — serve them straight.
+            asset_candidate = react_dist / full_path
+            if full_path and asset_candidate.is_file():
+                return FileResponse(asset_candidate)
+            # Everything else is a SPA route → return index.html.
+            return FileResponse(react_index)
+    else:
+        @app.get("/", include_in_schema=False)
+        def index() -> FileResponse:
+            # Legacy vanilla-JS UI. Will go away once the React build is
+            # checked into a deploy.
+            return FileResponse(static_dir / "index.html")
 
     return app
 

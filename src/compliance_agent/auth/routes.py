@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from compliance_agent.auth.deps import get_current_user
 from compliance_agent.auth.jwt import COOKIE_NAME, cookie_max_age_seconds, create_token
-from compliance_agent.auth.passwords import verify_password
+from compliance_agent.auth.passwords import hash_password, verify_password
 from compliance_agent.db import Role, User, get_session
 
 
@@ -70,3 +70,23 @@ def logout(response: Response) -> dict:
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    payload: PasswordChangeRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> dict:
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"ok": True}

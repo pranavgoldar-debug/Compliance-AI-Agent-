@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from compliance_agent.auth.passwords import hash_password
 from compliance_agent.db import (
     Applicability,
+    EffortBand,
     Entity,
     Obligation,
     ObligationStatus,
@@ -35,38 +36,48 @@ from compliance_agent.db import (
 )
 
 
+def _effort_band_for_frequency(frequency: str) -> EffortBand:
+    """Pick a sensible default effort band per filing cadence."""
+    f = (frequency or "").lower()
+    if "monthly" in f or "continuous" in f:
+        return EffortBand.w1
+    if "quarterly" in f:
+        return EffortBand.w2
+    if "half" in f:
+        return EffortBand.w4
+    if "annual" in f or "bi-annual" in f or "one-time" in f:
+        return EffortBand.w8
+    if "event" in f:
+        return EffortBand.w2
+    return EffortBand.w4
+
+
 # ---------------------------------------------------------------------------
 # Users
 # ---------------------------------------------------------------------------
 DEMO_USERS = [
     {
-        "email": "admin@aspora.com",
+        "email": "pranav.goldar@aspora.com",
         "password": "admin123",
-        "full_name": "Alex Admin",
+        "full_name": "Pranav Goldar",
         "role": Role.admin,
     },
     {
-        "email": "yoga@aspora.com",
-        "password": "yoga12345",
-        "full_name": "Yoga Compliance Manager",
-        "role": Role.admin,
-    },
-    {
-        "email": "employee@aspora.com",
-        "password": "employee123",
-        "full_name": "Sam Employee",
+        "email": "pranavgoldar@gmail.com",
+        "password": "aspora2026",
+        "full_name": "Pranav (Operations)",
         "role": Role.employee,
     },
     {
-        "email": "priya@aspora.com",
-        "password": "priya12345",
-        "full_name": "Priya Sharma",
+        "email": "pranavgoldar.iitb@gmail.com",
+        "password": "iitb2026",
+        "full_name": "Pranav (IITB)",
         "role": Role.employee,
     },
     {
-        "email": "james@aspora.com",
-        "password": "james12345",
-        "full_name": "James Wilson",
+        "email": "pranavgoldar.moodi@gmail.com",
+        "password": "moodi2026",
+        "full_name": "Pranav (Moodi)",
         "role": Role.employee,
     },
 ]
@@ -83,7 +94,7 @@ DEMO_ENTITIES = [
         "registration_number": "01234567",
         "incorporation_date": date(2018, 2, 18),
         "fiscal_year_end": "31-Mar",
-        "country_lead_email": "james@aspora.com",
+        "country_lead_email": "pranavgoldar.iitb@gmail.com",
     },
     {
         "name": "Aspora US Inc",
@@ -92,7 +103,7 @@ DEMO_ENTITIES = [
         "registration_number": "DE-78451293",
         "incorporation_date": date(2019, 6, 12),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "admin@aspora.com",
+        "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
         "name": "Aspora India Pvt Ltd",
@@ -101,7 +112,7 @@ DEMO_ENTITIES = [
         "registration_number": "U72900KA2019PTC123456",
         "incorporation_date": date(2019, 8, 22),
         "fiscal_year_end": "31-Mar",
-        "country_lead_email": "priya@aspora.com",
+        "country_lead_email": "pranavgoldar@gmail.com",
     },
     {
         "name": "Aspora DMCC",
@@ -110,7 +121,7 @@ DEMO_ENTITIES = [
         "registration_number": "DMCC-987654",
         "incorporation_date": date(2020, 5, 5),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "yoga@aspora.com",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
     {
         "name": "Aspora Singapore Pte Ltd",
@@ -119,7 +130,7 @@ DEMO_ENTITIES = [
         "registration_number": "202012345A",
         "incorporation_date": date(2020, 11, 2),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "yoga@aspora.com",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
     {
         "name": "Aspora Lithuania UAB",
@@ -128,7 +139,7 @@ DEMO_ENTITIES = [
         "registration_number": "LT304567890",
         "incorporation_date": date(2021, 3, 14),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "admin@aspora.com",
+        "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
         "name": "Aspora Canada Inc",
@@ -137,7 +148,7 @@ DEMO_ENTITIES = [
         "registration_number": "987654-3",
         "incorporation_date": date(2022, 1, 20),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "admin@aspora.com",
+        "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
         "name": "Aspora SARL",
@@ -146,7 +157,7 @@ DEMO_ENTITIES = [
         "registration_number": "B-LUX-245678",
         "incorporation_date": date(2022, 9, 8),
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "yoga@aspora.com",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
 ]
 
@@ -331,6 +342,7 @@ def _ensure_obligations(db: Session, rules: list[Rule], users: dict[str, User]) 
                     due_date=due,
                     period_label=_period_label_for_frequency(rule.frequency, due),
                     status=status,
+                    effort_band=_effort_band_for_frequency(rule.frequency),
                     assignee_id=assignee.id if assignee else None,
                     completed_at=completed_at,
                     completed_by_id=completed_by_id,
@@ -360,6 +372,24 @@ def _period_label_for_frequency(frequency: str, due: date) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Top-level seed entry point
 # ---------------------------------------------------------------------------
+def _backfill_effort_bands(db: Session) -> int:
+    """For obligations that still have the default '4w' band, derive a more
+    sensible one from the rule's frequency. Runs once after the column is
+    added; idempotent because it only touches the default value."""
+    rows = db.execute(
+        select(Obligation).where(Obligation.effort_band == EffortBand.w4)
+    ).scalars().all()
+    touched = 0
+    for ob in rows:
+        target = _effort_band_for_frequency(ob.rule.frequency)
+        if target != EffortBand.w4:
+            ob.effort_band = target
+            touched += 1
+    if touched:
+        db.flush()
+    return touched
+
+
 def run_seed() -> dict[str, int]:
     """Idempotent seed. Returns counts of created objects."""
     from compliance_agent.db import init_db
@@ -370,11 +400,13 @@ def run_seed() -> dict[str, int]:
         entities_map = _ensure_entities(db, users)
         rules = _ensure_rules(db, list(entities_map.values()))
         ob_count = _ensure_obligations(db, rules, users)
+        backfilled = _backfill_effort_bands(db)
     return {
         "users": len(users),
         "entities": len(entities_map),
         "rules": len(rules),
         "obligations_created": ob_count,
+        "effort_bands_backfilled": backfilled,
     }
 
 

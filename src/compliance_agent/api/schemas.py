@@ -6,7 +6,14 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from compliance_agent.db import Applicability, ObligationStatus, Role, RuleStatus
+from compliance_agent.db import (
+    Applicability,
+    DocumentCategory,
+    EffortBand,
+    ObligationStatus,
+    Role,
+    RuleStatus,
+)
 
 
 class _Base(BaseModel):
@@ -21,6 +28,30 @@ class UserBrief(_Base):
     email: str
     full_name: str
     role: Role
+
+
+class UserOut(_Base):
+    id: int
+    email: str
+    full_name: str
+    role: Role
+    is_active: bool
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+
+
+class UserCreate(BaseModel):
+    email: str
+    full_name: str
+    role: Role = Role.employee
+    password: str
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[Role] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None  # admin password reset
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +159,8 @@ class ObligationUpdate(BaseModel):
     payment_reference: Optional[str] = None
     notes: Optional[str] = None
     due_date: Optional[date] = None
+    effort_band: Optional[EffortBand] = None
+    effort_band_reason: Optional[str] = None
 
 
 class CommentOut(_Base):
@@ -147,12 +180,16 @@ class ObligationOut(_Base):
     rule_authority: str
     rule_category: str
     rule_frequency: str
+    rule_due_date_rule: Optional[str] = None
+    rule_source_url: Optional[str] = None
     entity_name: str
     entity_jurisdiction_code: str
     due_date: date
     period_label: Optional[str] = None
     status: ObligationStatus
     assignee: Optional[UserBrief] = None
+    effort_band: EffortBand = EffortBand.w4
+    effort_band_reason: Optional[str] = None
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
@@ -160,6 +197,7 @@ class ObligationOut(_Base):
     days_remaining: int = 0
     is_overdue: bool = False
     is_in_alert_window: bool = False
+    next_alert_at: Optional[date] = None
     completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -177,9 +215,50 @@ class DashboardStats(_Base):
     in_alert_window: int
     in_safe_zone: int
     completed_this_month: int
+    due_this_week: int
+    due_this_month: int
+    unassigned: int
     open_tasks: list[ObligationOut]
     items_in_alert_window: list[ObligationOut]
     this_week: list[ObligationOut]
+
+
+# ---------------------------------------------------------------------------
+# Documents
+# ---------------------------------------------------------------------------
+class DocumentOut(_Base):
+    id: int
+    entity_id: int
+    entity_name: Optional[str] = None
+    obligation_id: Optional[int] = None
+    obligation_form_name: Optional[str] = None
+    filename: str
+    content_type: Optional[str] = None
+    size_bytes: int
+    category: DocumentCategory
+    tags: Optional[str] = None
+    uploaded_by: Optional[UserBrief] = None
+    created_at: datetime
+
+
+class DocumentUpdate(BaseModel):
+    filename: Optional[str] = None
+    category: Optional[DocumentCategory] = None
+    tags: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Activity feed
+# ---------------------------------------------------------------------------
+class ActivityOut(_Base):
+    id: int
+    actor: Optional[UserBrief] = None
+    action: str
+    target_type: Optional[str] = None
+    target_id: Optional[int] = None
+    target_label: Optional[str] = None  # resolved display name (entity/rule/obligation)
+    payload: Optional[dict] = None
+    created_at: datetime
 
 
 class CalendarObligation(_Base):
@@ -188,8 +267,12 @@ class CalendarObligation(_Base):
     status: ObligationStatus
     entity_id: int
     entity_name: str
+    entity_jurisdiction_code: str
     rule_form_name: str
     rule_authority: str
     rule_category: str
+    effort_band: EffortBand = EffortBand.w4
+    assignee: Optional[UserBrief] = None
     is_overdue: bool
+    is_in_alert_window: bool = False
     days_remaining: int

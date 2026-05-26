@@ -218,10 +218,15 @@ def calendar_range(
     start: date = Query(..., description="Inclusive start of date range."),
     end: date = Query(..., description="Inclusive end of date range."),
     entity_id: Optional[int] = Query(None),
+    entity_ids: Optional[list[int]] = Query(None),
     jurisdiction_code: Optional[str] = Query(None),
+    jurisdiction_codes: Optional[list[str]] = Query(None),
     category: Optional[str] = Query(None),
+    categories: Optional[list[str]] = Query(None),
     assignee_id: Optional[int] = Query(None),
+    assignee_ids: Optional[list[int]] = Query(None),
     status: Optional[ObligationStatus] = Query(None),
+    statuses: Optional[list[ObligationStatus]] = Query(None),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ) -> list[CalendarObligation]:
@@ -230,18 +235,34 @@ def calendar_range(
     stmt = (
         select(Obligation)
         .where(Obligation.due_date >= start, Obligation.due_date <= end)
-        .options(joinedload(Obligation.rule), joinedload(Obligation.entity))
+        .options(
+            joinedload(Obligation.rule),
+            joinedload(Obligation.entity),
+            joinedload(Obligation.assignee),
+        )
         .order_by(Obligation.due_date.asc())
     )
     if entity_id is not None:
         stmt = stmt.where(Obligation.entity_id == entity_id)
+    if entity_ids:
+        stmt = stmt.where(Obligation.entity_id.in_(entity_ids))
     if assignee_id is not None:
         stmt = stmt.where(Obligation.assignee_id == assignee_id)
+    if assignee_ids:
+        stmt = stmt.where(Obligation.assignee_id.in_(assignee_ids))
     if status is not None:
         stmt = stmt.where(Obligation.status == status)
+    if statuses:
+        stmt = stmt.where(Obligation.status.in_(statuses))
     items = db.execute(stmt).scalars().unique().all()
     if jurisdiction_code:
         items = [o for o in items if o.rule.jurisdiction_code == jurisdiction_code]
+    if jurisdiction_codes:
+        codes = set(jurisdiction_codes)
+        items = [o for o in items if o.rule.jurisdiction_code in codes]
     if category:
         items = [o for o in items if o.rule.category == category]
+    if categories:
+        cats = set(categories)
+        items = [o for o in items if o.rule.category in cats]
     return [serialize_calendar_obligation(o) for o in items]
