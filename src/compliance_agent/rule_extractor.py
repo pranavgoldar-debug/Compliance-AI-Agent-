@@ -1,0 +1,114 @@
+"""LLM-backed extractor that turns raw regulatory text into candidate Rule rows.
+
+Distinct from `ComplianceExtractor` (which extracts conceptual obligations
+like "obtain valid consent"). This one is tuned for filings / returns /
+periodic reports / event-based notifications — the things a compliance team
+actually tracks on a calendar.
+"""
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+import anthropic
+from pydantic import BaseModel, Field
+
+from compliance_agent.db import Applicability
+
+
+SYSTEM_PROMPT = """You convert raw regulatory text into a list of recurring or event-based filing obligations.
+
+For each obligation you extract:
+- Use the official form/report name where one exists (GSTR-3B, Form 1120, CT600, SAR, etc.). If there is no formal form, name the deliverable concisely (e.g. "PSP authorization renewal" or "Breach notification to supervisory authority").
+- The authority who receives it (RBI, FCA, FinCEN, MAS, CBUAE, etc.).
+- The frequency the source describes (Monthly / Quarterly / Annual / Half-Yearly / Event-based / Continuous / One-time / Bi-annual).
+- A `due_date_rule` describing exactly when it must be filed for a calendar-year company. Include the date or day-of-month/quarter. Cite the rule's section if visible.
+- `payment_rule` (optional) — fee amounts, payable taxes, percentages, late-fee structure where the source mentions them. Leave null when there's no payment.
+- `applicability` — Mandatory by default; Conditional or Sector-specific only when the source signals a trigger.
+- `applicability_note` — when Conditional/Sector-specific, write a short note explaining what triggers it.
+
+Rules:
+- Do not invent obligations that aren't supported by the source text.
+- Split compound clauses into separate rules where they impose independent duties.
+- If multiple sub-forms file on different dates (e.g. quarterly TDS forms), output one Rule per sub-form.
+- Keep `name` short and human-readable (under 100 chars). The full form name goes in `form_name`.
+- Choose `category` from this list when possible: Regulatory, AML / CFT, Corporate Tax, Information Returns, VAT, GST/HST, Sales/Use Tax, Excise Tax, Forex / Cross-Border, Corporate & Statutory, Payroll, Pensions, Social Security, Workers Compensation, Data Protection & Privacy, Cybersecurity, Consumer Protection, CIS, Statistics, EU Reporting, Accounting Control, Unclaimed Property.
+- `area` is a short sub-area within the category (e.g. "Suspicious transaction reporting" within "AML / CFT").
+
+If the document is too short, ambiguous, or doesn't describe filing obligations at all, return an empty list and explain in `notes`."""
+
+
+class CandidateRule(BaseModel):
+    name: str = Field(description="Short human-readable name for the obligation (≤100 chars).")
+    category: str
+    area: str = Field(description="Sub-area within the category.")
+    form_name: str
+    authority: str
+    frequency: str
+    due_date_rule: str
+    payment_rule: Optional[str] = None
+    applicability: Applicability = Applicability.mandatory
+    applicability_note: Optional[str] = None
+
+
+class RuleExtractionResult(BaseModel):
+    jurisdiction_hint: Optional[str] = Field(
+        default=None,
+        description="If you can infer the country/jurisdiction from the source, name it here.",
+    )
+    rules: list[CandidateRule]
+    notes: Optional[str] = Field(
+        default=None,
+        description="Caveats, ambiguities, or sections you skipped.",
+    )
+
+
+class RuleExtractorUnavailable(Exception):
+    """Raised when Live mode is required but disabled."""
+
+
+def is_live() -> bool:
+    return os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
+
+
+def extract_rules_from_text(
+    document_text: str,
+    *,
+    jurisdiction_hint: Optional[str] = None,
+    model: str = "claude-opus-4-7",
+) -> RuleExtractionResult:
+    """Call Claude on the supplied text and return candidate Rule rows."""
+    if not is_live():
+        raise RuleExtractorUnavailable(
+            "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY set."
+        )
+
+    client = anthropic.Anthropic()
+
+    user_content = document_text
+    if jurisdiction_hint:
+        user_content = (
+            f"Jurisdiction hint: {jurisdiction_hint}\n\n---\n\n{document_text}"
+        )
+
+    response = client.messages.parse(
+        model=model,
+        max_tokens=16000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "high"},
+        system=[
+            {
+                "type": "text",
+                "text": SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_format=RuleExtractionResult,
+    )
+
+    if response.parsed_output is None:
+        raise RuntimeError(
+            f"Rule extraction failed — stop_reason={response.stop_reason}."
+        )
+    return response.parsed_output

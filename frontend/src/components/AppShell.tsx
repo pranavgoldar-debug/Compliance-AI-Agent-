@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
+import { AskAspora } from "@/components/AskAspora";
 import { cn } from "@/lib/utils";
 
 export function AppShell() {
@@ -18,6 +19,7 @@ export function AppShell() {
           </div>
         </main>
       </div>
+      <AskAspora />
     </div>
   );
 }

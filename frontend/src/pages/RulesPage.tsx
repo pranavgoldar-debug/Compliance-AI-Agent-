@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { PageHeader } from "@/components/PageHeader";
+import { AddRuleFromTextDialog } from "@/components/AddRuleFromTextDialog";
 import { JURISDICTIONS } from "@/lib/format";
 import type { Rule, RuleStatus } from "@/types/api";
 
@@ -17,6 +19,7 @@ export function RulesPage() {
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ["rules", tab, jurisdictionCode, category],
@@ -51,7 +54,14 @@ export function RulesPage() {
       <PageHeader
         title="Compliance Rules"
         description="Rule templates that generate per-entity obligations. Admins manage these; everyone reads."
+        actions={
+          <Button onClick={() => setAiDialogOpen(true)}>
+            <Sparkles className="h-4 w-4" />
+            Add from text
+          </Button>
+        }
       />
+      <AddRuleFromTextDialog open={aiDialogOpen} onOpenChange={setAiDialogOpen} />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as RuleStatus)}>
         <TabsList>

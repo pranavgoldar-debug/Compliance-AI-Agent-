@@ -22,9 +22,11 @@ from pydantic import BaseModel
 
 from compliance_agent.api import (
     calendar_router,
+    chat_router,
     dashboard_router,
     entities_router,
     obligations_router,
+    rules_ai_router,
     rules_router,
     tasks_router,
 )
@@ -72,9 +74,11 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(entities_router)
     app.include_router(rules_router)
+    app.include_router(rules_ai_router)  # AI Rule extraction (admin)
     app.include_router(obligations_router)
     app.include_router(calendar_router)
     app.include_router(tasks_router)
+    app.include_router(chat_router)  # Ask Aspora chat assistant
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))
 
