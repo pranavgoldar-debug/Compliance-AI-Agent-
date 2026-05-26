@@ -86,64 +86,128 @@ DEMO_USERS = [
 # ---------------------------------------------------------------------------
 # Entities (demo data — editable from the UI later)
 # ---------------------------------------------------------------------------
-# Mirrors the Aspora Global Compliance Tracker — one entity per CSV
-# (UK / UAE / Canada / Lithuania) plus the two USA legal entities listed in
-# the USA tab. India / Singapore / EU are not in the tracker and are
-# intentionally absent.
+# Mirrors the Aspora Global Compliance Tracker — drawn from the "audit
+# applicability and tax fil" entity registry plus the Rental Details sheet.
+# Two India entities use a Mar fiscal year end; everyone else is Dec.
 DEMO_ENTITIES = [
+    # === USA ===
     {
-        "name": "Aspora UK Ltd",
+        "name": "Vance Inc.",
+        "short_code": "VINC",
+        "legal_type": "C-Corporation",
+        "jurisdiction_code": "us",
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranav.goldar@aspora.com",
+    },
+    {
+        "name": "Vance Money Services LLC",
+        "short_code": "VMS",
+        "legal_type": "LLC (Money Services Business)",
+        "jurisdiction_code": "us",
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranav.goldar@aspora.com",
+    },
+    # === United Kingdom ===
+    {
+        "name": "Real Transfer Limited",
+        "short_code": "RTUK",
         "legal_type": "Private Limited Company",
         "jurisdiction_code": "uk",
-        "registration_number": "01234567",
-        "incorporation_date": date(2018, 2, 18),
-        "fiscal_year_end": "31-Mar",
+        "fiscal_year_end": "31-Dec",
         "country_lead_email": "pranavgoldar.iitb@gmail.com",
     },
     {
-        "name": "Vance Inc",
-        "legal_type": "C-Corporation",
-        "jurisdiction_code": "us",
-        "registration_number": "US-VANCE-2021",
-        "incorporation_date": date(2021, 1, 1),
+        "name": "Vance Technologies Limited",
+        "short_code": "VTUK",
+        "legal_type": "Private Limited Company",
+        "jurisdiction_code": "uk",
         "fiscal_year_end": "31-Dec",
-        "country_lead_email": "pranav.goldar@aspora.com",
+        "country_lead_email": "pranavgoldar.iitb@gmail.com",
     },
+    # === UAE ===
     {
-        "name": "Vance Money Services",
-        "legal_type": "Money Services Business",
-        "jurisdiction_code": "us",
-        "registration_number": "US-VMS-2022",
-        "incorporation_date": date(2022, 1, 1),
-        "fiscal_year_end": "31-Dec",
-        "country_lead_email": "pranav.goldar@aspora.com",
-    },
-    {
-        "name": "Aspora DMCC",
-        "legal_type": "DMCC Free Zone Company",
+        "name": "Vance Techlabs Limited",
+        "short_code": "VTAE",
+        "legal_type": "DIFC Private Company",
         "jurisdiction_code": "uae",
-        "registration_number": "DMCC-987654",
-        "incorporation_date": date(2020, 5, 5),
         "fiscal_year_end": "31-Dec",
         "country_lead_email": "pranavgoldar.moodi@gmail.com",
     },
     {
-        "name": "Aspora Lithuania UAB",
-        "legal_type": "Uždaroji akcinė bendrovė",
-        "jurisdiction_code": "lithuania",
-        "registration_number": "LT304567890",
-        "incorporation_date": date(2021, 3, 14),
+        "name": "Aspora Money Services Limited",
+        "short_code": "VMAE",
+        "legal_type": "DIFC Private Company",
+        "jurisdiction_code": "uae",
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
+    },
+    {
+        "name": "Vance Technologies Holding Limited",
+        "short_code": "VTHL",
+        "legal_type": "DIFC Holding Company",
+        "jurisdiction_code": "uae",
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
+    },
+    {
+        "name": "Nesse Tech FZE",
+        "short_code": "NFZE",
+        "legal_type": "Free Zone Establishment",
+        "jurisdiction_code": "uae",
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
+    },
+    {
+        "name": "Aspora Financial Services L.L.C",
+        "short_code": "AFAE",
+        "legal_type": "Mainland L.L.C.",
+        "jurisdiction_code": "uae",
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
+    },
+    # === Canada ===
+    {
+        "name": "Nesse Technologies Inc.",
+        "short_code": "NESS",
+        "legal_type": "Federal Corporation",
+        "jurisdiction_code": "canada",
         "fiscal_year_end": "31-Dec",
         "country_lead_email": "pranav.goldar@aspora.com",
     },
+    # === Singapore ===
     {
-        "name": "Aspora Canada Inc",
-        "legal_type": "Federal Corporation",
-        "jurisdiction_code": "canada",
-        "registration_number": "987654-3",
-        "incorporation_date": date(2022, 1, 20),
+        "name": "Vance Techlabs PTE Ltd",
+        "short_code": "VTSG",
+        "legal_type": "Private Limited",
+        "jurisdiction_code": "singapore",
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranavgoldar.moodi@gmail.com",
+    },
+    # === Lithuania ===
+    {
+        "name": "Vance Techlabs UAB",
+        "short_code": "VTLT",
+        "legal_type": "Uždaroji akcinė bendrovė",
+        "jurisdiction_code": "lithuania",
         "fiscal_year_end": "31-Dec",
         "country_lead_email": "pranav.goldar@aspora.com",
+    },
+    # === India ===
+    {
+        "name": "Sophisto India Private Limited",
+        "short_code": "EOR",
+        "legal_type": "Private Limited",
+        "jurisdiction_code": "india",
+        "fiscal_year_end": "31-Mar",
+        "country_lead_email": "pranavgoldar@gmail.com",
+    },
+    {
+        "name": "Aspora Financial Services (IFSC) Private Limited",
+        "short_code": "ASIN",
+        "legal_type": "IFSC Private Limited",
+        "jurisdiction_code": "india",
+        "fiscal_year_end": "31-Mar",
+        "country_lead_email": "pranavgoldar@gmail.com",
     },
 ]
 

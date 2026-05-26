@@ -61,6 +61,7 @@ class EntityCreate(BaseModel):
     name: str
     legal_type: str = ""
     jurisdiction_code: str
+    short_code: Optional[str] = None
     registration_number: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
@@ -71,6 +72,7 @@ class EntityUpdate(BaseModel):
     name: Optional[str] = None
     legal_type: Optional[str] = None
     jurisdiction_code: Optional[str] = None
+    short_code: Optional[str] = None
     registration_number: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
@@ -82,6 +84,7 @@ class EntityOut(_Base):
     name: str
     legal_type: str
     jurisdiction_code: str
+    short_code: Optional[str] = None
     registration_number: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None

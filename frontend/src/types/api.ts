@@ -27,6 +27,7 @@ export interface Entity {
   name: string;
   legal_type: string;
   jurisdiction_code: string;
+  short_code: string | null;
   registration_number: string | null;
   incorporation_date: string | null;
   fiscal_year_end: string | null;

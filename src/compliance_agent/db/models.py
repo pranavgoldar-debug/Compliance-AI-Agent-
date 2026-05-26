@@ -124,6 +124,9 @@ class Entity(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     legal_type: Mapped[str] = mapped_column(String(120), nullable=False, default="")  # e.g. Private Limited
     jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)  # india / uk / us / uae / sg / lt / ca / eu
+    # Short internal code from the tracker (VINC, RTUK, NESS, ...) — used
+    # for cross-referencing rows in the Aspora Global Compliance Tracker.
+    short_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
     registration_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     incorporation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     fiscal_year_end: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "31-Mar", "31-Dec"
