@@ -19,7 +19,6 @@ import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -504,8 +503,6 @@ export function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Silence unused button import (kept for future "snooze" wiring). */}
-      <Button className="hidden" />
     </div>
   );
 }

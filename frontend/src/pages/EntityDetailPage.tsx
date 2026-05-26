@@ -10,7 +10,6 @@ import {
   Edit,
   Lock,
   MoreHorizontal,
-  FileText,
   History,
   ScrollText,
   UserCheck,
@@ -678,6 +677,3 @@ function ActivityTab({ entity }: { entity: Entity }) {
 }
 
 
-// Silence import-only-used helper warnings if the production build flag is strict.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _ = FileText;

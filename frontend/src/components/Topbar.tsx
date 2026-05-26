@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Search, LogOut, Settings as SettingsIcon, ChevronRight, BellRing, AlertCircle, AtSign, Loader2 } from "lucide-react";
+import { Bell, Search, LogOut, Settings as SettingsIcon, ChevronRight, BellRing, AlertCircle, AtSign } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -427,5 +427,3 @@ export function Topbar() {
   );
 }
 
-// Ensures unused import warnings are silenced when build flags are strict.
-export const __ensureImports = Loader2;
