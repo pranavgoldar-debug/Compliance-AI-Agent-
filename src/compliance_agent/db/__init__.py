@@ -15,6 +15,7 @@ from compliance_agent.db.models import (
     Role,
     Rule,
     RuleEntity,
+    RuleSnapshot,
     RuleStatus,
     User,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "Entity",
     "Rule",
     "RuleEntity",
+    "RuleSnapshot",
     "Obligation",
     "Comment",
     "Activity",

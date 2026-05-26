@@ -110,6 +110,8 @@ class RuleCreate(BaseModel):
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
     status: RuleStatus = RuleStatus.production
+    source_url: Optional[str] = None
+    source_text: Optional[str] = None
     entity_ids: list[int] = []
 
 
@@ -125,6 +127,8 @@ class RuleUpdate(BaseModel):
     payment_rule: Optional[str] = None
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
+    source_url: Optional[str] = None
+    source_text: Optional[str] = None
     status: Optional[RuleStatus] = None
     entity_ids: Optional[list[int]] = None
 
@@ -143,9 +147,24 @@ class RuleOut(_Base):
     applicability: Applicability
     applicability_note: Optional[str] = None
     status: RuleStatus
+    source_url: Optional[str] = None
+    source_text: Optional[str] = None
+    source_changed_at: Optional[datetime] = None
     entity_ids: list[int] = []
     created_at: datetime
     updated_at: datetime
+
+
+class RuleSnapshotOut(_Base):
+    id: int
+    rule_id: int
+    fetched_at: datetime
+    fetched_by: Optional[UserBrief] = None
+    http_status: Optional[int] = None
+    content_length: int
+    content_hash: str
+    content_excerpt: Optional[str] = None
+    change_summary: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

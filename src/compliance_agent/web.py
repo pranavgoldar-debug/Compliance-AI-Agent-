@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from compliance_agent.api import (
     activities_router,
+    ai_assist_router,
     calendar_router,
     chat_router,
     dashboard_router,
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router)
     app.include_router(exports_router)
     app.include_router(system_router)
+    app.include_router(ai_assist_router)  # Phase 7 AI assist endpoints
     app.include_router(chat_router)  # Ask Aspora chat assistant
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))

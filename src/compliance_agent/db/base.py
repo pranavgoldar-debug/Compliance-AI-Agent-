@@ -63,22 +63,31 @@ def _add_missing_columns() -> None:
     from sqlalchemy import inspect, text
 
     inspector = inspect(engine)
-    if "obligations" not in inspector.get_table_names():
-        return
+    tables = set(inspector.get_table_names())
 
-    existing_cols = {col["name"] for col in inspector.get_columns("obligations")}
-
-    # Columns added after Phase 4b — keep in sync with models.Obligation.
-    additions: list[tuple[str, str]] = [
-        ("effort_band", "VARCHAR(8) NOT NULL DEFAULT '4w'"),
-        ("effort_band_reason", "TEXT"),
-    ]
+    table_additions: dict[str, list[tuple[str, str]]] = {
+        # Phase 5: effort bands on obligations
+        "obligations": [
+            ("effort_band", "VARCHAR(8) NOT NULL DEFAULT '4w'"),
+            ("effort_band_reason", "TEXT"),
+        ],
+        # Phase 7: source provenance on rules
+        "rules": [
+            ("source_url", "VARCHAR(1024)"),
+            ("source_text", "TEXT"),
+            ("source_changed_at", "DATETIME"),
+        ],
+    }
 
     with engine.begin() as conn:
-        for col_name, col_def in additions:
-            if col_name in existing_cols:
+        for table, additions in table_additions.items():
+            if table not in tables:
                 continue
-            conn.execute(text(f"ALTER TABLE obligations ADD COLUMN {col_name} {col_def}"))
+            existing = {col["name"] for col in inspector.get_columns(table)}
+            for col_name, col_def in additions:
+                if col_name in existing:
+                    continue
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"))
 
 
 def get_session() -> Iterator[Session]:

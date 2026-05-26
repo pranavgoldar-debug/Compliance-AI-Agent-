@@ -170,6 +170,11 @@ class Rule(Base):
         SAEnum(RuleStatus), nullable=False, default=RuleStatus.production, index=True
     )
 
+    # Source provenance — used by the regulation change watcher (Phase 7).
+    source_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -376,3 +381,34 @@ class Notification(Base):
 
     actor: Mapped[Optional[User]] = relationship("User", foreign_keys=[actor_id])
     obligation: Mapped[Optional[Obligation]] = relationship("Obligation")
+
+
+# ---------------------------------------------------------------------------
+# Rule source snapshots — Phase 7 regulation change watcher
+# ---------------------------------------------------------------------------
+class RuleSnapshot(Base):
+    """A captured fetch of a rule's source_url. We compare new fetches against
+    the latest snapshot's content_hash to detect upstream changes."""
+
+    __tablename__ = "rule_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_id: Mapped[int] = mapped_column(
+        ForeignKey("rules.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), index=True
+    )
+    fetched_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    http_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    content_length: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # First ~16 KB of plain text — enough for a diff preview without bloating SQLite.
+    content_excerpt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # AI-summarised description of what changed vs the prior snapshot (optional).
+    change_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    rule: Mapped[Rule] = relationship("Rule")
+    fetched_by: Mapped[Optional[User]] = relationship("User")

@@ -1,5 +1,6 @@
 """API routers for the Aspora Compliance OS surface."""
 from compliance_agent.api.activities import router as activities_router
+from compliance_agent.api.ai_assist import router as ai_assist_router
 from compliance_agent.api.chat import router as chat_router
 from compliance_agent.api.dashboard import router as dashboard_router
 from compliance_agent.api.documents import (
@@ -22,6 +23,7 @@ from compliance_agent.api.users import router as users_router
 
 __all__ = [
     "activities_router",
+    "ai_assist_router",
     "chat_router",
     "dashboard_router",
     "documents_router",

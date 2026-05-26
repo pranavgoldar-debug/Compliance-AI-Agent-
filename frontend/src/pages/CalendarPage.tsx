@@ -246,7 +246,7 @@ export function CalendarPage() {
       />
 
       {/* Sticky filter bar */}
-      <div className="sticky top-14 z-20 bg-secondary/40 backdrop-blur supports-[backdrop-filter]:bg-secondary/40 -mx-8 px-8 py-3 border-b border-border">
+      <div className="sticky top-0 z-20 bg-secondary -mx-8 px-8 py-3 border-b border-border shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <MultiSelectFilter
             label="Entity"
@@ -713,7 +713,7 @@ function HeatmapView({
 function DayDetailPanel({ date, items }: { date: Date; items: CalendarObligation[] }) {
   const { openObligation } = useObligationDrawer();
   return (
-    <Card className="overflow-hidden h-fit sticky top-32">
+    <Card className="overflow-hidden h-fit sticky top-20">
       <div className="px-4 py-3 border-b border-border">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">
           {format(date, "EEEE")}
