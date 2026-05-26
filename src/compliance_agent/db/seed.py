@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from compliance_agent.auth.passwords import hash_password
 from compliance_agent.db import (
     Applicability,
+    EffortBand,
     Entity,
     Obligation,
     ObligationStatus,
@@ -33,6 +34,22 @@ from compliance_agent.db import (
     User,
     session_scope,
 )
+
+
+def _effort_band_for_frequency(frequency: str) -> EffortBand:
+    """Pick a sensible default effort band per filing cadence."""
+    f = (frequency or "").lower()
+    if "monthly" in f or "continuous" in f:
+        return EffortBand.w1
+    if "quarterly" in f:
+        return EffortBand.w2
+    if "half" in f:
+        return EffortBand.w4
+    if "annual" in f or "bi-annual" in f or "one-time" in f:
+        return EffortBand.w8
+    if "event" in f:
+        return EffortBand.w2
+    return EffortBand.w4
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +342,7 @@ def _ensure_obligations(db: Session, rules: list[Rule], users: dict[str, User]) 
                     due_date=due,
                     period_label=_period_label_for_frequency(rule.frequency, due),
                     status=status,
+                    effort_band=_effort_band_for_frequency(rule.frequency),
                     assignee_id=assignee.id if assignee else None,
                     completed_at=completed_at,
                     completed_by_id=completed_by_id,
@@ -354,6 +372,24 @@ def _period_label_for_frequency(frequency: str, due: date) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Top-level seed entry point
 # ---------------------------------------------------------------------------
+def _backfill_effort_bands(db: Session) -> int:
+    """For obligations that still have the default '4w' band, derive a more
+    sensible one from the rule's frequency. Runs once after the column is
+    added; idempotent because it only touches the default value."""
+    rows = db.execute(
+        select(Obligation).where(Obligation.effort_band == EffortBand.w4)
+    ).scalars().all()
+    touched = 0
+    for ob in rows:
+        target = _effort_band_for_frequency(ob.rule.frequency)
+        if target != EffortBand.w4:
+            ob.effort_band = target
+            touched += 1
+    if touched:
+        db.flush()
+    return touched
+
+
 def run_seed() -> dict[str, int]:
     """Idempotent seed. Returns counts of created objects."""
     from compliance_agent.db import init_db
@@ -364,11 +400,13 @@ def run_seed() -> dict[str, int]:
         entities_map = _ensure_entities(db, users)
         rules = _ensure_rules(db, list(entities_map.values()))
         ob_count = _ensure_obligations(db, rules, users)
+        backfilled = _backfill_effort_bands(db)
     return {
         "users": len(users),
         "entities": len(entities_map),
         "rules": len(rules),
         "obligations_created": ob_count,
+        "effort_bands_backfilled": backfilled,
     }
 
 

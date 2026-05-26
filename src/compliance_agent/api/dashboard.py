@@ -65,6 +65,36 @@ def dashboard(
         )
     ).scalar_one()
 
+    week_end_d = today() + timedelta(days=7)
+    due_this_week = db.execute(
+        select(func.count(Obligation.id)).where(
+            Obligation.due_date >= today(),
+            Obligation.due_date <= week_end_d,
+            Obligation.status.in_(open_statuses),
+        )
+    ).scalar_one()
+
+    # End of current month — simple inclusive cap.
+    if today().month == 12:
+        next_month_start = today().replace(year=today().year + 1, month=1, day=1)
+    else:
+        next_month_start = today().replace(month=today().month + 1, day=1)
+    month_end = next_month_start - timedelta(days=1)
+    due_this_month = db.execute(
+        select(func.count(Obligation.id)).where(
+            Obligation.due_date >= today(),
+            Obligation.due_date <= month_end,
+            Obligation.status.in_(open_statuses),
+        )
+    ).scalar_one()
+
+    unassigned = db.execute(
+        select(func.count(Obligation.id)).where(
+            Obligation.assignee_id.is_(None),
+            Obligation.status.in_(open_statuses),
+        )
+    ).scalar_one()
+
     open_tasks = db.execute(
         select(Obligation)
         .where(Obligation.assignee_id == user.id, Obligation.status.in_(open_statuses))
@@ -98,6 +128,9 @@ def dashboard(
         in_alert_window=in_alert,
         in_safe_zone=safe,
         completed_this_month=completed_this_month,
+        due_this_week=due_this_week,
+        due_this_month=due_this_month,
+        unassigned=unassigned,
         open_tasks=[serialize_obligation(o) for o in open_tasks],
         items_in_alert_window=[serialize_obligation(o) for o in in_alert_items],
         this_week=[serialize_obligation(o) for o in this_week],

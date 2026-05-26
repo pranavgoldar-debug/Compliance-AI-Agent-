@@ -1,13 +1,20 @@
 """Internal helpers used across API route modules."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from compliance_agent.db import Activity, Entity, Obligation, ObligationStatus
+from compliance_agent.db import (
+    Activity,
+    EFFORT_BAND_DAYS,
+    EffortBand,
+    Entity,
+    Obligation,
+    ObligationStatus,
+)
 from compliance_agent.api.schemas import (
     CalendarObligation,
     EntityOut,
@@ -16,7 +23,8 @@ from compliance_agent.api.schemas import (
 )
 
 
-ALERT_WINDOW_DAYS = 14  # days-until-due that flag "in alert window"
+# Fallback for legacy callers — alert lead time = 2× effort-band days.
+ALERT_WINDOW_DAYS = 14
 
 
 def now_utc() -> datetime:
@@ -31,6 +39,11 @@ def days_remaining(due: date) -> int:
     return (due - today()).days
 
 
+def lead_time_days(band: EffortBand) -> int:
+    """Alert lead-time = 2× the effort band itself (in days)."""
+    return EFFORT_BAND_DAYS.get(band, 28) * 2
+
+
 def is_overdue(due: date, status: ObligationStatus) -> bool:
     return (
         due < today()
@@ -38,12 +51,21 @@ def is_overdue(due: date, status: ObligationStatus) -> bool:
     )
 
 
-def is_in_alert_window(due: date, status: ObligationStatus) -> bool:
+def is_in_alert_window(
+    due: date,
+    status: ObligationStatus,
+    band: EffortBand = EffortBand.w4,
+) -> bool:
     d = days_remaining(due)
     return (
-        0 <= d <= ALERT_WINDOW_DAYS
+        0 <= d <= lead_time_days(band)
         and status not in (ObligationStatus.completed, ObligationStatus.not_applicable)
     )
+
+
+def next_alert_date(due: date, band: EffortBand = EffortBand.w4) -> date:
+    """The date the obligation enters its alert window."""
+    return due - timedelta(days=lead_time_days(band))
 
 
 def serialize_user(user) -> Optional[UserBrief]:
@@ -53,6 +75,7 @@ def serialize_user(user) -> Optional[UserBrief]:
 
 
 def serialize_obligation(o: Obligation) -> ObligationOut:
+    band = o.effort_band or EffortBand.w4
     return ObligationOut(
         id=o.id,
         rule_id=o.rule_id,
@@ -62,19 +85,24 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
         rule_frequency=o.rule.frequency,
+        rule_due_date_rule=o.rule.due_date_rule,
+        rule_source_url=None,  # populated later when we capture source URLs
         entity_name=o.entity.name,
         entity_jurisdiction_code=o.entity.jurisdiction_code,
         due_date=o.due_date,
         period_label=o.period_label,
         status=o.status,
         assignee=serialize_user(o.assignee),
+        effort_band=band,
+        effort_band_reason=o.effort_band_reason,
         filing_reference=o.filing_reference,
         payment_amount=o.payment_amount,
         payment_reference=o.payment_reference,
         notes=o.notes,
         days_remaining=days_remaining(o.due_date),
         is_overdue=is_overdue(o.due_date, o.status),
-        is_in_alert_window=is_in_alert_window(o.due_date, o.status),
+        is_in_alert_window=is_in_alert_window(o.due_date, o.status, band),
+        next_alert_at=next_alert_date(o.due_date, band),
         completed_at=o.completed_at,
         created_at=o.created_at,
         updated_at=o.updated_at,
@@ -82,16 +110,21 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
 
 
 def serialize_calendar_obligation(o: Obligation) -> CalendarObligation:
+    band = o.effort_band or EffortBand.w4
     return CalendarObligation(
         id=o.id,
         due_date=o.due_date,
         status=o.status,
         entity_id=o.entity_id,
         entity_name=o.entity.name,
+        entity_jurisdiction_code=o.entity.jurisdiction_code,
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
+        effort_band=band,
+        assignee=serialize_user(o.assignee),
         is_overdue=is_overdue(o.due_date, o.status),
+        is_in_alert_window=is_in_alert_window(o.due_date, o.status, band),
         days_remaining=days_remaining(o.due_date),
     )
 

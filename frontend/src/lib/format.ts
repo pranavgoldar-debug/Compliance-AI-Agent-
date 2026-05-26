@@ -1,7 +1,7 @@
 // Display helpers shared across pages.
 
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import type { ObligationStatus } from "@/types/api";
+import type { EffortBand, ObligationStatus } from "@/types/api";
 
 // Country code → flag emoji + display name. Used by JurisdictionBadge.
 export const JURISDICTIONS: Record<string, { name: string; flag: string }> = {
@@ -94,4 +94,28 @@ export function userInitials(name: string | null | undefined, fallback = "?"): s
       .map((p) => p[0]?.toUpperCase() ?? "")
       .join("") || fallback
   );
+}
+
+// Effort band → display + lead-time math. Mirrors compliance_agent/db/models.py.
+export const EFFORT_BAND_DAYS: Record<EffortBand, number> = {
+  "1w": 7,
+  "2w": 14,
+  "4w": 28,
+  "8w": 56,
+  "12w": 84,
+};
+
+export const EFFORT_BANDS: EffortBand[] = ["1w", "2w", "4w", "8w", "12w"];
+
+export function effortBandLabel(b: EffortBand): string {
+  return `${b} effort`;
+}
+
+export function leadTimeDays(b: EffortBand): number {
+  return EFFORT_BAND_DAYS[b] * 2;
+}
+
+export function statusLabelShort(status: ObligationStatus, isOverdue: boolean): string {
+  if (isOverdue) return "Overdue";
+  return statusLabel(status);
 }

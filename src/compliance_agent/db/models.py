@@ -59,6 +59,26 @@ class Applicability(str, enum.Enum):
     sector_specific = "Sector-specific"
 
 
+class EffortBand(str, enum.Enum):
+    """Lead-time band for an obligation. Alerts fire at ~2× this window
+    before the due date (e.g. a 4-week band → alert 8 weeks out)."""
+    w1 = "1w"
+    w2 = "2w"
+    w4 = "4w"
+    w8 = "8w"
+    w12 = "12w"
+
+
+# How many days each effort band represents (lead-time = 2× this).
+EFFORT_BAND_DAYS: dict[EffortBand, int] = {
+    EffortBand.w1: 7,
+    EffortBand.w2: 14,
+    EffortBand.w4: 28,
+    EffortBand.w8: 56,
+    EffortBand.w12: 84,
+}
+
+
 # ---------------------------------------------------------------------------
 # Users
 # ---------------------------------------------------------------------------
@@ -195,6 +215,10 @@ class Obligation(Base):
     status: Mapped[ObligationStatus] = mapped_column(
         SAEnum(ObligationStatus), nullable=False, default=ObligationStatus.not_started, index=True
     )
+    effort_band: Mapped[EffortBand] = mapped_column(
+        SAEnum(EffortBand), nullable=False, default=EffortBand.w4
+    )
+    effort_band_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     assignee_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     assignee: Mapped[Optional[User]] = relationship(
         "User", back_populates="assigned_obligations", foreign_keys=[assignee_id]

@@ -13,6 +13,8 @@ export type RuleStatus = "production" | "staging" | "archived";
 
 export type Applicability = "Mandatory" | "Conditional" | "Sector-specific";
 
+export type EffortBand = "1w" | "2w" | "4w" | "8w" | "12w";
+
 export interface UserBrief {
   id: number;
   email: string;
@@ -65,12 +67,16 @@ export interface Obligation {
   rule_authority: string;
   rule_category: string;
   rule_frequency: string;
+  rule_due_date_rule: string | null;
+  rule_source_url: string | null;
   entity_name: string;
   entity_jurisdiction_code: string;
   due_date: string;
   period_label: string | null;
   status: ObligationStatus;
   assignee: UserBrief | null;
+  effort_band: EffortBand;
+  effort_band_reason: string | null;
   filing_reference: string | null;
   payment_amount: string | null;
   payment_reference: string | null;
@@ -78,6 +84,7 @@ export interface Obligation {
   days_remaining: number;
   is_overdue: boolean;
   is_in_alert_window: boolean;
+  next_alert_at: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -89,10 +96,14 @@ export interface CalendarObligation {
   status: ObligationStatus;
   entity_id: number;
   entity_name: string;
+  entity_jurisdiction_code: string;
   rule_form_name: string;
   rule_authority: string;
   rule_category: string;
+  effort_band: EffortBand;
+  assignee: UserBrief | null;
   is_overdue: boolean;
+  is_in_alert_window: boolean;
   days_remaining: number;
 }
 
@@ -101,6 +112,9 @@ export interface DashboardStats {
   in_alert_window: number;
   in_safe_zone: number;
   completed_this_month: number;
+  due_this_week: number;
+  due_this_month: number;
+  unassigned: number;
   open_tasks: Obligation[];
   items_in_alert_window: Obligation[];
   this_week: Obligation[];

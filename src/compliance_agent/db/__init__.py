@@ -3,6 +3,8 @@ from compliance_agent.db.models import (
     Activity,
     Applicability,
     Comment,
+    EFFORT_BAND_DAYS,
+    EffortBand,
     Entity,
     Obligation,
     ObligationStatus,
@@ -31,4 +33,6 @@ __all__ = [
     "ObligationStatus",
     "RuleStatus",
     "Applicability",
+    "EffortBand",
+    "EFFORT_BAND_DAYS",
 ]
