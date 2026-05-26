@@ -238,7 +238,7 @@ export function AuditLogPage() {
           <CardContent className="p-0">
             {groupedByDay.map(([day, items]) => (
               <div key={day}>
-                <div className="sticky top-14 z-10 bg-secondary/40 backdrop-blur supports-[backdrop-filter]:bg-secondary/40 border-b border-border px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                <div className="sticky top-0 z-10 bg-secondary border-b border-border px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold shadow-sm">
                   {day}
                 </div>
                 <ul className="divide-y divide-border">

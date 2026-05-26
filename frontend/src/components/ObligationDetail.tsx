@@ -43,6 +43,8 @@ import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { DaysRemainingCounter } from "@/components/DaysRemainingCounter";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { DocumentList } from "@/components/DocumentList";
+import { MentionTextarea, renderCommentBody } from "@/components/MentionTextarea";
+import { SecondOpinionPanel } from "@/components/SecondOpinionPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { fmtDate, fmtRelative, userInitials, EFFORT_BANDS } from "@/lib/format";
@@ -326,10 +328,12 @@ function Body({
   onPatch: (p: Partial<Obligation>) => void;
   variant: "drawer" | "page";
 }) {
+  const showSecondOpinion = obligation.status === "pending_review";
   if (variant === "drawer") {
     return (
       <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
         <MainContent obligation={obligation} />
+        {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
         <Sidebar obligation={obligation} users={users} onPatch={onPatch} />
         <FilingFields obligation={obligation} onPatch={onPatch} />
         <CommentsSection obligationId={obligation.id} />
@@ -341,6 +345,7 @@ function Body({
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 p-6">
       <div className="space-y-6 min-w-0">
         <MainContent obligation={obligation} />
+        {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
         <FilingFields obligation={obligation} onPatch={onPatch} />
         <CommentsSection obligationId={obligation.id} />
         <ActivityFeed obligationId={obligation.id} />
@@ -806,21 +811,26 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
                   </div>
                   <span className="text-muted-foreground">{fmtRelative(c.created_at)}</span>
                 </div>
-                <div className="mt-2 text-sm whitespace-pre-wrap">{c.body}</div>
+                <div className="mt-2 text-sm whitespace-pre-wrap">
+                  {renderCommentBody(c.body)}
+                </div>
               </li>
             ))}
           </ul>
         )}
 
         <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <textarea
+          <MentionTextarea
             rows={2}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add a comment…"
-            className="block w-full px-3 py-2 text-sm focus:outline-none resize-none border-0"
+            onChange={setDraft}
+            placeholder="Add a comment… type @ to mention a teammate"
+            className="border-0"
           />
-          <div className="flex justify-end px-2 py-2 border-t border-border bg-secondary/30">
+          <div className="flex justify-between items-center px-2 py-2 border-t border-border bg-secondary/30">
+            <span className="text-[11px] text-muted-foreground pl-2">
+              Mention with <kbd className="px-1 bg-background border border-border rounded">@</kbd>
+            </span>
             <Button size="sm" onClick={submit} disabled={!draft.trim() || postMutation.isPending}>
               {postMutation.isPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

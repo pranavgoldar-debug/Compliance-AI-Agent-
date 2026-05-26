@@ -61,3 +61,25 @@ def decode_token(token: str) -> Optional[dict[str, Any]]:
 
 def cookie_max_age_seconds() -> int:
     return _TOKEN_TTL_DAYS * 24 * 60 * 60
+
+
+# ---------------------------------------------------------------------------
+# Sliding-refresh helpers
+#
+# We mint a fresh token (and re-set the cookie) on each authenticated request
+# whose existing token was issued more than REFRESH_AFTER_DAYS ago. Net effect:
+# anyone using the app daily never has to re-login; idle users still expire
+# at the 7-day cap. The cap resets every refresh, so heavy users get
+# perpetual sessions — which matches the cookie semantics of every modern
+# SaaS the team already uses.
+# ---------------------------------------------------------------------------
+REFRESH_AFTER_DAYS = 3
+
+
+def needs_refresh(payload: dict[str, Any]) -> bool:
+    """True if the token's `iat` is older than REFRESH_AFTER_DAYS."""
+    iat = payload.get("iat")
+    if not isinstance(iat, (int, float)):
+        return False
+    issued = datetime.fromtimestamp(iat, tz=timezone.utc)
+    return datetime.now(tz=timezone.utc) - issued >= timedelta(days=REFRESH_AFTER_DAYS)

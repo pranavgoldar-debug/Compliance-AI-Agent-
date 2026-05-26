@@ -227,59 +227,67 @@ function SectionHeader({
 
 
 // ---------------------------------------------------------------------------
-// This week's filings — grouped by weekday with assignee avatars
+// This week's filings — next 7 days from today, grouped by exact date so no
+// item gets dropped because of weekend / cross-week edges.
 // ---------------------------------------------------------------------------
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function ymdLocal(d: Date): string {
+  // Render the local Y-M-D so we match the YYYY-MM-DD strings the API hands
+  // back (which are naive dates — no TZ in them).
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function ThisWeekStrip({ items }: { items: Obligation[] }) {
   const { openObligation } = useObligationDrawer();
 
-  // Build {weekday: items} for the next 5 weekdays starting today.
-  const byDay = new Map<string, { date: Date; items: Obligation[] }>();
+  // Build 7 buckets keyed by YYYY-MM-DD, starting today.
+  const buckets: { key: string; date: Date; items: Obligation[] }[] = [];
   const today = new Date();
-  const dayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1; // Mon=0…Sun=6
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(today);
-    const target = dayIndex + i;
-    if (target >= WEEKDAYS.length) break;
     d.setDate(today.getDate() + i);
-    byDay.set(WEEKDAYS[target], { date: d, items: [] });
+    buckets.push({ key: ymdLocal(d), date: d, items: [] });
   }
+  const byKey = new Map(buckets.map((b) => [b.key, b]));
+
   for (const ob of items) {
-    const due = new Date(ob.due_date);
-    const wd = due.getDay() === 0 ? 6 : due.getDay() - 1;
-    const key = WEEKDAYS[wd];
-    if (byDay.has(key)) byDay.get(key)!.items.push(ob);
+    // API returns "YYYY-MM-DD" strings — match directly, no TZ wrangling.
+    const bucket = byKey.get(ob.due_date);
+    if (bucket) bucket.items.push(ob);
   }
 
-  const entries = Array.from(byDay.entries());
-  if (entries.length === 0) {
+  const totalShown = buckets.reduce((n, b) => n + b.items.length, 0);
+  if (totalShown === 0) {
     return (
       <EmptyState
         icon={<Sun className="h-5 w-5" />}
         title="You're clear this week"
-        description="Nothing falls due in the next 5 working days."
+        description="Nothing falls due in the next 7 days."
       />
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-border">
-      {entries.map(([weekday, { date, items: dayItems }]) => (
-        <div key={weekday} className="p-4 min-w-0">
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 divide-y md:divide-y-0 md:divide-x divide-border">
+      {buckets.map((b, i) => (
+        <div key={b.key} className="p-4 min-w-0">
           <div className="flex items-baseline justify-between mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
-              {weekday}
+              {i === 0 ? "Today" : i === 1 ? "Tomorrow" : DAY_NAMES[b.date.getDay()]}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              {date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              {b.date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
             </span>
           </div>
-          {dayItems.length === 0 ? (
+          {b.items.length === 0 ? (
             <div className="text-xs text-muted-foreground italic">—</div>
           ) : (
             <div className="space-y-2">
-              {dayItems.slice(0, 4).map((ob) => (
+              {b.items.slice(0, 4).map((ob) => (
                 <button
                   key={ob.id}
                   type="button"
@@ -297,8 +305,8 @@ function ThisWeekStrip({ items }: { items: Obligation[] }) {
                   </div>
                 </button>
               ))}
-              {dayItems.length > 4 && (
-                <div className="text-xs text-muted-foreground">+{dayItems.length - 4} more</div>
+              {b.items.length > 4 && (
+                <div className="text-xs text-muted-foreground">+{b.items.length - 4} more</div>
               )}
             </div>
           )}
@@ -307,8 +315,6 @@ function ThisWeekStrip({ items }: { items: Obligation[] }) {
     </div>
   );
 }
-
-
 // ---------------------------------------------------------------------------
 // Items in alert window (all entities)
 // ---------------------------------------------------------------------------

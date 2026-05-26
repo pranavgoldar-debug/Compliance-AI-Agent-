@@ -96,6 +96,13 @@ class User(Base):
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Reverse-side relationships
+    # Notification preferences — Phase 9 integrations.
+    notify_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notify_slack: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Personal Slack member id (e.g. U0123ABCD). When set, our channel-wide
+    # webhook pings can <@-mention> this user. Optional.
+    slack_user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
     led_entities: Mapped[list["Entity"]] = relationship(
         "Entity", back_populates="country_lead", foreign_keys="Entity.country_lead_id"
     )
@@ -169,6 +176,11 @@ class Rule(Base):
     status: Mapped[RuleStatus] = mapped_column(
         SAEnum(RuleStatus), nullable=False, default=RuleStatus.production, index=True
     )
+
+    # Source provenance — used by the regulation change watcher (Phase 7).
+    source_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -290,6 +302,14 @@ class DocumentCategory(str, enum.Enum):
     other = "Other"
 
 
+class NotificationKind(str, enum.Enum):
+    mention = "mention"
+    assigned = "assigned"
+    overdue = "overdue"           # derived on read; not persisted
+    alert_window = "alert_window" # derived on read; not persisted
+    status_change = "status_change"
+
+
 class Document(Base):
     """A file uploaded to the system. Always attached to one entity; optionally
     to a specific obligation as proof-of-filing."""
@@ -325,3 +345,125 @@ class Document(Base):
     entity: Mapped[Entity] = relationship("Entity")
     obligation: Mapped[Optional[Obligation]] = relationship("Obligation")
     uploaded_by: Mapped[Optional[User]] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Notifications — in-app inbox (Phase 6)
+# ---------------------------------------------------------------------------
+class Notification(Base):
+    """An item in a user's notification inbox.
+
+    Persisted kinds (mention / assigned / status_change) live in this table.
+    Live-derived kinds (overdue / alert_window) are computed on read from
+    the user's open obligations and never stored.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[NotificationKind] = mapped_column(
+        SAEnum(NotificationKind), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Where the notification deep-links (e.g. /obligations/123).
+    link_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    obligation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("obligations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    comment_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("comments.id", ondelete="SET NULL"), nullable=True
+    )
+    actor_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), index=True
+    )
+
+    actor: Mapped[Optional[User]] = relationship("User", foreign_keys=[actor_id])
+    obligation: Mapped[Optional[Obligation]] = relationship("Obligation")
+
+
+# ---------------------------------------------------------------------------
+# Rule source snapshots — Phase 7 regulation change watcher
+# ---------------------------------------------------------------------------
+class RuleSnapshot(Base):
+    """A captured fetch of a rule's source_url. We compare new fetches against
+    the latest snapshot's content_hash to detect upstream changes."""
+
+    __tablename__ = "rule_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_id: Mapped[int] = mapped_column(
+        ForeignKey("rules.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), index=True
+    )
+    fetched_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    http_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    content_length: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # First ~16 KB of plain text — enough for a diff preview without bloating SQLite.
+    content_excerpt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # AI-summarised description of what changed vs the prior snapshot (optional).
+    change_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    rule: Mapped[Rule] = relationship("Rule")
+    fetched_by: Mapped[Optional[User]] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Password reset tokens — Phase 8
+# ---------------------------------------------------------------------------
+class PasswordResetToken(Base):
+    """Single-use token for the forgot-password flow.
+
+    We store only the SHA-256 hash of the token — the raw value is shown to
+    the user once (via email or admin-portal link) and never persisted in
+    plain text. The active lookup compares hash(incoming_token).
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    # For audit: IP / user-agent that requested the token. Best-effort.
+    requester_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    requester_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    user: Mapped[User] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Workspace settings — singleton-ish key/value table for integration config.
+# Stored as JSON so we don't have to migrate every time a new integration
+# adds a config knob.
+# ---------------------------------------------------------------------------
+class WorkspaceSetting(Base):
+    __tablename__ = "workspace_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    updated_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )

@@ -7,10 +7,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from compliance_agent.api._helpers import log_activity
-from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleUpdate
+from compliance_agent.api._helpers import log_activity, serialize_user
+from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleSnapshotOut, RuleUpdate
 from compliance_agent.auth import get_current_user, require_admin
-from compliance_agent.db import Entity, Rule, RuleStatus, User, get_session
+from compliance_agent.db import (
+    Entity,
+    Rule,
+    RuleSnapshot,
+    RuleStatus,
+    User,
+    get_session,
+)
 
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
@@ -31,6 +38,9 @@ def _serialize_rule(rule: Rule) -> RuleOut:
         applicability=rule.applicability,
         applicability_note=rule.applicability_note,
         status=rule.status,
+        source_url=rule.source_url,
+        source_text=rule.source_text,
+        source_changed_at=rule.source_changed_at,
         entity_ids=[e.id for e in rule.entities],
         created_at=rule.created_at,
         updated_at=rule.updated_at,
@@ -118,3 +128,41 @@ def update_rule(
     db.commit()
     db.refresh(rule)
     return _serialize_rule(rule)
+
+
+# ---------------------------------------------------------------------------
+# Snapshots (Phase 7) — history of regulation-change checks
+# ---------------------------------------------------------------------------
+from sqlalchemy.orm import joinedload as _joinedload
+
+
+@router.get("/{rule_id}/snapshots", response_model=list[RuleSnapshotOut])
+def list_rule_snapshots(
+    rule_id: int,
+    db: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+) -> list[RuleSnapshotOut]:
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+    rows = db.execute(
+        select(RuleSnapshot)
+        .where(RuleSnapshot.rule_id == rule_id)
+        .options(_joinedload(RuleSnapshot.fetched_by))
+        .order_by(RuleSnapshot.fetched_at.desc())
+        .limit(50)
+    ).scalars().unique().all()
+    return [
+        RuleSnapshotOut(
+            id=s.id,
+            rule_id=s.rule_id,
+            fetched_at=s.fetched_at,
+            fetched_by=serialize_user(s.fetched_by),
+            http_status=s.http_status,
+            content_length=s.content_length,
+            content_hash=s.content_hash,
+            content_excerpt=s.content_excerpt,
+            change_summary=s.change_summary,
+        )
+        for s in rows
+    ]

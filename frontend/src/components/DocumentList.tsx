@@ -14,12 +14,16 @@ import {
   Loader2,
   MoreHorizontal,
   Pencil,
+  Sparkles,
   Trash2,
   Upload,
   File as FileIcon,
   FileImage,
   FileSpreadsheet,
 } from "lucide-react";
+import { DocumentExtractDialog } from "@/components/DocumentExtractDialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAiAvailable } from "@/lib/ai";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -238,9 +242,19 @@ export function DocumentList({
         </div>
       ) : documents.length > 0 ? (
         layout === "grid" ? (
-          <GridList documents={documents} queryKey={queryKey} showEntityColumn={showEntityColumn} />
+          <GridList
+            documents={documents}
+            queryKey={queryKey}
+            showEntityColumn={showEntityColumn}
+            obligationId={scope.kind === "obligation" ? scope.obligationId : null}
+          />
         ) : (
-          <RowList documents={documents} queryKey={queryKey} showEntityColumn={showEntityColumn} />
+          <RowList
+            documents={documents}
+            queryKey={queryKey}
+            showEntityColumn={showEntityColumn}
+            obligationId={scope.kind === "obligation" ? scope.obligationId : null}
+          />
         )
       ) : !canUpload ? (
         <EmptyState
@@ -261,10 +275,12 @@ function RowList({
   documents,
   queryKey,
   showEntityColumn,
+  obligationId,
 }: {
   documents: DocumentOut[];
   queryKey: unknown[];
   showEntityColumn: boolean;
+  obligationId: number | null;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -280,7 +296,7 @@ function RowList({
               <th className="px-3 py-2.5 text-left font-medium">Category</th>
               <th className="px-3 py-2.5 text-left font-medium">Uploaded</th>
               <th className="px-3 py-2.5 text-right font-medium">Size</th>
-              <th className="px-3 py-2.5 w-8" />
+              <th className="px-3 py-2.5 w-20" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -290,6 +306,7 @@ function RowList({
                 doc={d}
                 queryKey={queryKey}
                 showEntityColumn={showEntityColumn}
+                obligationId={obligationId}
               />
             ))}
           </tbody>
@@ -304,10 +321,12 @@ function DocumentRow({
   doc,
   queryKey,
   showEntityColumn,
+  obligationId,
 }: {
   doc: DocumentOut;
   queryKey: unknown[];
   showEntityColumn: boolean;
+  obligationId: number | null;
 }) {
   const Icon = iconFor(doc.filename);
   return (
@@ -350,9 +369,67 @@ function DocumentRow({
         {fmtSize(doc.size_bytes)}
       </td>
       <td className="px-3 py-2.5">
-        <DocumentRowMenu doc={doc} queryKey={queryKey} />
+        <div className="flex items-center justify-end gap-0.5">
+          {obligationId !== null && (
+            <AutoFillButton doc={doc} obligationId={obligationId} />
+          )}
+          <DocumentRowMenu doc={doc} queryKey={queryKey} />
+        </div>
       </td>
     </tr>
+  );
+}
+
+
+function AutoFillButton({
+  doc,
+  obligationId,
+}: {
+  doc: DocumentOut;
+  obligationId: number;
+}) {
+  const { available, tooltip } = useAiAvailable();
+  const [open, setOpen] = useState(false);
+  // Only useful for PDF/text files; gray out otherwise.
+  const ext = (doc.filename.split(".").pop() || "").toLowerCase();
+  const extractable = ext === "pdf" || ext === "txt" || ext === "csv" || ext === "json";
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            disabled={!available || !extractable}
+            className={cn(
+              "h-7 w-7 grid place-items-center rounded-md text-aspora-700",
+              available && extractable
+                ? "hover:bg-aspora-50"
+                : "opacity-40 cursor-not-allowed",
+            )}
+            aria-label="Auto-fill obligation from this document"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {!extractable
+            ? "Auto-fill only supports PDF / text files."
+            : available
+              ? "Auto-fill filing fields from this document"
+              : tooltip}
+        </TooltipContent>
+      </Tooltip>
+      {open && (
+        <DocumentExtractDialog
+          doc={doc}
+          obligationId={obligationId}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      )}
+    </>
   );
 }
 
@@ -364,10 +441,12 @@ function GridList({
   documents,
   queryKey,
   showEntityColumn,
+  obligationId,
 }: {
   documents: DocumentOut[];
   queryKey: unknown[];
   showEntityColumn: boolean;
+  obligationId: number | null;
 }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -398,7 +477,10 @@ function GridList({
                 {showEntityColumn && d.entity_name && (
                   <span className="text-[11px] text-muted-foreground truncate">{d.entity_name}</span>
                 )}
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center">
+                  {obligationId !== null && (
+                    <AutoFillButton doc={d} obligationId={obligationId} />
+                  )}
                   <DocumentRowMenu doc={d} queryKey={queryKey} />
                 </div>
               </div>

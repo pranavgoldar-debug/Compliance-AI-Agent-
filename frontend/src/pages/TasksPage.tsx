@@ -1,8 +1,8 @@
 // Tasks — personal work inbox. Urgency-grouped, sub-tabbed scope, filter bar,
 // sort dropdown, hover quick actions.
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Coffee, ChevronDown, MoreHorizontal } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Coffee, ChevronDown, MoreHorizontal, CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -23,11 +24,12 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { EmptyState } from "@/components/EmptyState";
+import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { fmtShortDate, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Entity, Obligation, ObligationStatus } from "@/types/api";
+import type { Entity, Obligation, ObligationStatus, UserBrief } from "@/types/api";
 
 type Scope = "assigned" | "watching" | "completed" | "all";
 type SortKey = "due_date" | "recently_updated" | "priority";
@@ -123,22 +125,81 @@ function TaskRow({ ob }: { ob: Obligation }) {
 
       <div className="flex items-center justify-end gap-1.5">
         <AssigneeChip user={ob.assignee} size="sm" />
-        <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-7 w-7 grid place-items-center rounded-md hover:bg-secondary text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem disabled>Mark as filed</DropdownMenuItem>
-              <DropdownMenuItem disabled>Reassign…</DropdownMenuItem>
-              <DropdownMenuItem disabled>Snooze 1 day</DropdownMenuItem>
-              <DropdownMenuItem disabled>Snooze 1 week</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <RowQuickActions ob={ob} />
       </div>
+    </div>
+  );
+}
+
+
+function RowQuickActions({ ob }: { ob: Obligation }) {
+  const queryClient = useQueryClient();
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+  });
+
+  const mutation = useMutation({
+    mutationFn: (patch: Partial<Obligation>) =>
+      api.patch<Obligation>(`/api/obligations/${ob.id}`, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-task-count"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="h-7 w-7 grid place-items-center rounded-md hover:bg-secondary text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onClick={() => mutation.mutate({ status: "completed" } as Partial<Obligation>)}
+            disabled={ob.status === "completed"}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 mr-2" />
+            Mark as filed
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              mutation.mutate({ status: "in_progress" } as Partial<Obligation>)
+            }
+            disabled={ob.status === "in_progress"}
+          >
+            Mark in progress
+          </DropdownMenuItem>
+          <DropdownMenuLabel className="mt-1 text-[10px] uppercase tracking-wider">
+            Reassign to
+          </DropdownMenuLabel>
+          {users.slice(0, 6).map((u) => (
+            <DropdownMenuItem
+              key={u.id}
+              onClick={() =>
+                mutation.mutate({ assignee_id: u.id } as unknown as Partial<Obligation>)
+              }
+              disabled={ob.assignee?.id === u.id}
+            >
+              {u.full_name || u.email}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -228,6 +289,7 @@ export function TasksPage() {
       <PageHeader
         title="Tasks"
         description="Your work inbox — overdue first, alert window next, the rest after."
+        actions={<ExportMenu kind="obligations" />}
       />
 
       <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>

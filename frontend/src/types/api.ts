@@ -53,6 +53,9 @@ export interface Rule {
   applicability: Applicability;
   applicability_note: string | null;
   status: RuleStatus;
+  source_url: string | null;
+  source_text: string | null;
+  source_changed_at: string | null;
   entity_ids: number[];
   created_at: string;
   updated_at: string;
@@ -180,4 +183,162 @@ export interface UserOut {
   is_active: boolean;
   created_at: string;
   last_login_at: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — notifications, bulk, system info
+// ---------------------------------------------------------------------------
+export type NotificationKind =
+  | "mention"
+  | "assigned"
+  | "overdue"
+  | "alert_window"
+  | "status_change";
+
+export interface NotificationOut {
+  id: number | null;
+  kind: NotificationKind;
+  title: string;
+  body: string | null;
+  link_url: string | null;
+  obligation_id: number | null;
+  actor: UserBrief | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface SystemInfo {
+  mode: "live" | "mock";
+  ai_available: boolean;
+  version: string;
+}
+
+export interface BulkUpdateResult {
+  updated: number;
+  skipped: number[];
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 — AI assist
+// ---------------------------------------------------------------------------
+export interface DocumentExtractionSuggestion {
+  filing_reference: string | null;
+  payment_amount: string | null;
+  payment_reference: string | null;
+  completed_at: string | null;
+  notes_suggestion: string | null;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface DocumentExtractionResult {
+  available: boolean;
+  excerpt: string | null;
+  suggestion: DocumentExtractionSuggestion | null;
+  error: string | null;
+}
+
+export interface SecondOpinion {
+  verdict: "approve" | "needs_more_info" | "reject";
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+  suggested_next_steps: string[];
+  risk_flags: string[];
+}
+
+export interface SecondOpinionResult {
+  available: boolean;
+  opinion: SecondOpinion | null;
+  error: string | null;
+}
+
+export interface RuleSourceCheckResult {
+  fetched_at: string;
+  http_status: number | null;
+  error: string | null;
+  changed: boolean;
+  is_first_snapshot: boolean;
+  content_length: number;
+  content_hash: string | null;
+  new_excerpt: string | null;
+  prev_excerpt: string | null;
+  diff_excerpt: string | null;
+  change_summary: string | null;
+}
+
+export interface RuleSnapshot {
+  id: number;
+  rule_id: number;
+  fetched_at: string;
+  fetched_by: UserBrief | null;
+  http_status: number | null;
+  content_length: number;
+  content_hash: string;
+  content_excerpt: string | null;
+  change_summary: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Regulation Library (the original "agent" surface — pick a regulation, see
+// every obligation it imposes with severity, source quote, evidence artifacts)
+// ---------------------------------------------------------------------------
+export type Severity = "critical" | "high" | "medium" | "low" | "informational";
+
+export type FindingStatus = "pass" | "warning" | "fail";
+
+export interface RegulationSummary {
+  id: string;
+  name: string;
+  short_name: string;
+  scope: string;
+  framework: string | null;
+  text_resource: string;
+}
+
+export interface CountrySummary {
+  code: string;
+  name: string;
+  flag: string;
+  regulations: RegulationSummary[];
+}
+
+export interface ComplianceRequirement {
+  requirement_id: string;
+  title: string;
+  summary: string;
+  source_quote: string;
+  category: string;
+  severity: Severity;
+  applies_to: string[];
+  evidence_artifacts: string[];
+  section_reference: string | null;
+}
+
+export interface ExtractionResult {
+  document_title: string;
+  framework: string | null;
+  requirements: ComplianceRequirement[];
+  extraction_notes: string | null;
+}
+
+export interface VerificationFinding {
+  requirement_id: string;
+  status: FindingStatus;
+  quote_verbatim: boolean;
+  issues: string[];
+  suggested_fix: string | null;
+}
+
+export interface VerificationResult {
+  findings: VerificationFinding[];
+  overall_summary: string;
+  missed_requirements: string[];
+}
+
+export interface RegulationView {
+  country: string;
+  country_code: string;
+  flag: string;
+  regulation: RegulationSummary;
+  extraction: ExtractionResult;
+  verification: VerificationResult | null;
 }

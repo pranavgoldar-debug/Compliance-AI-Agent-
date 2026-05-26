@@ -16,6 +16,12 @@ from compliance_agent.api._helpers import (
     serialize_user,
     today,
 )
+from compliance_agent.api.notifications import (
+    emit_assignment,
+    emit_mentions,
+    emit_status_change,
+    extract_mentions,
+)
 from compliance_agent.api.schemas import (
     CalendarObligation,
     CommentCreate,
@@ -101,7 +107,9 @@ def update_obligation(
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> ObligationOut:
-    obligation = db.get(Obligation, obligation_id)
+    obligation = db.execute(
+        _base_query().where(Obligation.id == obligation_id)
+    ).scalars().unique().one_or_none()
     if obligation is None:
         raise HTTPException(status_code=404, detail="Obligation not found.")
 
@@ -116,6 +124,10 @@ def update_obligation(
         and obligation.status == ObligationStatus.completed
     )
 
+    # Capture old values so we can compare-and-emit notifications.
+    prev_assignee_id = obligation.assignee_id
+    prev_status = obligation.status
+
     for field, value in data.items():
         setattr(obligation, field, value)
 
@@ -125,6 +137,25 @@ def update_obligation(
     if uncompleted_now:
         obligation.completed_at = None
         obligation.completed_by_id = None
+
+    # Notifications: assignee changed → ping the new owner.
+    if "assignee_id" in data and obligation.assignee_id and obligation.assignee_id != prev_assignee_id:
+        new_assignee = db.get(User, obligation.assignee_id)
+        if new_assignee:
+            emit_assignment(db, assignee=new_assignee, obligation=obligation, actor=user)
+
+    # Notifications: status moved to completed / pending_review → ping assignee.
+    if "status" in data and obligation.status != prev_status:
+        assignee = obligation.assignee or (
+            db.get(User, obligation.assignee_id) if obligation.assignee_id else None
+        )
+        emit_status_change(
+            db,
+            assignee=assignee,
+            obligation=obligation,
+            new_status=obligation.status,
+            actor=user,
+        )
 
     log_activity(
         db,
@@ -178,7 +209,9 @@ def add_comment(
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> CommentOut:
-    obligation = db.get(Obligation, obligation_id)
+    obligation = db.execute(
+        _base_query().where(Obligation.id == obligation_id)
+    ).scalars().unique().one_or_none()
     if obligation is None:
         raise HTTPException(status_code=404, detail="Obligation not found.")
     body = payload.body.strip()
@@ -186,15 +219,28 @@ def add_comment(
         raise HTTPException(status_code=400, detail="Comment body is required.")
     comment = Comment(obligation_id=obligation_id, author_id=user.id, body=body)
     db.add(comment)
+    db.flush()  # need comment.id for the mention notification's comment_id
+
+    mentions = extract_mentions(db, body)
+    if mentions:
+        emit_mentions(
+            db,
+            mentions=mentions,
+            actor=user,
+            obligation=obligation,
+            comment_id=comment.id,
+            body=body,
+        )
+
     log_activity(
         db,
         actor_id=user.id,
         action="comment.added",
         target_type="obligation",
         target_id=obligation_id,
+        payload={"mentions": [u.email for u in mentions]} if mentions else None,
     )
     db.commit()
-    db.refresh(comment)
     comment = db.execute(
         select(Comment).where(Comment.id == comment.id).options(joinedload(Comment.author))
     ).scalars().unique().one()
@@ -205,6 +251,100 @@ def add_comment(
         body=comment.body,
         created_at=comment.created_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Bulk operations — assign / change status across many obligations at once.
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel as _BaseModel
+
+
+class BulkUpdateRequest(_BaseModel):
+    obligation_ids: list[int]
+    status: Optional[ObligationStatus] = None
+    assignee_id: Optional[int] = None
+    # If True, send assignee_id=null to clear the assignee.
+    clear_assignee: bool = False
+
+
+class BulkUpdateResult(_BaseModel):
+    updated: int
+    skipped: list[int] = []
+
+
+@router.post("/bulk-update", response_model=BulkUpdateResult)
+def bulk_update(
+    payload: BulkUpdateRequest,
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> BulkUpdateResult:
+    if not payload.obligation_ids:
+        return BulkUpdateResult(updated=0)
+    if payload.status is None and payload.assignee_id is None and not payload.clear_assignee:
+        raise HTTPException(
+            status_code=400, detail="Provide at least one of status, assignee_id, clear_assignee."
+        )
+
+    obligations = db.execute(
+        _base_query().where(Obligation.id.in_(payload.obligation_ids))
+    ).scalars().unique().all()
+
+    by_id = {o.id: o for o in obligations}
+    missing = [i for i in payload.obligation_ids if i not in by_id]
+
+    new_assignee: Optional[User] = None
+    if payload.assignee_id is not None and not payload.clear_assignee:
+        new_assignee = db.get(User, payload.assignee_id)
+        if new_assignee is None:
+            raise HTTPException(status_code=400, detail="Assignee not found.")
+
+    updated = 0
+    for o in obligations:
+        changed_fields: list[str] = []
+        prev_assignee_id = o.assignee_id
+        prev_status = o.status
+
+        if payload.status is not None and payload.status != o.status:
+            o.status = payload.status
+            changed_fields.append("status")
+            if payload.status == ObligationStatus.completed and o.completed_at is None:
+                o.completed_at = datetime.now(tz=timezone.utc)
+                o.completed_by_id = user.id
+            elif payload.status != ObligationStatus.completed and o.completed_at is not None:
+                o.completed_at = None
+                o.completed_by_id = None
+
+        if payload.clear_assignee:
+            if o.assignee_id is not None:
+                o.assignee_id = None
+                changed_fields.append("assignee_id")
+        elif new_assignee is not None and o.assignee_id != new_assignee.id:
+            o.assignee_id = new_assignee.id
+            changed_fields.append("assignee_id")
+
+        if not changed_fields:
+            continue
+        updated += 1
+
+        if "assignee_id" in changed_fields and new_assignee is not None and prev_assignee_id != new_assignee.id:
+            emit_assignment(db, assignee=new_assignee, obligation=o, actor=user)
+        if "status" in changed_fields and o.status != prev_status:
+            assignee = o.assignee or (db.get(User, o.assignee_id) if o.assignee_id else None)
+            emit_status_change(
+                db, assignee=assignee, obligation=o, new_status=o.status, actor=user
+            )
+
+        log_activity(
+            db,
+            actor_id=user.id,
+            action="obligation.updated",
+            target_type="obligation",
+            target_id=o.id,
+            payload={"changed_fields": changed_fields, "bulk": True},
+        )
+
+    db.commit()
+    return BulkUpdateResult(updated=updated, skipped=missing)
 
 
 # ---------------------------------------------------------------------------
