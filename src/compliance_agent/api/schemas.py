@@ -6,7 +6,14 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from compliance_agent.db import Applicability, EffortBand, ObligationStatus, Role, RuleStatus
+from compliance_agent.db import (
+    Applicability,
+    DocumentCategory,
+    EffortBand,
+    ObligationStatus,
+    Role,
+    RuleStatus,
+)
 
 
 class _Base(BaseModel):
@@ -21,6 +28,30 @@ class UserBrief(_Base):
     email: str
     full_name: str
     role: Role
+
+
+class UserOut(_Base):
+    id: int
+    email: str
+    full_name: str
+    role: Role
+    is_active: bool
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+
+
+class UserCreate(BaseModel):
+    email: str
+    full_name: str
+    role: Role = Role.employee
+    password: str
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[Role] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None  # admin password reset
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +221,44 @@ class DashboardStats(_Base):
     open_tasks: list[ObligationOut]
     items_in_alert_window: list[ObligationOut]
     this_week: list[ObligationOut]
+
+
+# ---------------------------------------------------------------------------
+# Documents
+# ---------------------------------------------------------------------------
+class DocumentOut(_Base):
+    id: int
+    entity_id: int
+    entity_name: Optional[str] = None
+    obligation_id: Optional[int] = None
+    obligation_form_name: Optional[str] = None
+    filename: str
+    content_type: Optional[str] = None
+    size_bytes: int
+    category: DocumentCategory
+    tags: Optional[str] = None
+    uploaded_by: Optional[UserBrief] = None
+    created_at: datetime
+
+
+class DocumentUpdate(BaseModel):
+    filename: Optional[str] = None
+    category: Optional[DocumentCategory] = None
+    tags: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Activity feed
+# ---------------------------------------------------------------------------
+class ActivityOut(_Base):
+    id: int
+    actor: Optional[UserBrief] = None
+    action: str
+    target_type: Optional[str] = None
+    target_id: Optional[int] = None
+    target_label: Optional[str] = None  # resolved display name (entity/rule/obligation)
+    payload: Optional[dict] = None
+    created_at: datetime
 
 
 class CalendarObligation(_Base):

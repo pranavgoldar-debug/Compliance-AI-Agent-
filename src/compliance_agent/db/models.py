@@ -277,3 +277,51 @@ class Activity(Base):
     )
 
     actor: Mapped[Optional[User]] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Documents — uploaded files attached to entities and/or obligations
+# ---------------------------------------------------------------------------
+class DocumentCategory(str, enum.Enum):
+    formation = "Formation"
+    filings = "Filings"
+    contracts = "Contracts"
+    expert_notes = "Expert notes"
+    other = "Other"
+
+
+class Document(Base):
+    """A file uploaded to the system. Always attached to one entity; optionally
+    to a specific obligation as proof-of-filing."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    obligation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("obligations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # Filename the user uploaded; preserved for display.
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    # On-disk relative path (under uploads/) — opaque, not user-facing.
+    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    content_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    category: Mapped[DocumentCategory] = mapped_column(
+        SAEnum(DocumentCategory), nullable=False, default=DocumentCategory.other, index=True
+    )
+    tags: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # comma-separated
+
+    uploaded_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), index=True
+    )
+
+    entity: Mapped[Entity] = relationship("Entity")
+    obligation: Mapped[Optional[Obligation]] = relationship("Obligation")
+    uploaded_by: Mapped[Optional[User]] = relationship("User")

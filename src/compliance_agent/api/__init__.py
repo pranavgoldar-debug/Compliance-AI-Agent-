@@ -1,6 +1,12 @@
 """API routers for the Aspora Compliance OS surface."""
+from compliance_agent.api.activities import router as activities_router
 from compliance_agent.api.chat import router as chat_router
 from compliance_agent.api.dashboard import router as dashboard_router
+from compliance_agent.api.documents import (
+    entity_uploads as document_entity_upload_router,
+    obligation_uploads as document_obligation_upload_router,
+    router as documents_router,
+)
 from compliance_agent.api.entities import router as entities_router
 from compliance_agent.api.obligations import (
     calendar_router,
@@ -12,8 +18,12 @@ from compliance_agent.api.tasks import router as tasks_router
 from compliance_agent.api.users import router as users_router
 
 __all__ = [
+    "activities_router",
     "chat_router",
     "dashboard_router",
+    "documents_router",
+    "document_entity_upload_router",
+    "document_obligation_upload_router",
     "entities_router",
     "obligations_router",
     "calendar_router",

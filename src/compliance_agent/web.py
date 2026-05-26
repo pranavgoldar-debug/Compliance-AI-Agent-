@@ -21,9 +21,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from compliance_agent.api import (
+    activities_router,
     calendar_router,
     chat_router,
     dashboard_router,
+    document_entity_upload_router,
+    document_obligation_upload_router,
+    documents_router,
     entities_router,
     obligations_router,
     rules_ai_router,
@@ -80,6 +84,10 @@ def create_app() -> FastAPI:
     app.include_router(calendar_router)
     app.include_router(tasks_router)
     app.include_router(users_router)
+    app.include_router(documents_router)
+    app.include_router(document_entity_upload_router)
+    app.include_router(document_obligation_upload_router)
+    app.include_router(activities_router)
     app.include_router(chat_router)  # Ask Aspora chat assistant
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))
