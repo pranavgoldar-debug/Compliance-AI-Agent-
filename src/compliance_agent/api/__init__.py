@@ -20,10 +20,6 @@ from compliance_agent.api.obligations import (
     router as obligations_router,
 )
 from compliance_agent.api.retention import router as retention_router
-from compliance_agent.api.regulation_feeds import (
-    feeds_router as regulation_feeds_router,
-    news_router as regulation_news_router,
-)
 from compliance_agent.api.rules import router as rules_router
 from compliance_agent.api.rules_ai import router as rules_ai_router
 from compliance_agent.api.rules_import import router as rules_import_router
@@ -47,8 +43,6 @@ __all__ = [
     "obligations_router",
     "calendar_router",
     "retention_router",
-    "regulation_feeds_router",
-    "regulation_news_router",
     "rules_router",
     "rules_ai_router",
     "rules_import_router",

@@ -131,7 +131,6 @@ export function ImportRulesDialog({ open, onOpenChange }: Props) {
     setEntityIds(new Set());
     previewMutation.reset();
     commitMutation.reset();
-    templateMutation.reset();
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -143,42 +142,10 @@ export function ImportRulesDialog({ open, onOpenChange }: Props) {
     previewMutation.mutate(f);
   }
 
-  // Download via fetch so we can surface auth / network failures inline
-  // rather than letting the browser silently navigate to a JSON error body
-  // or an HTML SPA-fallback document with a misleading .csv filename.
-  const templateMutation = useMutation({
-    mutationFn: async (format: "csv" | "xlsx") => {
-      const res = await fetch(`/api/rules/import/template?format=${format}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        let msg = `Download failed (HTTP ${res.status})`;
-        try {
-          const j = await res.json();
-          if (j?.detail) msg = String(j.detail);
-        } catch {
-          /* not JSON */
-        }
-        throw new Error(msg);
-      }
-      const ct = res.headers.get("content-type") || "";
-      if (ct.includes("text/html")) {
-        throw new Error(
-          "Server returned HTML instead of the template — the import endpoint isn't deployed yet. Pull the latest build and restart.",
-        );
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `aspora-rules-import-template.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      return true;
-    },
-  });
+  function downloadTemplate(format: "csv" | "xlsx") {
+    // Stream the template directly from the server — preserves cookies.
+    window.location.href = `/api/rules/import/template?format=${format}`;
+  }
 
   const isPreviewing = previewMutation.isPending;
   const isCommitting = commitMutation.isPending;
@@ -233,29 +200,17 @@ export function ImportRulesDialog({ open, onOpenChange }: Props) {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => templateMutation.mutate("csv")}
-                      disabled={templateMutation.isPending}
+                      onClick={() => downloadTemplate("csv")}
                     >
-                      {templateMutation.isPending &&
-                      templateMutation.variables === "csv" ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
+                      <Download className="h-4 w-4" />
                       CSV
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => templateMutation.mutate("xlsx")}
-                      disabled={templateMutation.isPending}
+                      onClick={() => downloadTemplate("xlsx")}
                     >
-                      {templateMutation.isPending &&
-                      templateMutation.variables === "xlsx" ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
+                      <Download className="h-4 w-4" />
                       Excel
                     </Button>
                   </div>
@@ -312,12 +267,6 @@ export function ImportRulesDialog({ open, onOpenChange }: Props) {
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <div>{previewError.message}</div>
-                </div>
-              )}
-              {templateMutation.error && (
-                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <div>{(templateMutation.error as Error).message}</div>
                 </div>
               )}
             </>
