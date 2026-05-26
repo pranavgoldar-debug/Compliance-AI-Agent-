@@ -106,6 +106,16 @@ DEMO_ENTITIES = [
         "country_lead_email": "pranav.goldar@aspora.com",
     },
     {
+        # From the Aspora Global Compliance Tracker — USA tab.
+        "name": "Vance Inc",
+        "legal_type": "C-Corporation",
+        "jurisdiction_code": "us",
+        "registration_number": "US-VANCE-2021",
+        "incorporation_date": date(2021, 1, 1),
+        "fiscal_year_end": "31-Dec",
+        "country_lead_email": "pranav.goldar@aspora.com",
+    },
+    {
         "name": "Aspora India Pvt Ltd",
         "legal_type": "Private Limited",
         "jurisdiction_code": "india",

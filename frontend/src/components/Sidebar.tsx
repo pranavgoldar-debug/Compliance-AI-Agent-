@@ -9,6 +9,7 @@ import {
   BookOpen,
   Table2,
   FolderOpen,
+  FileBadge,
   ScrollText,
   Settings,
   PanelLeftClose,
@@ -37,6 +38,7 @@ const NAV: NavItem[] = [
   { to: "/regulations", label: "Regulation Library", icon: BookOpen },
   { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
   { to: "/documents", label: "Documents", icon: FolderOpen },
+  { to: "/licenses", label: "Licenses", icon: FileBadge },
   { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
 ];
 

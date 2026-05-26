@@ -467,3 +467,51 @@ class WorkspaceSetting(Base):
     updated_by_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
+
+
+# ---------------------------------------------------------------------------
+# Licenses
+#
+# A license is an authorisation an entity holds from a regulator (e.g. FCA
+# permission, DMCC trade license, CBUAE SVF licence). It pins a regulator +
+# jurisdiction to an entity, so the app can surface "for this license, which
+# filings do you owe?" — driven off the rules that match the same
+# jurisdiction and authority.
+# ---------------------------------------------------------------------------
+class License(Base):
+    __tablename__ = "licenses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Free-text license type — e.g. "FCA Authorisation", "DMCC Trade License",
+    # "CBUAE SVF licence", "Lithuania EMI". Used for matching + display.
+    license_type: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    authority: Mapped[str] = mapped_column(String(255), nullable=False)
+    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    license_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Optional uploaded license file — reuses the documents storage layer.
+    filename: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    storage_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    content_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    created_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
+    entity: Mapped[Entity] = relationship("Entity")

@@ -342,3 +342,51 @@ export interface RegulationView {
   extraction: ExtractionResult;
   verification: VerificationResult | null;
 }
+
+// -----------------------------------------------------------------------
+// Licenses
+// -----------------------------------------------------------------------
+export type LicenseExpiryStatus = "valid" | "expiring" | "expired" | "unknown";
+
+export interface License {
+  id: number;
+  entity_id: number;
+  entity_name: string;
+  name: string;
+  license_type: string;
+  authority: string;
+  jurisdiction_code: string;
+  license_number: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+  notes: string | null;
+  has_file: boolean;
+  filename: string | null;
+  size_bytes: number;
+  content_type: string | null;
+  created_at: string;
+  updated_at: string;
+  expiry_status: LicenseExpiryStatus;
+  days_to_expiry: number | null;
+}
+
+export interface LicenseRuleHit {
+  id: number;
+  name: string;
+  form_name: string;
+  authority: string;
+  category: string;
+  area: string;
+  frequency: string;
+  due_date_rule: string;
+  payment_rule: string | null;
+  applicability: string;
+  relevance: "direct" | "entity";
+  match_reason: string | null;
+}
+
+export interface ApplicableRulesResponse {
+  license_id: number;
+  direct: LicenseRuleHit[];
+  entity_other: LicenseRuleHit[];
+}
