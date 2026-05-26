@@ -315,6 +315,43 @@ def seed() -> None:
     click.echo("Done.", err=True)
 
 
+@main.command(name="send-reminders")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="List who'd be reminded without sending email / Slack or persisting notifications.",
+)
+def send_reminders_cmd(dry_run: bool) -> None:
+    """Send deadline reminders for obligations entering their alert window.
+
+    Cadence per effort band (≈ frequency):
+       monthly   (w1)  → 7 days before
+       quarterly (w2)  → 18 days before (policy: 15-20)
+       annual    (w8)  → 40 days before (policy: 30-45)
+
+    Idempotent — a notification is persisted on first send so daily cron
+    runs never double-message.
+    """
+    from compliance_agent.db import init_db
+    from compliance_agent.reminders import send_reminders
+
+    init_db()
+    results = send_reminders(dry_run=dry_run)
+    if not results:
+        click.echo("No reminders to send — every assigned obligation is either outside its alert window or already reminded.", err=True)
+        return
+
+    prefix = "[DRY-RUN] would send " if dry_run else "Sent "
+    for r in results:
+        click.echo(
+            f"{prefix}reminder to {r.assignee_email}  obligation={r.obligation_id}  "
+            f"days_left={r.days_remaining}  email={r.email_sent}  slack={r.slack_sent}",
+            err=True,
+        )
+    click.echo(f"{len(results)} reminder(s) processed.", err=True)
+
+
 @main.command(name="prune-entities")
 @click.option(
     "--yes",

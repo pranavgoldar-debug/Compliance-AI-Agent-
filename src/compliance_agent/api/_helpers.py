@@ -40,8 +40,25 @@ def days_remaining(due: date) -> int:
 
 
 def lead_time_days(band: EffortBand) -> int:
-    """Alert lead-time = 2× the effort band itself (in days)."""
-    return EFFORT_BAND_DAYS.get(band, 28) * 2
+    """How many days BEFORE the due date the obligation enters its alert
+    / reminder window. Tuned to Aspora's filing policy:
+
+      Monthly  (w1)   →  7 days
+      Quarterly (w2)  → 18 days   (policy: 15-20)
+      Half-year (w4)  → 30 days
+      Annual    (w8)  → 40 days   (policy: 30-45)
+      Long-form (w12) → 60 days
+    """
+    return _ALERT_LEAD_DAYS.get(band, 30)
+
+
+_ALERT_LEAD_DAYS: dict[EffortBand, int] = {
+    EffortBand.w1: 7,
+    EffortBand.w2: 18,
+    EffortBand.w4: 30,
+    EffortBand.w8: 40,
+    EffortBand.w12: 60,
+}
 
 
 def is_overdue(due: date, status: ObligationStatus) -> bool:
