@@ -342,5 +342,30 @@ def create_user(email: str, password: str, full_name: str, role: str) -> None:
     click.echo(f"Created user {email} ({role}).", err=True)
 
 
+@main.command(name="poll-feeds")
+@click.option(
+    "--seed-defaults",
+    is_flag=True,
+    default=False,
+    help="Insert the built-in regulator feeds before polling.",
+)
+def poll_feeds(seed_defaults: bool) -> None:
+    """Poll all enabled regulator RSS / Atom feeds and store new items."""
+    from compliance_agent.db import init_db, session_scope
+    from compliance_agent.regulation_feeds import poll_all, seed_default_feeds
+
+    init_db()
+    with session_scope() as db:
+        if seed_defaults:
+            added = seed_default_feeds(db)
+            click.echo(f"Seeded {added} default feed(s).", err=True)
+        results = poll_all(db)
+    total_new = sum(r.new_items for r in results)
+    for r in results:
+        status = r.error or f"{r.new_items} new / {r.total_items} total"
+        click.echo(f"  [{r.http_status or '---'}] {r.feed_name}: {status}", err=True)
+    click.echo(f"Done — {total_new} new item(s) across {len(results)} feed(s).", err=True)
+
+
 if __name__ == "__main__":
     main()

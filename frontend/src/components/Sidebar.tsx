@@ -9,6 +9,7 @@ import {
   BookOpen,
   Table2,
   FolderOpen,
+  Newspaper,
   ScrollText,
   Settings,
   PanelLeftClose,
@@ -25,7 +26,7 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
-  badge?: "tasks";
+  badge?: "tasks" | "news";
 }
 
 const NAV: NavItem[] = [
@@ -35,6 +36,7 @@ const NAV: NavItem[] = [
   { to: "/entities", label: "Entities", icon: Building2 },
   { to: "/tasks", label: "Tasks", icon: ListChecks, badge: "tasks" },
   { to: "/regulations", label: "Regulation Library", icon: BookOpen },
+  { to: "/regulation-news", label: "Regulation News", icon: Newspaper, badge: "news" },
   { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
   { to: "/documents", label: "Documents", icon: FolderOpen },
   { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
@@ -55,6 +57,19 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     queryFn: async () => {
       const tasks = await api.get<Obligation[]>("/api/tasks?scope=assigned");
       return tasks.filter((t) => t.status !== "completed" && t.status !== "not_applicable").length;
+    },
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
+  // Unread regulator news items, surfaced as a badge on Regulation News.
+  const { data: newsCount } = useQuery({
+    queryKey: ["sidebar-news-count"],
+    queryFn: async () => {
+      const items = await api.get<{ id: number }[]>(
+        "/api/regulation-news?unread_only=true&limit=500",
+      );
+      return items.length;
     },
     enabled: !!user,
     staleTime: 60_000,
@@ -106,7 +121,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           const Icon = item.icon;
           const isGated = item.adminOnly && !isAdmin;
           if (isGated && collapsed) return null;
-          const showBadge = item.badge === "tasks" && typeof openCount === "number" && openCount > 0;
+          const badgeCount =
+            item.badge === "tasks"
+              ? openCount
+              : item.badge === "news"
+                ? newsCount
+                : undefined;
+          const showBadge = typeof badgeCount === "number" && badgeCount > 0;
           if (isGated) {
             return (
               <div
@@ -149,7 +170,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   <span className="truncate flex-1">{item.label}</span>
                   {showBadge && (
                     <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full bg-aspora-600 text-white text-[10px] font-semibold tabular-nums">
-                      {openCount}
+                      {badgeCount}
                     </span>
                   )}
                 </>

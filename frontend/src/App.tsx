@@ -19,6 +19,7 @@ import { DocumentsPage } from "@/pages/DocumentsPage";
 import { AuditLogPage } from "@/pages/AuditLogPage";
 import { ObligationDetailPage } from "@/pages/ObligationDetailPage";
 import { RegulationLibraryPage } from "@/pages/RegulationLibraryPage";
+import { RegulationNewsPage } from "@/pages/RegulationNewsPage";
 import { FilingsCatalogPage } from "@/pages/FilingsCatalogPage";
 
 const queryClient = new QueryClient({
@@ -56,6 +57,7 @@ export default function App() {
                 <Route path="entities/:entityId" element={<EntityDetailPage />} />
                 <Route path="tasks" element={<TasksPage />} />
                 <Route path="regulations" element={<RegulationLibraryPage />} />
+                <Route path="regulation-news" element={<RegulationNewsPage />} />
                 <Route
                   path="rules"
                   element={

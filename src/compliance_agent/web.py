@@ -36,6 +36,8 @@ from compliance_agent.api import (
     notifications_router,
     obligations_router,
     retention_router,
+    regulation_feeds_router,
+    regulation_news_router,
     rules_ai_router,
     rules_import_router,
     rules_router,
@@ -102,6 +104,8 @@ def create_app() -> FastAPI:
     app.include_router(rules_router)
     app.include_router(rules_ai_router)  # AI Rule extraction (admin)
     app.include_router(rules_import_router)  # Bulk CSV / Excel rule import (admin)
+    app.include_router(regulation_feeds_router)  # Regulation news feed config (admin)
+    app.include_router(regulation_news_router)  # Regulation news inbox
     app.include_router(obligations_router)
     app.include_router(calendar_router)
     app.include_router(tasks_router)
