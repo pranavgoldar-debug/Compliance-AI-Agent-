@@ -19,6 +19,7 @@ import { DocumentsPage } from "@/pages/DocumentsPage";
 import { AuditLogPage } from "@/pages/AuditLogPage";
 import { ObligationDetailPage } from "@/pages/ObligationDetailPage";
 import { RegulationLibraryPage } from "@/pages/RegulationLibraryPage";
+import { FilingsCatalogPage } from "@/pages/FilingsCatalogPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +51,7 @@ export default function App() {
               >
                 <Route index element={<DashboardPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
+                <Route path="catalog" element={<FilingsCatalogPage />} />
                 <Route path="entities" element={<EntitiesPage />} />
                 <Route path="entities/:entityId" element={<EntityDetailPage />} />
                 <Route path="tasks" element={<TasksPage />} />

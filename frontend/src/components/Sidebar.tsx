@@ -7,6 +7,7 @@ import {
   ListChecks,
   Library,
   BookOpen,
+  Table2,
   FolderOpen,
   ScrollText,
   Settings,
@@ -30,6 +31,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/calendar", label: "Compliance Calendar", icon: CalendarDays },
+  { to: "/catalog", label: "Filings Catalog", icon: Table2 },
   { to: "/entities", label: "Entities", icon: Building2 },
   { to: "/tasks", label: "Tasks", icon: ListChecks, badge: "tasks" },
   { to: "/regulations", label: "Regulation Library", icon: BookOpen },
