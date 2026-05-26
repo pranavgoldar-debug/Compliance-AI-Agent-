@@ -18,6 +18,7 @@ import {
   Upload,
 } from "lucide-react";
 import { RuleChangeCheckDialog } from "@/components/RuleChangeCheckDialog";
+import { ImportRulesDialog } from "@/components/ImportRulesDialog";
 import { api } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ export function RulesPage() {
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const navigate = useNavigate();
 
   const { data: rules, isLoading } = useQuery({
@@ -93,7 +95,11 @@ export function RulesPage() {
                 jurisdiction_code: jurisdictionCode || undefined,
               }}
             />
-            <Button variant="outline" disabled title="Coming later">
+            <Button
+              variant="outline"
+              onClick={() => setImportDialogOpen(true)}
+              title="Bulk import rules from a CSV or Excel file"
+            >
               <Upload className="h-4 w-4" />
               Import template
             </Button>
@@ -105,6 +111,7 @@ export function RulesPage() {
         }
       />
       <AddRuleFromTextDialog open={aiDialogOpen} onOpenChange={setAiDialogOpen} />
+      <ImportRulesDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as RuleStatus)}>
         <TabsList>

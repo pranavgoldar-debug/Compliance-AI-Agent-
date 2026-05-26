@@ -37,6 +37,7 @@ from compliance_agent.api import (
     obligations_router,
     retention_router,
     rules_ai_router,
+    rules_import_router,
     rules_router,
     system_router,
     tasks_router,
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(entities_router)
     app.include_router(rules_router)
     app.include_router(rules_ai_router)  # AI Rule extraction (admin)
+    app.include_router(rules_import_router)  # Bulk CSV / Excel rule import (admin)
     app.include_router(obligations_router)
     app.include_router(calendar_router)
     app.include_router(tasks_router)
