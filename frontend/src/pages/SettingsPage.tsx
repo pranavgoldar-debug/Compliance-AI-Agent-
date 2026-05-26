@@ -121,10 +121,32 @@ export function SettingsPage() {
 // ---------------------------------------------------------------------------
 // Profile
 // ---------------------------------------------------------------------------
+interface NotificationPrefs {
+  notify_email: boolean;
+  notify_slack: boolean;
+  slack_user_id: string | null;
+}
+
+
 function ProfileTab({ user }: { user: UserBrief }) {
-  const [slackOn, setSlackOn] = useState(true);
-  const [emailOn, setEmailOn] = useState(true);
-  const [calOn, setCalOn] = useState(false);
+  const queryClient = useQueryClient();
+  const { data: prefs } = useQuery({
+    queryKey: ["notification-prefs"],
+    queryFn: () => api.get<NotificationPrefs>("/api/me/notification-prefs"),
+  });
+
+  const patchPrefs = useMutation({
+    mutationFn: (patch: Partial<NotificationPrefs>) =>
+      api.patch<NotificationPrefs>("/api/me/notification-prefs", patch),
+    onSuccess: (fresh) => queryClient.setQueryData(["notification-prefs"], fresh),
+  });
+
+  const [slackId, setSlackId] = useState(prefs?.slack_user_id ?? "");
+  useEffect(() => {
+    if (prefs?.slack_user_id !== undefined) setSlackId(prefs.slack_user_id ?? "");
+  }, [prefs?.slack_user_id]);
+
+  const [calOn, setCalOn] = useState(false);  // cosmetic — calendar integration not yet wired
   return (
     <div className="space-y-4">
       <Card>
@@ -169,25 +191,52 @@ function ProfileTab({ user }: { user: UserBrief }) {
           </h3>
           <ToggleRow
             icon={<Slack className="h-4 w-4" />}
-            label="Slack direct message"
-            description="Pings you on overdue items and approaching alert-window items"
-            checked={slackOn}
-            onChange={setSlackOn}
+            label="Slack alerts"
+            description="Channel-wide pings on overdue / assignment / mention. Requires workspace Slack to be connected."
+            checked={prefs?.notify_slack ?? true}
+            onChange={(v) => patchPrefs.mutate({ notify_slack: v })}
           />
           <ToggleRow
             icon={<Mail className="h-4 w-4" />}
             label="Email"
-            description="Daily digest at 8am IST, plus immediate for overdue"
-            checked={emailOn}
-            onChange={setEmailOn}
+            description="Password resets + (when configured) overdue + assignment emails to your inbox."
+            checked={prefs?.notify_email ?? true}
+            onChange={(v) => patchPrefs.mutate({ notify_email: v })}
           />
           <ToggleRow
             icon={<CalendarIcon className="h-4 w-4" />}
             label="Google Calendar events"
-            description="Adds an all-day event on each due date"
+            description="Adds an all-day event on each due date. Coming next round."
             checked={calOn}
             onChange={setCalOn}
           />
+
+          <div className="pt-3 border-t border-border">
+            <label className="text-xs font-medium text-muted-foreground">
+              Your Slack member id (optional)
+            </label>
+            <div className="flex gap-2 mt-1.5 max-w-md">
+              <Input
+                value={slackId}
+                onChange={(e) => setSlackId(e.target.value)}
+                placeholder="U0123ABCD"
+                className="font-mono text-xs"
+              />
+              <Button
+                variant="outline"
+                onClick={() =>
+                  patchPrefs.mutate({ slack_user_id: slackId.trim() || null })
+                }
+                disabled={patchPrefs.isPending || slackId === (prefs?.slack_user_id ?? "")}
+              >
+                Save
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              When set, Slack alerts ping you with a real <code className="font-mono">@</code>{" "}
+              mention. Find it in Slack → your profile → "Copy member ID".
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -857,51 +906,337 @@ function EditUserDialog({
 
 
 // ---------------------------------------------------------------------------
-// Integrations
+// Integrations — Slack + Gmail (SMTP) + coming-soon cards
 // ---------------------------------------------------------------------------
-const INTEGRATIONS: {
-  name: string;
-  description: string;
-  status: "connected" | "disconnected" | "coming";
-  icon: React.ReactNode;
-}[] = [
-  {
-    name: "Slack workspace",
-    description: "Channel alerts and direct mentions on overdue items",
-    status: "connected",
-    icon: <Slack className="h-5 w-5" />,
-  },
-  {
-    name: "ClickUp",
-    description: "Push obligations as tasks for execution by the ops team",
-    status: "disconnected",
-    icon: <ListChecks className="h-5 w-5" />,
-  },
-  {
-    name: "Google Calendar",
-    description: "Per-user OAuth — drops events on each due date",
-    status: "disconnected",
-    icon: <CalendarIcon className="h-5 w-5" />,
-  },
-  {
-    name: "Zoho Books",
-    description: "Sync filed-payment amounts back to accounting",
-    status: "coming",
-    icon: <CheckCheck className="h-5 w-5" />,
-  },
-  {
-    name: "Ramp",
-    description: "Auto-attach payment proofs to obligations from card transactions",
-    status: "coming",
-    icon: <CheckCheck className="h-5 w-5" />,
-  },
-];
+interface SlackConfig {
+  configured: boolean;
+  enabled: boolean;
+  webhook_url_masked: string | null;
+  has_webhook: boolean;
+  default_channel: string | null;
+}
 
 
 function IntegrationsTab() {
   return (
+    <div className="space-y-4">
+      <SlackCard />
+      <GmailCard />
+      <ComingSoonGrid />
+    </div>
+  );
+}
+
+
+function SlackCard() {
+  const queryClient = useQueryClient();
+  const { data: cfg, isLoading } = useQuery({
+    queryKey: ["integrations", "slack"],
+    queryFn: () => api.get<SlackConfig>("/api/admin/integrations/slack"),
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [webhook, setWebhook] = useState("");
+  const [channel, setChannel] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
+
+  useEffect(() => {
+    if (cfg) setChannel(cfg.default_channel || "");
+  }, [cfg]);
+
+  const saveMutation = useMutation({
+    mutationFn: (body: { webhook_url?: string; default_channel?: string; enabled?: boolean }) =>
+      api.post<SlackConfig>("/api/admin/integrations/slack", body),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["integrations", "slack"], fresh);
+      setEditing(false);
+      setWebhook("");
+      setResult(null);
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>("/api/admin/integrations/slack/test"),
+    onSuccess: (r) => setResult(r),
+  });
+
+  if (isLoading || !cfg) {
+    return <Card><CardContent className="p-4 text-sm text-muted-foreground">Loading Slack config…</CardContent></Card>;
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
+            <Slack className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold">Slack workspace</div>
+              {cfg.configured && cfg.enabled ? (
+                <Badge variant="completed">
+                  <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                  Connected
+                </Badge>
+              ) : cfg.configured ? (
+                <Badge variant="alert">Paused</Badge>
+              ) : (
+                <Badge variant="neutral">Not connected</Badge>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              Channel-wide alerts on overdue / assignment / mention via Slack Incoming Webhook.
+            </div>
+          </div>
+
+          {cfg.configured && !editing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending}
+            >
+              {testMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Slack className="h-3.5 w-3.5" />}
+              Send test
+            </Button>
+          )}
+        </div>
+
+        {cfg.configured && !editing && (
+          <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Webhook</span>
+              <span className="font-mono truncate">{cfg.webhook_url_masked}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Default channel</span>
+              <span className="font-mono">{cfg.default_channel || "(webhook default)"}</span>
+            </div>
+          </div>
+        )}
+
+        {result && (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              result.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-destructive/30 bg-destructive/5 text-destructive",
+            )}
+          >
+            {result.detail}
+          </div>
+        )}
+
+        {!editing ? (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              {cfg.configured ? "Update webhook" : "Connect"}
+            </Button>
+            {cfg.configured && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => saveMutation.mutate({ enabled: !cfg.enabled })}
+                  disabled={saveMutation.isPending}
+                >
+                  {cfg.enabled ? "Pause alerts" : "Resume alerts"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600"
+                  onClick={() => {
+                    if (window.confirm("Disconnect Slack? Alerts will stop until you re-paste a webhook.")) {
+                      saveMutation.mutate({ webhook_url: "" });
+                    }
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Incoming webhook URL
+              </label>
+              <Input
+                autoFocus
+                value={webhook}
+                onChange={(e) => setWebhook(e.target.value)}
+                placeholder="https://hooks.slack.com/services/T…/B…/…"
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Slack → your workspace → Apps → search "Incoming Webhooks" → Add Configuration →
+                pick a channel → copy the Webhook URL.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Override channel (optional)
+              </label>
+              <Input
+                value={channel}
+                onChange={(e) => setChannel(e.target.value)}
+                placeholder="#aspora-compliance"
+                className="font-mono text-xs mt-1"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() =>
+                  saveMutation.mutate({
+                    webhook_url: webhook.trim() || undefined,
+                    default_channel: channel.trim() || undefined,
+                    enabled: true,
+                  })
+                }
+                disabled={saveMutation.isPending || (!webhook.trim() && !cfg.configured)}
+              >
+                {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function GmailCard() {
+  const [recipient, setRecipient] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
+
+  const testMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>(
+        "/api/admin/integrations/email/test",
+        recipient.trim() ? { to: recipient.trim() } : {},
+      ),
+    onSuccess: (r) => setResult(r),
+  });
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
+            <Mail className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold">Email (Gmail / any SMTP)</div>
+              <Badge variant="neutral">Config via .env</Badge>
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              Sends password-reset emails today; assignment + overdue emails when notification
+              prefs are on.
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
+          <div className="font-medium">Connect Gmail in three steps</div>
+          <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+            <li>
+              Turn on 2-Step Verification on the Google account that will send the mail.
+            </li>
+            <li>
+              Visit <span className="font-mono">myaccount.google.com/apppasswords</span> →
+              generate an App Password for "Mail / Other → Aspora".
+            </li>
+            <li>
+              Drop the password into your <span className="font-mono">.env</span>:
+              <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
+{`SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@aspora.com
+SMTP_PASSWORD=<the 16-char app password>
+SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
+              </pre>
+              Restart the server. That's it.
+            </li>
+          </ol>
+        </div>
+
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Send a test email to (optional)
+            </label>
+            <Input
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+              placeholder="Defaults to your own email"
+              type="email"
+            />
+          </div>
+          <Button
+            onClick={() => testMutation.mutate()}
+            disabled={testMutation.isPending}
+          >
+            {testMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+            Send test
+          </Button>
+        </div>
+
+        {result && (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              result.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-amber-200 bg-amber-50 text-amber-900",
+            )}
+          >
+            {result.detail}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function ComingSoonGrid() {
+  const items: { name: string; description: string; icon: React.ReactNode }[] = [
+    {
+      name: "ClickUp",
+      description: "Push obligations as tasks for execution by the ops team",
+      icon: <ListChecks className="h-5 w-5" />,
+    },
+    {
+      name: "Google Calendar",
+      description: "Per-user OAuth — drops events on each due date",
+      icon: <CalendarIcon className="h-5 w-5" />,
+    },
+    {
+      name: "Zoho Books",
+      description: "Sync filed-payment amounts back to accounting",
+      icon: <CheckCheck className="h-5 w-5" />,
+    },
+    {
+      name: "Ramp",
+      description: "Auto-attach payment proofs from card transactions",
+      icon: <CheckCheck className="h-5 w-5" />,
+    },
+  ];
+  return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {INTEGRATIONS.map((i) => (
+      {items.map((i) => (
         <Card key={i.name}>
           <CardContent className="p-4 flex items-start gap-3">
             <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
@@ -910,30 +1245,13 @@ function IntegrationsTab() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <div className="font-semibold truncate">{i.name}</div>
-                {i.status === "connected" ? (
-                  <Badge variant="completed">
-                    <CheckCircle2 className="h-3 w-3 mr-0.5" />
-                    Connected
-                  </Badge>
-                ) : i.status === "disconnected" ? (
-                  <Badge variant="neutral">Disconnected</Badge>
-                ) : (
-                  <Badge variant="alert">Coming soon</Badge>
-                )}
+                <Badge variant="alert">Coming soon</Badge>
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">{i.description}</div>
             </div>
-            <div className="shrink-0">
-              {i.status === "connected" ? (
-                <Button variant="outline" size="sm" disabled>
-                  Configure
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
-                  {i.status === "coming" ? "Notify me" : "Connect"}
-                </Button>
-              )}
-            </div>
+            <Button variant="outline" size="sm" disabled>
+              Notify me
+            </Button>
           </CardContent>
         </Card>
       ))}
