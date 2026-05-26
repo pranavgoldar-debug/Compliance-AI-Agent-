@@ -78,9 +78,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       >
         <a href="/" className="flex items-center gap-2">
           {collapsed ? (
-            <div className="h-9 w-9 rounded-md bg-aspora-500 grid place-items-center text-white font-extrabold text-lg">
-              a
-            </div>
+            <img
+              src="/static/brand/aspora-mark.svg"
+              alt="Aspora"
+              className="h-9 w-9 rounded-md"
+            />
           ) : (
             <img src="/static/brand/aspora-wordmark.png" alt="Aspora" className="h-7" />
           )}
