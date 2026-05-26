@@ -202,6 +202,7 @@ def render(input_json: Path, output: Optional[Path]) -> None:
 def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> None:
     """Launch the country-picker web UI on http://HOST:PORT."""
     import os
+    import socket
     import threading
     import time
     import webbrowser
@@ -214,6 +215,37 @@ def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> N
     else:
         os.environ.pop("COMPLIANCE_AGENT_LIVE", None)
         click.echo("Mock mode — no API key required.", err=True)
+
+    # Pre-flight: detect "port already in use" before uvicorn spews a traceback.
+    if not _port_is_free(host, port):
+        next_port = _find_free_port(host, port + 1, port + 25)
+        click.echo("", err=True)
+        click.secho(
+            f"Port {port} on {host} is already in use.",
+            err=True, fg="red", bold=True,
+        )
+        click.echo(
+            "Another `serve` is likely still running. Free the port or pick a new one:",
+            err=True,
+        )
+        click.echo("", err=True)
+        if os.name == "nt":
+            click.echo(
+                f"  PowerShell — find + kill the listener:\n"
+                f"    Get-NetTCPConnection -LocalPort {port} | ForEach-Object {{\n"
+                f"      Stop-Process -Id $_.OwningProcess -Force\n"
+                f"    }}",
+                err=True,
+            )
+        else:
+            click.echo(f"  lsof -ti:{port} | xargs kill -9", err=True)
+        if next_port is not None:
+            click.echo(
+                f"\n  Or run on a different port:  "
+                f"python -m compliance_agent.cli serve --port {next_port}",
+                err=True,
+            )
+        raise SystemExit(2)
 
     # Resolve a browser-friendly host. 0.0.0.0 / :: are server-bind addresses,
     # not browsable — point the browser at localhost in that case.
@@ -232,6 +264,33 @@ def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> N
 
     click.echo(f"Serving on {url}", err=True)
     uvicorn.run("compliance_agent.web:app", host=host, port=port, reload=reload)
+
+
+def _port_is_free(host: str, port: int) -> bool:
+    """True if we can bind (host, port). Uses SO_REUSEADDR so we don't race
+    with our own check on platforms that hold TIME_WAIT."""
+    import socket
+
+    bind_host = host
+    if host in {"0.0.0.0", "::"}:
+        bind_host = "127.0.0.1"
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        # On Windows, SO_REUSEADDR has different semantics — don't set it.
+        try:
+            sock.bind((bind_host, port))
+            return True
+        except OSError:
+            return False
+    finally:
+        sock.close()
+
+
+def _find_free_port(host: str, start: int, end: int):
+    for p in range(start, end + 1):
+        if _port_is_free(host, p):
+            return p
+    return None
 
 
 @main.command()
