@@ -10,6 +10,10 @@ from compliance_agent.api.documents import (
 )
 from compliance_agent.api.entities import router as entities_router
 from compliance_agent.api.exports import router as exports_router
+from compliance_agent.api.integrations import (
+    admin_router as integrations_admin_router,
+    me_router as integrations_me_router,
+)
 from compliance_agent.api.notifications import router as notifications_router
 from compliance_agent.api.obligations import (
     calendar_router,
@@ -32,6 +36,8 @@ __all__ = [
     "document_obligation_upload_router",
     "entities_router",
     "exports_router",
+    "integrations_admin_router",
+    "integrations_me_router",
     "notifications_router",
     "obligations_router",
     "calendar_router",

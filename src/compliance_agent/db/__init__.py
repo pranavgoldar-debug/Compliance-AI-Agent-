@@ -19,6 +19,7 @@ from compliance_agent.db.models import (
     RuleSnapshot,
     RuleStatus,
     User,
+    WorkspaceSetting,
 )
 
 __all__ = [
@@ -47,4 +48,5 @@ __all__ = [
     "Applicability",
     "EffortBand",
     "EFFORT_BAND_DAYS",
+    "WorkspaceSetting",
 ]

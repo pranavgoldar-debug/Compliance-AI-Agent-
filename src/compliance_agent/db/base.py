@@ -92,6 +92,8 @@ def _add_missing_columns() -> None:
     # SQLAlchemy's SAEnum stores enum NAMES in the DB by default. EffortBand
     # has names like `w4` and values like `4w` — different — so the DEFAULT
     # here MUST be the name.
+    bool_default_true = "BOOLEAN NOT NULL DEFAULT 1" if not is_pg else "BOOLEAN NOT NULL DEFAULT TRUE"
+
     table_additions: dict[str, list[tuple[str, str]]] = {
         # Phase 5: effort bands on obligations
         "obligations": [
@@ -103,6 +105,12 @@ def _add_missing_columns() -> None:
             ("source_url", varchar(1024)),
             ("source_text", text_type),
             ("source_changed_at", datetime_type),
+        ],
+        # Phase 9: per-user notification prefs + Slack member id
+        "users": [
+            ("notify_email", bool_default_true),
+            ("notify_slack", bool_default_true),
+            ("slack_user_id", varchar(64)),
         ],
     }
 

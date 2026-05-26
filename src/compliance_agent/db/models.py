@@ -96,6 +96,13 @@ class User(Base):
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Reverse-side relationships
+    # Notification preferences — Phase 9 integrations.
+    notify_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notify_slack: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Personal Slack member id (e.g. U0123ABCD). When set, our channel-wide
+    # webhook pings can <@-mention> this user. Optional.
+    slack_user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
     led_entities: Mapped[list["Entity"]] = relationship(
         "Entity", back_populates="country_lead", foreign_keys="Entity.country_lead_id"
     )
@@ -442,3 +449,21 @@ class PasswordResetToken(Base):
     requester_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     user: Mapped[User] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Workspace settings — singleton-ish key/value table for integration config.
+# Stored as JSON so we don't have to migrate every time a new integration
+# adds a config knob.
+# ---------------------------------------------------------------------------
+class WorkspaceSetting(Base):
+    __tablename__ = "workspace_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    updated_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )

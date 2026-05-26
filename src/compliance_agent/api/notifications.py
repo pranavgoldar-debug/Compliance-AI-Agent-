@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, joinedload
 
+from compliance_agent import slack_service
 from compliance_agent.api._helpers import is_in_alert_window, is_overdue, serialize_user, today
 from compliance_agent.api.schemas import UserBrief
 from compliance_agent.auth import get_current_user
@@ -32,6 +33,7 @@ from compliance_agent.db import (
     User,
     get_session,
 )
+from compliance_agent.email_service import send_email
 
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -180,7 +182,9 @@ def emit_assignment(
     actor: User,
 ) -> None:
     """Persist an 'assigned' notification for the new assignee. No-op if the
-    assignee just self-assigned (the typical mark-it-mine flow)."""
+    assignee just self-assigned (the typical mark-it-mine flow). Also pings
+    Slack (channel-wide) when the workspace has a webhook and the assignee
+    has notify_slack enabled."""
     if assignee.id == actor.id:
         return
     body = (
@@ -199,6 +203,13 @@ def emit_assignment(
             actor_id=actor.id,
         )
     )
+    # Side-channel fan-out (best-effort, never raises).
+    if assignee.notify_slack and slack_service.is_configured(db):
+        slack_service.post(
+            slack_service.assignment_message(
+                obligation=obligation, assignee=assignee, actor=actor
+            )
+        )
 
 
 # Match @<identifier>. We resolve against active users by:
@@ -242,6 +253,7 @@ def emit_mentions(
     snippet = (body or "").strip()
     if len(snippet) > 240:
         snippet = snippet[:237] + "…"
+    slack_on = slack_service.is_configured(db)
     for u in mentions:
         if u.id == actor.id:
             continue
@@ -257,6 +269,12 @@ def emit_mentions(
                 actor_id=actor.id,
             )
         )
+        if u.notify_slack and slack_on:
+            slack_service.post(
+                slack_service.mention_message(
+                    obligation=obligation, mentioned=u, actor=actor, body=body
+                )
+            )
 
 
 def emit_status_change(
@@ -295,3 +313,13 @@ def emit_status_change(
             actor_id=actor.id,
         )
     )
+
+    # Slack: channel-wide "marked filed" for completed transitions.
+    if (
+        new_status == ObligationStatus.completed
+        and assignee.notify_slack
+        and slack_service.is_configured(db)
+    ):
+        slack_service.post(
+            slack_service.filed_message(obligation=obligation, actor=actor)
+        )
