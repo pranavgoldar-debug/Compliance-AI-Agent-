@@ -412,3 +412,33 @@ class RuleSnapshot(Base):
 
     rule: Mapped[Rule] = relationship("Rule")
     fetched_by: Mapped[Optional[User]] = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Password reset tokens — Phase 8
+# ---------------------------------------------------------------------------
+class PasswordResetToken(Base):
+    """Single-use token for the forgot-password flow.
+
+    We store only the SHA-256 hash of the token — the raw value is shown to
+    the user once (via email or admin-portal link) and never persisted in
+    plain text. The active lookup compares hash(incoming_token).
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    # For audit: IP / user-agent that requested the token. Best-effort.
+    requester_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    requester_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    user: Mapped[User] = relationship("User")

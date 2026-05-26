@@ -18,7 +18,7 @@ keep buttons enabled-but-non-fatal.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from compliance_agent import storage
@@ -31,6 +31,7 @@ from compliance_agent.ai.second_opinion import SecondOpinionResult, review as re
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import Document, User, get_session
+from compliance_agent.rate_limit import limiter
 
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -43,7 +44,9 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
     "/extract-from-document/{document_id}",
     response_model=DocumentExtractionResult,
 )
+@limiter.limit("30/minute")
 def extract_from_document(
+    request: Request,
     document_id: int,
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
@@ -83,7 +86,9 @@ def extract_from_document(
     "/second-opinion/{obligation_id}",
     response_model=SecondOpinionResult,
 )
+@limiter.limit("30/minute")
 def second_opinion(
+    request: Request,
     obligation_id: int,
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
@@ -112,7 +117,9 @@ def second_opinion(
     "/check-rule-changes/{rule_id}",
     response_model=CheckResult,
 )
+@limiter.limit("20/minute")
 def check_rule_changes(
+    request: Request,
     rule_id: int,
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),

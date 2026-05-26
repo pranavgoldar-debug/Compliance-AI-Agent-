@@ -33,6 +33,7 @@ from compliance_agent.api import (
     exports_router,
     notifications_router,
     obligations_router,
+    retention_router,
     rules_ai_router,
     rules_router,
     system_router,
@@ -40,6 +41,10 @@ from compliance_agent.api import (
     users_router,
 )
 from compliance_agent.auth import auth_router
+from compliance_agent.auth.middleware import SlidingSessionMiddleware
+from compliance_agent.rate_limit import limiter, rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from compliance_agent.catalog import CATALOG, Country, Regulation, get_regulation
 from compliance_agent.db import init_db
 from compliance_agent.fintech import (
@@ -73,10 +78,19 @@ def _is_live() -> bool:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Aspora Compliance OS", version="0.3.0")
+    app = FastAPI(title="Aspora Compliance OS", version="0.8.0")
 
     # Bring the DB online on startup. Idempotent — safe in production restarts.
     init_db()
+
+    # Rate limiting + sliding sessions. Order matters: SlowAPI wants its
+    # state on `app.state`, the middleware adds 429 handling, and the
+    # sliding-session refresh runs after auth so it can mint a fresh
+    # cookie on long-lived sessions.
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+    app.add_middleware(SlidingSessionMiddleware)
 
     # Aspora Compliance OS routers (auth-gated).
     app.include_router(auth_router)
@@ -96,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(exports_router)
     app.include_router(system_router)
     app.include_router(ai_assist_router)  # Phase 7 AI assist endpoints
+    app.include_router(retention_router)  # Phase 8 audit-log retention (admin)
     app.include_router(chat_router)  # Ask Aspora chat assistant
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))

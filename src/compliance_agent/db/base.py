@@ -1,8 +1,14 @@
 """SQLAlchemy engine, session factory, and Base.
 
-A single SQLite database file lives at ./compliance.db by default (override
-with COMPLIANCE_DB_URL). The schema is created on first run via
-Base.metadata.create_all(engine) — see init_db() below.
+Connection URL precedence:
+  1. COMPLIANCE_DB_URL — full SQLAlchemy URL.
+       SQLite:    sqlite:///./compliance.db
+       Postgres:  postgresql+psycopg2://user:pass@host:5432/dbname
+  2. COMPLIANCE_DB_PATH — file path for SQLite. Default: ./compliance.db
+
+For Postgres you also need `pip install -e ".[postgres]"` to pull psycopg2.
+The schema is still created via Base.metadata.create_all on boot; switch to
+Alembic when we cut the next round of schema changes.
 """
 from __future__ import annotations
 
@@ -18,6 +24,10 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 def _resolve_url() -> str:
     url = os.environ.get("COMPLIANCE_DB_URL")
     if url:
+        # Heroku / Render hand out `postgres://`; SQLAlchemy 2.x needs the
+        # explicit driver form.
+        if url.startswith("postgres://"):
+            url = "postgresql+psycopg2://" + url[len("postgres://"):]
         return url
     db_path = Path(os.environ.get("COMPLIANCE_DB_PATH", "compliance.db")).resolve()
     return f"sqlite:///{db_path}"
@@ -25,14 +35,24 @@ def _resolve_url() -> str:
 
 DATABASE_URL = _resolve_url()
 
-# check_same_thread=False is safe because we use a session-per-request pattern
-# and never share a Session across threads.
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-    pool_pre_ping=True,
-    future=True,
-)
+
+def _engine_kwargs(url: str) -> dict:
+    """Build per-backend SQLAlchemy engine kwargs."""
+    kwargs: dict = {"pool_pre_ping": True, "future": True}
+    if url.startswith("sqlite"):
+        # check_same_thread=False is safe because we use a session-per-request
+        # pattern and never share a Session across threads.
+        kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        # Sensible defaults for Postgres on a single-instance Render dyno;
+        # tune up when we scale horizontally.
+        kwargs["pool_size"] = int(os.environ.get("COMPLIANCE_DB_POOL_SIZE", "5"))
+        kwargs["max_overflow"] = int(os.environ.get("COMPLIANCE_DB_MAX_OVERFLOW", "5"))
+        kwargs["pool_recycle"] = 1800
+    return kwargs
+
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs(DATABASE_URL))
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
@@ -56,26 +76,30 @@ def init_db() -> None:
 
 def _add_missing_columns() -> None:
     """Add any new columns declared on existing models that aren't yet in
-    the live SQLite file. Idempotent. No-op on non-SQLite backends."""
-    if not DATABASE_URL.startswith("sqlite"):
-        return
-
+    the live DB. Idempotent. Works on SQLite and Postgres — both accept
+    ALTER TABLE ADD COLUMN. When we move to Alembic (next round) this will
+    be replaced by versioned migrations."""
     from sqlalchemy import inspect, text
 
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
 
+    is_pg = DATABASE_URL.startswith("postgres")
+    text_type = "TEXT"
+    varchar = lambda n: f"VARCHAR({n})"
+    datetime_type = "TIMESTAMP" if is_pg else "DATETIME"
+
     table_additions: dict[str, list[tuple[str, str]]] = {
         # Phase 5: effort bands on obligations
         "obligations": [
-            ("effort_band", "VARCHAR(8) NOT NULL DEFAULT '4w'"),
-            ("effort_band_reason", "TEXT"),
+            ("effort_band", f"{varchar(8)} NOT NULL DEFAULT '4w'"),
+            ("effort_band_reason", text_type),
         ],
         # Phase 7: source provenance on rules
         "rules": [
-            ("source_url", "VARCHAR(1024)"),
-            ("source_text", "TEXT"),
-            ("source_changed_at", "DATETIME"),
+            ("source_url", varchar(1024)),
+            ("source_text", text_type),
+            ("source_changed_at", datetime_type),
         ],
     }
 
@@ -87,7 +111,12 @@ def _add_missing_columns() -> None:
             for col_name, col_def in additions:
                 if col_name in existing:
                     continue
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"))
+                # Postgres supports IF NOT EXISTS; SQLite doesn't but the
+                # existing-cols check above already gates us.
+                guard = "IF NOT EXISTS " if is_pg else ""
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {guard}{col_name} {col_def}")
+                )
 
 
 def get_session() -> Iterator[Session]:
