@@ -2,7 +2,7 @@
 // and renders the diff against the previous snapshot.
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api";
 import { fmtDate, fmtRelative } from "@/lib/format";
@@ -36,7 +37,9 @@ interface Props {
 
 
 export function RuleChangeCheckDialog({ rule, open, onOpenChange }: Props) {
+  const queryClient = useQueryClient();
   const [result, setResult] = useState<RuleSourceCheckResult | null>(null);
+  const [urlDraft, setUrlDraft] = useState("");
 
   const { data: snapshots = [] } = useQuery({
     queryKey: ["rule-snapshots", rule.id],
@@ -50,6 +53,21 @@ export function RuleChangeCheckDialog({ rule, open, onOpenChange }: Props) {
     onSuccess: (r) => setResult(r),
   });
 
+  const saveUrlMutation = useMutation({
+    mutationFn: (next: string) =>
+      api.patch<Rule>(`/api/rules/${rule.id}`, { source_url: next || null }),
+    onSuccess: () => {
+      // Refetch the rules list so the parent dialog has the new URL on
+      // next open. We can't re-render this dialog's title bar with the
+      // new value without prop-lifting, but the snapshot+check buttons
+      // below will activate as soon as the cache invalidation hits.
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      setUrlDraft("");
+    },
+  });
+
+  const hasUrl = !!rule.source_url;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
@@ -61,34 +79,78 @@ export function RuleChangeCheckDialog({ rule, open, onOpenChange }: Props) {
         </DialogHeader>
 
         <div className="p-6 space-y-4">
-          {/* Source URL */}
-          <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 flex items-center gap-2 text-sm">
-            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-            {rule.source_url ? (
+          {/* Source URL display + inline add when missing */}
+          {hasUrl ? (
+            <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 flex items-center gap-2 text-sm">
+              <ExternalLink className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <a
-                href={rule.source_url}
+                href={rule.source_url!}
                 target="_blank"
                 rel="noreferrer"
                 className="font-mono text-xs text-aspora-700 hover:underline truncate"
               >
                 {rule.source_url}
               </a>
-            ) : (
-              <span className="text-muted-foreground italic">
-                No source URL on this rule yet. Edit the rule to add one.
-              </span>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 space-y-2">
+              <div className="flex items-start gap-2 text-sm text-amber-900">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-medium">No source URL on this rule yet.</div>
+                  <div className="text-xs text-amber-800/90 mt-0.5">
+                    Paste the regulator page that publishes this filing's requirements.
+                    The watcher will snapshot it and flag future edits.
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  autoFocus
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  placeholder="https://www.regulator.gov/…"
+                  className="font-mono text-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && urlDraft.trim()) {
+                      saveUrlMutation.mutate(urlDraft.trim());
+                    }
+                  }}
+                />
+                <Button
+                  onClick={() => saveUrlMutation.mutate(urlDraft.trim())}
+                  disabled={!urlDraft.trim() || saveUrlMutation.isPending}
+                >
+                  {saveUrlMutation.isPending && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                  Save URL
+                </Button>
+              </div>
+              {saveUrlMutation.error && (
+                <div className="text-xs text-red-700">
+                  {(saveUrlMutation.error as ApiError).message}
+                </div>
+              )}
+              {saveUrlMutation.isSuccess && (
+                <div className="text-xs text-emerald-700">
+                  Saved. Close and re-open the dialog to take the first snapshot.
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Action */}
-          <div className="flex items-center justify-between">
+          {/* Action — only meaningful when we have a URL */}
+          <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               Fetches the regulator page, strips to plain text, compares against the last
               snapshot.
             </p>
             <Button
               onClick={() => checkMutation.mutate()}
-              disabled={checkMutation.isPending || !rule.source_url}
+              disabled={checkMutation.isPending || !hasUrl}
+              className={!hasUrl ? "opacity-40 cursor-not-allowed" : undefined}
+              title={!hasUrl ? "Add a source URL first" : undefined}
             >
               {checkMutation.isPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
