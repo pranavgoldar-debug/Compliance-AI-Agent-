@@ -26,9 +26,9 @@ from compliance_agent.ai import ai_available
 from compliance_agent.db import Rule, RuleSnapshot, User
 
 
-USER_AGENT = "AsporaComplianceOS/0.7 (regulation watcher; +https://aspora.com)"
+USER_AGENT = "AsporaComplianceOS/0.9 (regulation watcher; +https://aspora.com)"
 MAX_BYTES = 5 * 1024 * 1024
-TIMEOUT_S = 10.0
+TIMEOUT_S = 8.0
 
 
 class CheckResult(BaseModel):
@@ -72,20 +72,31 @@ def _fetch(url: str) -> tuple[Optional[int], str, Optional[str]]:
     except ImportError as e:
         return None, "", f"httpx not installed: {e}"
 
+    # Tight timeouts on every phase so we can never hang the API request.
+    timeout = httpx.Timeout(TIMEOUT_S, connect=4.0, read=TIMEOUT_S, write=4.0, pool=2.0)
     try:
         with httpx.Client(
             follow_redirects=True,
-            timeout=TIMEOUT_S,
-            headers={"User-Agent": USER_AGENT},
+            timeout=timeout,
+            headers={
+                "User-Agent": USER_AGENT,
+                # Some regulator sites 403 a bare UA — accept any markup.
+                "Accept": "text/html,application/xhtml+xml,*/*;q=0.5",
+                "Accept-Language": "en",
+            },
         ) as client:
             resp = client.get(url)
         body = resp.content[:MAX_BYTES]
         if not resp.is_success:
-            return resp.status_code, "", f"HTTP {resp.status_code} from upstream."
+            return resp.status_code, "", f"Upstream returned HTTP {resp.status_code}."
         text = body.decode(resp.encoding or "utf-8", errors="ignore")
         return resp.status_code, _strip_html(text), None
+    except httpx.TimeoutException as e:
+        return None, "", f"Upstream timed out after {TIMEOUT_S:.0f}s ({e.__class__.__name__})."
+    except httpx.ConnectError as e:
+        return None, "", f"Couldn't connect: {e}"
     except Exception as e:
-        return None, "", f"Fetch failed: {e}"
+        return None, "", f"Fetch failed: {e.__class__.__name__}: {e}"
 
 
 # ---------------------------------------------------------------------------

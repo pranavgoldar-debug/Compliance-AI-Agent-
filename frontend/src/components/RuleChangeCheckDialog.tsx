@@ -163,7 +163,28 @@ export function RuleChangeCheckDialog({ rule, open, onOpenChange }: Props) {
 
           {checkMutation.error && (
             <Callout tone="error">
-              {(checkMutation.error as ApiError).message}
+              {(() => {
+                const e = checkMutation.error as Error;
+                const msg = e?.message || String(e);
+                // Browser-side network failure → not the regulator's fault.
+                if (msg === "Failed to fetch" || msg.startsWith("NetworkError")) {
+                  return (
+                    <>
+                      <div className="font-semibold">
+                        Couldn't reach the Aspora backend.
+                      </div>
+                      <div className="text-xs mt-1">
+                        The browser-to-server call failed — usually the dev server
+                        died, the port changed, or the request was aborted.
+                        Check the server console for stack traces and confirm
+                        the server is still running at the URL above. The
+                        regulator page itself isn't the issue.
+                      </div>
+                    </>
+                  );
+                }
+                return msg;
+              })()}
             </Callout>
           )}
 

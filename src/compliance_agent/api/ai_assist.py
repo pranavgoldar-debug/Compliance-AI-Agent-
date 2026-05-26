@@ -124,7 +124,29 @@ def check_rule_changes(
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),
 ) -> CheckResult:
-    result = check_rule_source(db, rule_id, actor=user)
+    # Defensive — anything thrown from inside the watcher (DB hiccup,
+    # malformed regulator HTML, etc.) becomes a clean CheckResult.error
+    # instead of a 500 that the browser shows as a generic "Failed to fetch".
+    import logging
+    import traceback
+    from datetime import datetime, timezone
+
+    try:
+        result = check_rule_source(db, rule_id, actor=user)
+    except Exception as e:
+        logging.getLogger("compliance_agent.regulation_watcher").exception(
+            "check_rule_source raised: %s", e
+        )
+        # Roll back any half-committed snapshot row.
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return CheckResult(
+            fetched_at=datetime.now(tz=timezone.utc),
+            error=f"Watcher crashed: {e.__class__.__name__}: {e}",
+        )
+
     if result.changed or result.is_first_snapshot or result.error:
         log_activity(
             db,
