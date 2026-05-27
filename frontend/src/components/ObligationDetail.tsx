@@ -77,6 +77,7 @@ interface Props {
 
 export function ObligationDetail({ obligationId, variant, onClose }: Props) {
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
 
   const { data: obligation, isLoading } = useQuery({
     queryKey: ["obligation", obligationId],
@@ -121,6 +122,7 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
         users={users}
         onPatch={(p) => patchMutation.mutate(p)}
         saving={patchMutation.isPending}
+        currentUser={currentUser}
       />
       <Body obligation={obligation} users={users} onPatch={(p) => patchMutation.mutate(p)} variant={variant} />
     </div>
@@ -205,11 +207,13 @@ function ActionBar({
   users,
   onPatch,
   saving,
+  currentUser,
 }: {
   obligation: Obligation;
   users: UserBrief[];
   onPatch: (p: Partial<Obligation>) => void;
   saving: boolean;
+  currentUser: { id: number; role: string } | null;
 }) {
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
@@ -267,14 +271,87 @@ function ActionBar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          size="sm"
-          onClick={() => onPatch({ status: "completed" })}
-          disabled={obligation.status === "completed" || saving}
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Mark as filed
-        </Button>
+        {/* Verification workflow buttons — shown based on status + role.
+            Employees submit for review; admins approve or send back. */}
+        {(() => {
+          const isAdmin = currentUser?.role === "admin";
+          const isAssignee = currentUser?.id === obligation.assignee?.id;
+          const status = obligation.status;
+
+          // Done — show a quiet "reopen" affordance for admins only
+          if (status === "completed") {
+            return isAdmin ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPatch({ status: "in_progress" })}
+                disabled={saving}
+                title="Move back to in-progress"
+              >
+                Reopen
+              </Button>
+            ) : null;
+          }
+
+          // Pending admin review — admin gets Approve / Send back
+          if (status === "pending_review") {
+            return isAdmin ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => onPatch({ status: "completed" })}
+                  disabled={saving}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Approve & file
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPatch({ status: "in_progress" })}
+                  disabled={saving}
+                  title="Send back to the assignee"
+                >
+                  Send back
+                </Button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground italic">
+                Awaiting admin review.
+              </span>
+            );
+          }
+
+          // Not started / in progress
+          // - Assignee submits for review when they're done
+          // - Admins can ALSO directly approve & file in one click
+          return (
+            <>
+              {(isAssignee || isAdmin) && (
+                <Button
+                  size="sm"
+                  onClick={() => onPatch({ status: "pending_review" })}
+                  disabled={saving}
+                  title="Mark done — admin will review + approve"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Submit for review
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPatch({ status: "completed" })}
+                  disabled={saving}
+                  title="Skip review and mark as filed directly"
+                >
+                  Mark as filed
+                </Button>
+              )}
+            </>
+          );
+        })()}
 
         <div className="ml-auto flex items-center gap-2">
           {saving && (

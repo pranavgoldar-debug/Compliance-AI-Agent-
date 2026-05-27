@@ -285,10 +285,10 @@ def emit_status_change(
     new_status: ObligationStatus,
     actor: User,
 ) -> None:
-    """Ping the assignee on terminal status transitions, when it isn't them
-    making the change."""
-    if assignee is None or assignee.id == actor.id:
-        return
+    """Notify the right people on terminal status transitions:
+      - completed       → ping the assignee (if not them)
+      - pending_review  → ping ALL admins (their queue) + the assignee
+    """
     if new_status not in (
         ObligationStatus.completed,
         ObligationStatus.pending_review,
@@ -296,27 +296,68 @@ def emit_status_change(
         return
     label = {
         ObligationStatus.completed: "completed",
-        ObligationStatus.pending_review: "moved to pending review",
+        ObligationStatus.pending_review: "submitted for review",
     }[new_status]
-    db.add(
-        Notification(
-            user_id=assignee.id,
-            kind=NotificationKind.status_change,
-            title=f"{actor.full_name or actor.email} {label} your item",
-            body=(
-                f"{obligation.rule.form_name} — {obligation.entity.name}"
-                if obligation.rule and obligation.entity
-                else None
-            ),
-            link_url=f"/obligations/{obligation.id}",
-            obligation_id=obligation.id,
-            actor_id=actor.id,
-        )
+    body = (
+        f"{obligation.rule.form_name} — {obligation.entity.name}"
+        if obligation.rule and obligation.entity
+        else None
     )
+
+    # 1. Ping the assignee (if they didn't make the change themselves).
+    if assignee is not None and assignee.id != actor.id:
+        db.add(
+            Notification(
+                user_id=assignee.id,
+                kind=NotificationKind.status_change,
+                title=f"{actor.full_name or actor.email} {label} your item",
+                body=body,
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=actor.id,
+            )
+        )
+
+    # 2. On pending_review, also wake up every admin so the verification
+    # queue gets attention. Don't ping the actor (they just submitted it).
+    if new_status == ObligationStatus.pending_review:
+        from compliance_agent.db import Role
+
+        admins = (
+            db.execute(
+                select(User).where(User.role == Role.admin, User.is_active.is_(True))
+            )
+            .scalars()
+            .all()
+        )
+        for admin in admins:
+            if admin.id == actor.id:
+                continue
+            db.add(
+                Notification(
+                    user_id=admin.id,
+                    kind=NotificationKind.status_change,
+                    title=f"{actor.full_name or actor.email} submitted for review",
+                    body=body,
+                    link_url=f"/obligations/{obligation.id}",
+                    obligation_id=obligation.id,
+                    actor_id=actor.id,
+                )
+            )
+
+        # Slack ping for the workspace channel on submit-for-review too.
+        if slack_service.is_configured(db):
+            form = obligation.rule.form_name if obligation.rule else "Compliance item"
+            entity = obligation.entity.name if obligation.entity else "—"
+            slack_service.post(
+                f":eyes: *{form}* ({entity}) submitted for review by "
+                f"{actor.full_name or actor.email} — admins, please verify."
+            )
 
     # Slack: channel-wide "marked filed" for completed transitions.
     if (
         new_status == ObligationStatus.completed
+        and assignee is not None
         and assignee.notify_slack
         and slack_service.is_configured(db)
     ):
