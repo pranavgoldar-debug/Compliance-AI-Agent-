@@ -176,7 +176,10 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
     return n.kind === "overdue" || n.kind === "alert_window" || n.kind === "status_change";
   });
 
-  const unread = notifications.filter((n) => !n.read);
+  // Derived notifications (no DB id) self-clear when the underlying obligation
+  // is resolved, so they can never be "marked read" via API. Treat them as
+  // always-read for the unread dot + count so we don't lie to the user.
+  const unread = notifications.filter((n) => !n.read && n.id != null);
 
   return (
     <div className="w-[400px] -m-2">
@@ -225,10 +228,11 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
                     type="button"
                     className={cn(
                       "w-full text-left px-4 py-3 hover:bg-secondary/50 flex items-start gap-3",
-                      !n.read && "bg-aspora-50/30",
+                      !n.read && n.id != null && "bg-aspora-50/30",
                     )}
                     onClick={() => {
-                      if (n.id) markReadMutation.mutate([n.id]);
+                      if (n.id != null && !n.read)
+                        markReadMutation.mutate([n.id]);
                       if (n.obligation_id) {
                         openObligation(n.obligation_id);
                         onClose();
@@ -252,7 +256,7 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
                         {fmtRelative(n.created_at)}
                       </div>
                     </div>
-                    {!n.read && (
+                    {!n.read && n.id != null && (
                       <span className="mt-2 h-2 w-2 rounded-full bg-aspora-600 shrink-0" />
                     )}
                   </button>
