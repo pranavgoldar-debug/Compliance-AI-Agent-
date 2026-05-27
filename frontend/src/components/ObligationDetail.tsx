@@ -276,16 +276,6 @@ function ActionBar({
           Mark as filed
         </Button>
 
-        <Button variant="outline" size="sm" disabled title="Coming soon">
-          <CalendarIcon className="h-3.5 w-3.5" />
-          Request extension
-        </Button>
-
-        <Button variant="outline" size="sm" disabled title="ClickUp integration ships in Phase 5">
-          <ListChecks className="h-3.5 w-3.5" />
-          Push to ClickUp
-        </Button>
-
         <div className="ml-auto flex items-center gap-2">
           {saving && (
             <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
