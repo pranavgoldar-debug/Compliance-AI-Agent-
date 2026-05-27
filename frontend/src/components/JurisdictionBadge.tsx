@@ -31,16 +31,19 @@ export function JurisdictionBadge({ code, showName = true, className }: Props) {
         <img
           src={flagUrl(j.iso2)}
           srcSet={`https://flagcdn.com/48x36/${j.iso2}.png 2x`}
-          width={20}
-          height={15}
           alt=""
           aria-hidden
-          className="rounded-[2px] border border-black/5 object-cover"
+          // Explicit Tailwind size classes — Tailwind's preflight sets
+          // `height: auto` on every <img>, which overrides the HTML
+          // height attribute and was making each flag take a different
+          // height based on its native aspect ratio. `block` + fixed
+          // w/h + object-cover keeps them all uniformly 20×14px.
+          className="block w-5 h-[14px] shrink-0 rounded-[2px] border border-black/5 object-cover"
         />
       ) : (
         <span
           aria-hidden
-          className="inline-flex items-center justify-center h-[15px] min-w-[20px] px-1 rounded-[2px] border border-border bg-secondary text-[10px] font-semibold text-muted-foreground"
+          className="inline-flex items-center justify-center h-[14px] min-w-5 px-1 rounded-[2px] border border-border bg-secondary text-[10px] font-semibold text-muted-foreground"
         >
           {code.toUpperCase().slice(0, 2)}
         </span>
