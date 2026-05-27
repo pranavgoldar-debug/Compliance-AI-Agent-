@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Aspora">
+  <!--
+    Aspora brand mark — purple disc with a thin 4-point sparkle.
+    Built from two rotated diamond/rhombus paths so the points stay sharp at
+    any size and the centre meets cleanly. Background colour matches the
+    aspora-600 token in tailwind.config.
+  -->
+  <circle cx="32" cy="32" r="32" fill="#6F4FE0"/>
+  <g fill="#FFFFFF">
+    <!-- Vertical diamond -->
+    <path d="M32 10 L37 32 L32 54 L27 32 Z"/>
+    <!-- Horizontal diamond -->
+    <path d="M10 32 L32 27 L54 32 L32 37 Z"/>
+  </g>
+</svg>

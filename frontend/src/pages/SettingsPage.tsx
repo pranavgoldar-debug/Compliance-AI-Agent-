@@ -1,6 +1,7 @@
 // Settings — proper tabbed shell. Profile is available to every user; the
 // rest are admin-only (visible to non-admins with a Lock badge but read-only).
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -68,7 +69,18 @@ const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.Compo
 export function SettingsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [tab, setTab] = useState<TabKey>("profile");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (searchParams.get("tab") as TabKey | null) ?? "profile";
+  const [tab, setTabState] = useState<TabKey>(initialTab);
+
+  function setTab(next: TabKey) {
+    setTabState(next);
+    // Mirror to the URL so deep-linking + back-button work.
+    const next_params = new URLSearchParams(searchParams);
+    if (next === "profile") next_params.delete("tab");
+    else next_params.set("tab", next);
+    setSearchParams(next_params, { replace: true });
+  }
 
   if (!user) return null;
 
@@ -243,20 +255,44 @@ function ProfileTab({ user }: { user: UserBrief }) {
       <Card>
         <CardContent className="p-6 space-y-3">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Personal alert lead times
+            Reminder schedule
           </h3>
           <p className="text-xs text-muted-foreground">
-            By default the system fires at 2× the effort band before the due date. Override per
-            band below.
+            When `compliance-agent send-reminders` runs (daily cron), it pings
+            the assignee at each offset below for the relevant effort band.
+            Each (person, filing, offset) fires exactly once.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
-            {(["1w", "2w", "4w", "8w", "12w"] as const).map((b) => (
-              <div key={b} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                <span className="text-sm">{b} effort</span>
-                <span className="text-xs text-muted-foreground">→ {Number(b.replace("w", "")) * 2}d before</span>
-              </div>
-            ))}
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Effort band</th>
+                  <th className="px-3 py-2 text-left font-medium">Typical cadence</th>
+                  <th className="px-3 py-2 text-left font-medium">Reminders sent</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {[
+                  { band: "1w", cadence: "Monthly", offsets: "7 days before" },
+                  { band: "2w", cadence: "Quarterly", offsets: "25 + 15 days before" },
+                  { band: "4w", cadence: "Half-yearly", offsets: "30 + 15 days before" },
+                  { band: "8w", cadence: "Annual", offsets: "45 + 30 days before" },
+                  { band: "12w", cadence: "Multi-year / long-form", offsets: "60 + 30 days before" },
+                ].map((r) => (
+                  <tr key={r.band}>
+                    <td className="px-3 py-2 font-mono text-xs">{r.band}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{r.cadence}</td>
+                    <td className="px-3 py-2">{r.offsets}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            To change the policy, edit{" "}
+            <code className="font-mono">_REMINDER_OFFSETS</code> in{" "}
+            <code className="font-mono">src/compliance_agent/api/_helpers.py</code>.
+          </p>
         </CardContent>
       </Card>
 

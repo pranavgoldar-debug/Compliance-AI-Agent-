@@ -1,0 +1,898 @@
+// Licenses page — admin uploads a license, sees its details, and gets a
+// list of compliance rules that apply (matched on jurisdiction + tokens
+// from the license's authority/type/name).
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertCircle,
+  Calendar,
+  Download,
+  ExternalLink,
+  FileBadge,
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
+import { JurisdictionBadge } from "@/components/JurisdictionBadge";
+import { EmptyState } from "@/components/EmptyState";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { fmtDate, JURISDICTIONS } from "@/lib/format";
+import type {
+  ApplicableRulesResponse,
+  Entity,
+  License,
+  LicenseExpiryStatus,
+  LicenseRuleHit,
+} from "@/types/api";
+
+function expiryBadgeVariant(
+  s: LicenseExpiryStatus,
+): "completed" | "alert" | "overdue" | "neutral" {
+  if (s === "valid") return "completed";
+  if (s === "expiring") return "alert";
+  if (s === "expired") return "overdue";
+  return "neutral";
+}
+
+function expiryLabel(lic: License): string {
+  if (lic.expiry_status === "expired") {
+    return `Expired ${Math.abs(lic.days_to_expiry ?? 0)}d ago`;
+  }
+  if (lic.expiry_status === "expiring") {
+    return `Expires in ${lic.days_to_expiry}d`;
+  }
+  if (lic.expiry_status === "valid") {
+    return `Valid · ${lic.days_to_expiry}d left`;
+  }
+  return "No expiry date";
+}
+
+export function LicensesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
+
+  const [q, setQ] = useState("");
+  const [jurisdiction, setJurisdiction] = useState<string>("");
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [activeLicense, setActiveLicense] = useState<License | null>(null);
+
+  const licensesQuery = useQuery({
+    queryKey: ["licenses", jurisdiction],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (jurisdiction) params.set("jurisdiction_code", jurisdiction);
+      return api.get<License[]>(`/api/licenses?${params.toString()}`);
+    },
+  });
+
+  const filtered = useMemo(() => {
+    const list = licensesQuery.data ?? [];
+    if (!q.trim()) return list;
+    const needle = q.trim().toLowerCase();
+    return list.filter(
+      (l) =>
+        l.name.toLowerCase().includes(needle) ||
+        l.authority.toLowerCase().includes(needle) ||
+        l.license_type.toLowerCase().includes(needle) ||
+        (l.license_number ?? "").toLowerCase().includes(needle) ||
+        l.entity_name.toLowerCase().includes(needle),
+    );
+  }, [licensesQuery.data, q]);
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["licenses"] });
+  }
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Licenses"
+        description="Authorisations each entity holds from regulators. Upload one to see which filings apply to it."
+        actions={
+          isAdmin && (
+            <Button onClick={() => setUploadOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Upload license
+            </Button>
+          )
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[260px] max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by name, authority, license number, entity…"
+            className="pl-9"
+          />
+        </div>
+        <select
+          value={jurisdiction}
+          onChange={(e) => setJurisdiction(e.target.value)}
+          className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All jurisdictions</option>
+          {Object.entries(JURISDICTIONS).map(([code, j]) => (
+            <option key={code} value={code}>
+              {j.flag} {j.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {licensesQuery.isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<FileBadge className="h-6 w-6" />}
+          title="No licenses yet"
+          description={
+            isAdmin
+              ? "Upload a license to see which compliance rules apply to it."
+              : "Ask an admin to upload licenses to see them here."
+          }
+          action={
+            isAdmin && (
+              <Button onClick={() => setUploadOpen(true)} size="sm">
+                <Plus className="h-4 w-4" />
+                Upload license
+              </Button>
+            )
+          }
+        />
+      ) : (
+        <div className="rounded-lg border border-border overflow-hidden bg-card">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary/40 text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">License</th>
+                <th className="text-left px-3 py-2 font-medium">Entity</th>
+                <th className="text-left px-3 py-2 font-medium">Authority</th>
+                <th className="text-left px-3 py-2 font-medium">License No.</th>
+                <th className="text-left px-3 py-2 font-medium">Expiry</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((lic) => (
+                <tr
+                  key={lic.id}
+                  className="border-t border-border hover:bg-secondary/20 cursor-pointer"
+                  onClick={() => setActiveLicense(lic)}
+                >
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <JurisdictionBadge code={lic.jurisdiction_code} showName={false} />
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{lic.name}</div>
+                        {lic.license_type && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {lic.license_type}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-sm">{lic.entity_name}</td>
+                  <td className="px-3 py-2 text-sm">{lic.authority}</td>
+                  <td className="px-3 py-2 text-xs font-mono text-muted-foreground">
+                    {lic.license_number ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    <Badge variant={expiryBadgeVariant(lic.expiry_status)}>
+                      {expiryLabel(lic)}
+                    </Badge>
+                    {lic.expiry_date && (
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {fmtDate(lic.expiry_date)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {lic.has_file && (
+                      <a
+                        href={`/api/licenses/${lic.id}/download`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-xs text-aspora-600 hover:underline"
+                        title="Download file"
+                      >
+                        <Download className="h-3 w-3" />
+                        File
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <UploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={invalidate}
+      />
+      <LicenseDetailDialog
+        license={activeLicense}
+        onClose={() => setActiveLicense(null)}
+        isAdmin={isAdmin}
+        onChanged={() => {
+          invalidate();
+          setActiveLicense(null);
+        }}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Upload dialog
+// ---------------------------------------------------------------------------
+function UploadDialog({
+  open,
+  onOpenChange,
+  onUploaded,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onUploaded: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const { data: entities = [] } = useQuery({
+    queryKey: ["entities", "for-license-upload"],
+    queryFn: () => api.get<Entity[]>("/api/entities"),
+    enabled: open,
+  });
+
+  const [entityId, setEntityId] = useState<number | "">("");
+  const [name, setName] = useState("");
+  const [licenseType, setLicenseType] = useState("");
+  const [authority, setAuthority] = useState("");
+  const [jurisdictionCode, setJurisdictionCode] = useState("");
+  const [licenseNumber, setLicenseNumber] = useState("");
+  const [issueDate, setIssueDate] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+
+  // When the user picks an entity, default the jurisdiction to match.
+  const selectedEntity = entities.find((e) => e.id === entityId);
+  function pickEntity(id: number) {
+    setEntityId(id);
+    const ent = entities.find((e) => e.id === id);
+    if (ent && !jurisdictionCode) setJurisdictionCode(ent.jurisdiction_code);
+  }
+
+  function reset() {
+    setEntityId("");
+    setName("");
+    setLicenseType("");
+    setAuthority("");
+    setJurisdictionCode("");
+    setLicenseNumber("");
+    setIssueDate("");
+    setExpiryDate("");
+    setNotes("");
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    uploadMutation.reset();
+  }
+
+  const uploadMutation = useMutation({
+    mutationFn: async () => {
+      if (entityId === "") throw new Error("Pick an entity.");
+      const form = new FormData();
+      form.append("entity_id", String(entityId));
+      form.append("name", name);
+      form.append("license_type", licenseType);
+      form.append("authority", authority);
+      form.append("jurisdiction_code", jurisdictionCode);
+      if (licenseNumber) form.append("license_number", licenseNumber);
+      if (issueDate) form.append("issue_date", issueDate);
+      if (expiryDate) form.append("expiry_date", expiryDate);
+      if (notes) form.append("notes", notes);
+      if (file) form.append("file", file);
+      return api.upload<License>("/api/licenses", form);
+    },
+    onSuccess: () => {
+      onUploaded();
+      reset();
+      onOpenChange(false);
+    },
+  });
+
+  const canSubmit =
+    entityId !== "" &&
+    name.trim() &&
+    authority.trim() &&
+    jurisdictionCode &&
+    !uploadMutation.isPending;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) reset();
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileBadge className="h-5 w-5 text-aspora-600" />
+            Upload license
+          </DialogTitle>
+          <DialogDescription>
+            Pin a regulator + jurisdiction to one of your entities. Once saved,
+            open the license to see which compliance rules apply.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Entity *">
+              <select
+                value={entityId}
+                onChange={(e) =>
+                  e.target.value ? pickEntity(Number(e.target.value)) : setEntityId("")
+                }
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Pick an entity…</option>
+                {entities.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} ({e.jurisdiction_code})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Jurisdiction *">
+              <select
+                value={jurisdictionCode}
+                onChange={(e) => setJurisdictionCode(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Pick a jurisdiction…</option>
+                {Object.entries(JURISDICTIONS).map(([code, j]) => (
+                  <option key={code} value={code}>
+                    {j.flag} {j.name}
+                  </option>
+                ))}
+              </select>
+              {selectedEntity &&
+                jurisdictionCode &&
+                jurisdictionCode !== selectedEntity.jurisdiction_code && (
+                  <div className="text-[11px] text-amber-700 mt-1">
+                    Note: this jurisdiction doesn't match the entity's home
+                    jurisdiction ({selectedEntity.jurisdiction_code}).
+                  </div>
+                )}
+            </Field>
+          </div>
+
+          <Field label="License name *">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. CBUAE SVF Licence, DMCC Trade License"
+            />
+          </Field>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="License type">
+              <Input
+                value={licenseType}
+                onChange={(e) => setLicenseType(e.target.value)}
+                placeholder="Stored Value Facility, Trade License, EMI, FCA Authorisation…"
+              />
+            </Field>
+            <Field label="Issuing authority *">
+              <Input
+                value={authority}
+                onChange={(e) => setAuthority(e.target.value)}
+                placeholder="CBUAE, DMCC, FCA, MAS…"
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="License number">
+              <Input
+                value={licenseNumber}
+                onChange={(e) => setLicenseNumber(e.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field label="Issue date">
+              <Input
+                type="date"
+                value={issueDate}
+                onChange={(e) => setIssueDate(e.target.value)}
+              />
+            </Field>
+            <Field label="Expiry date">
+              <Input
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <Field label="Notes">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="Optional context — scope, conditions, renewal cadence…"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            />
+          </Field>
+
+          <Field label="License file (optional)">
+            <label
+              className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-2 cursor-pointer hover:border-aspora-400 hover:bg-aspora-50/40"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const f = e.dataTransfer.files?.[0] ?? null;
+                setFile(f);
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <Upload className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">
+                {file ? file.name : "Drop a PDF/image or click to browse"}
+              </span>
+              {file && (
+                <button
+                  type="button"
+                  className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </label>
+          </Field>
+
+          {uploadMutation.error && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div>{(uploadMutation.error as Error).message}</div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => uploadMutation.mutate()}
+            disabled={!canSubmit}
+          >
+            {uploadMutation.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            Save license
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Detail dialog — license summary + applicable rules
+// ---------------------------------------------------------------------------
+function LicenseDetailDialog({
+  license,
+  onClose,
+  isAdmin,
+  onChanged,
+}: {
+  license: License | null;
+  onClose: () => void;
+  isAdmin: boolean;
+  onChanged: () => void;
+}) {
+  const open = license !== null;
+
+  const rulesQuery = useQuery({
+    queryKey: ["license-rules", license?.id],
+    queryFn: () =>
+      api.get<ApplicableRulesResponse>(
+        `/api/licenses/${license!.id}/applicable-rules`,
+      ),
+    enabled: open,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/api/licenses/${license!.id}`),
+    onSuccess: () => onChanged(),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent size="xl">
+        {license && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileBadge className="h-5 w-5 text-aspora-600" />
+                {license.name}
+              </DialogTitle>
+              <DialogDescription>
+                {license.license_type || "License"} · {license.authority}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="p-6 space-y-5">
+              {/* Summary grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <Stat label="Entity" value={license.entity_name} />
+                <Stat
+                  label="Jurisdiction"
+                  value={
+                    <div className="flex items-center gap-1">
+                      <JurisdictionBadge code={license.jurisdiction_code} />
+                    </div>
+                  }
+                />
+                <Stat
+                  label="License No."
+                  value={
+                    <span className="font-mono">
+                      {license.license_number ?? "—"}
+                    </span>
+                  }
+                />
+                <Stat
+                  label="Expiry"
+                  value={
+                    <div>
+                      <Badge variant={expiryBadgeVariant(license.expiry_status)}>
+                        {expiryLabel(license)}
+                      </Badge>
+                      {license.expiry_date && (
+                        <div className="text-[11px] text-muted-foreground mt-0.5 inline-flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {fmtDate(license.expiry_date)}
+                        </div>
+                      )}
+                    </div>
+                  }
+                />
+                {license.issue_date && (
+                  <Stat label="Issued" value={fmtDate(license.issue_date)} />
+                )}
+                {license.has_file && (
+                  <Stat
+                    label="File"
+                    value={
+                      <a
+                        href={`/api/licenses/${license.id}/download`}
+                        className="text-aspora-600 hover:underline inline-flex items-center gap-1 text-xs"
+                      >
+                        <Download className="h-3 w-3" />
+                        {license.filename ?? "Download"}
+                      </a>
+                    }
+                  />
+                )}
+              </div>
+
+              {license.notes && (
+                <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-sm">
+                  {license.notes}
+                </div>
+              )}
+
+              {/* Applicable rules */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-semibold">
+                    Applicable regulations
+                  </div>
+                  {rulesQuery.data && (
+                    <div className="text-xs text-muted-foreground">
+                      {rulesQuery.data.direct.length} direct ·{" "}
+                      {rulesQuery.data.entity_other.length} other for this entity
+                    </div>
+                  )}
+                </div>
+
+                {rulesQuery.isLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-14 w-full" />
+                    ))}
+                  </div>
+                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 &&
+                  rulesQuery.data.entity_other.length === 0 ? (
+                  <div className="rounded-lg border border-border bg-secondary/30 px-3 py-3 text-sm text-muted-foreground">
+                    No rules matched this license in the catalogue yet. Try
+                    sharpening the authority or license type fields, or add a
+                    rule with a matching authority.
+                  </div>
+                ) : (
+                  <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
+                    <TrackingCounts counts={rulesQuery.data.counts} />
+                    {rulesQuery.data.direct.length > 0 && (
+                      <RuleGroup
+                        title="Directly applicable"
+                        subtitle="Matched on jurisdiction + authority / license type tokens."
+                        items={rulesQuery.data.direct}
+                      />
+                    )}
+                    {rulesQuery.data.entity_other.length > 0 && (
+                      <RuleGroup
+                        title="Other obligations for this entity"
+                        subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
+                        items={rulesQuery.data.entity_other}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {deleteMutation.error && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>{(deleteMutation.error as Error).message}</div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Delete license "${license.name}"? This also removes its uploaded file.`,
+                      )
+                    ) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  {deleteMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Delete
+                </Button>
+              )}
+              <Button onClick={onClose}>Close</Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Stat({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-0.5">{value}</div>
+    </div>
+  );
+}
+
+function TrackingCounts({ counts }: { counts: Record<string, number> }) {
+  const items: { key: string; label: string; tone: string }[] = [
+    { key: "total", label: "Applicable rules", tone: "bg-secondary/60 text-foreground" },
+    { key: "not_scheduled", label: "No deadline scheduled", tone: "bg-slate-100 text-slate-700" },
+    { key: "unassigned", label: "Unassigned", tone: "bg-amber-100 text-amber-800" },
+    { key: "not_started", label: "Not started", tone: "bg-slate-100 text-slate-700" },
+    { key: "in_progress", label: "In progress", tone: "bg-blue-100 text-blue-700" },
+    { key: "pending_review", label: "Pending review", tone: "bg-purple-100 text-purple-700" },
+  ];
+  return (
+    <div className="flex flex-wrap gap-2 text-xs">
+      {items.map((it) => {
+        const n = counts[it.key] ?? 0;
+        if (it.key !== "total" && n === 0) return null;
+        return (
+          <span
+            key={it.key}
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${it.tone}`}
+          >
+            <span className="font-semibold tabular-nums">{n}</span>
+            <span>{it.label}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function statusBadgeVariant(
+  status: string | null,
+): "completed" | "progress" | "review" | "neutral" | "overdue" {
+  if (!status) return "neutral";
+  if (status === "completed") return "completed";
+  if (status === "in_progress") return "progress";
+  if (status === "pending_review") return "review";
+  return "neutral";
+}
+
+function statusLabel(status: string | null): string {
+  if (!status) return "Not scheduled";
+  return status.replace(/_/g, " ");
+}
+
+function RuleGroup({
+  title,
+  subtitle,
+  items,
+}: {
+  title: string;
+  subtitle: string;
+  items: LicenseRuleHit[];
+}) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      <div className="text-[11px] text-muted-foreground mb-2">{subtitle}</div>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Filing</th>
+              <th className="px-3 py-2 text-left font-medium">Status</th>
+              <th className="px-3 py-2 text-left font-medium">Assignee</th>
+              <th className="px-3 py-2 text-left font-medium">Next due</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.map((r) => {
+              const assignee = r.next_assignee;
+              const daysOut = r.days_to_next;
+              return (
+                <tr
+                  key={r.id}
+                  className="hover:bg-secondary/20 cursor-pointer"
+                  onClick={(e) => {
+                    if (r.next_obligation_id) {
+                      e.stopPropagation();
+                      window.location.href = `/obligations/${r.next_obligation_id}`;
+                    }
+                  }}
+                >
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium text-sm">{r.form_name}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.authority} · {r.category}
+                      {r.area ? ` · ${r.area}` : ""}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
+                      <Badge variant="neutral">{r.frequency}</Badge>
+                      {r.match_reason && (
+                        <span className="text-aspora-700">{r.match_reason}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <Badge variant={statusBadgeVariant(r.next_status)}>
+                      {statusLabel(r.next_status)}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {assignee ? (
+                      <div>
+                        <div className="text-sm">
+                          {assignee.full_name || assignee.email}
+                        </div>
+                        {assignee.full_name && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {assignee.email}
+                          </div>
+                        )}
+                      </div>
+                    ) : r.next_obligation_id ? (
+                      <span className="text-xs text-amber-700">Unassigned</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {r.next_due_date ? (
+                      <div>
+                        <div>{r.next_due_date}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {daysOut !== null && daysOut !== undefined
+                            ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+                            : ""}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">
+                        {r.due_date_rule}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-right">
+                    {r.next_obligation_id && (
+                      <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

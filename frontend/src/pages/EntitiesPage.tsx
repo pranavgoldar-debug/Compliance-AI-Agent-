@@ -230,12 +230,14 @@ function TableView({ entities }: { entities: Entity[] }) {
                     className="flex items-center gap-3 min-w-0 hover:text-aspora-700"
                   >
                     <div className="h-8 w-8 rounded-lg bg-aspora-100 grid place-items-center text-aspora-700 font-semibold text-[10px] shrink-0">
-                      {userInitials(e.name)}
+                      {e.short_code || userInitials(e.name)}
                     </div>
                     <div className="min-w-0">
                       <div className="font-medium truncate">{e.name}</div>
                       <div className="text-xs text-muted-foreground truncate font-mono">
-                        {e.registration_number || "No reg #"}
+                        {e.short_code
+                          ? e.registration_number || `Code: ${e.short_code}`
+                          : e.registration_number || "No reg #"}
                       </div>
                     </div>
                   </Link>

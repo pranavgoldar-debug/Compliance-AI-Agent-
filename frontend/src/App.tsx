@@ -20,6 +20,7 @@ import { AuditLogPage } from "@/pages/AuditLogPage";
 import { ObligationDetailPage } from "@/pages/ObligationDetailPage";
 import { RegulationLibraryPage } from "@/pages/RegulationLibraryPage";
 import { FilingsCatalogPage } from "@/pages/FilingsCatalogPage";
+import { LicensesPage } from "@/pages/LicensesPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +66,7 @@ export default function App() {
                   }
                 />
                 <Route path="documents" element={<DocumentsPage />} />
+                <Route path="licenses" element={<LicensesPage />} />
                 <Route
                   path="audit-log"
                   element={
@@ -75,6 +77,10 @@ export default function App() {
                 />
                 <Route path="obligations/:obligationId" element={<ObligationDetailPage />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route
+                  path="admin/users"
+                  element={<Navigate to="/settings?tab=users" replace />}
+                />
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />

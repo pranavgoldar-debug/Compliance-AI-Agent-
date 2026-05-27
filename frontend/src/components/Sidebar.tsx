@@ -9,8 +9,10 @@ import {
   BookOpen,
   Table2,
   FolderOpen,
+  FileBadge,
   ScrollText,
   Settings,
+  Users,
   PanelLeftClose,
   PanelLeft,
   Lock,
@@ -28,16 +30,35 @@ interface NavItem {
   badge?: "tasks";
 }
 
-const NAV: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/calendar", label: "Compliance Calendar", icon: CalendarDays },
-  { to: "/catalog", label: "Filings Catalog", icon: Table2 },
-  { to: "/entities", label: "Entities", icon: Building2 },
-  { to: "/tasks", label: "Tasks", icon: ListChecks, badge: "tasks" },
-  { to: "/regulations", label: "Regulation Library", icon: BookOpen },
-  { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
-  { to: "/documents", label: "Documents", icon: FolderOpen },
-  { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
+interface NavGroup {
+  heading: string;
+  items: NavItem[];
+  adminOnly?: boolean;
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    heading: "Compliance OS",
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/calendar", label: "Compliance Calendar", icon: CalendarDays },
+      { to: "/catalog", label: "Filings Catalog", icon: Table2 },
+      { to: "/entities", label: "Entities", icon: Building2 },
+      { to: "/tasks", label: "Tasks", icon: ListChecks, badge: "tasks" },
+      { to: "/regulations", label: "Regulation Library", icon: BookOpen },
+      { to: "/documents", label: "Documents", icon: FolderOpen },
+      { to: "/licenses", label: "Licenses", icon: FileBadge },
+    ],
+  },
+  {
+    heading: "Admin",
+    adminOnly: true,
+    items: [
+      { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
+      { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
+      { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
+    ],
+  },
 ];
 
 interface SidebarProps {
@@ -76,9 +97,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       >
         <a href="/" className="flex items-center gap-2">
           {collapsed ? (
-            <div className="h-9 w-9 rounded-md bg-aspora-500 grid place-items-center text-white font-extrabold text-lg">
-              a
-            </div>
+            <img
+              src="/static/brand/aspora-mark.svg"
+              alt="Aspora"
+              className="h-9 w-9"
+            />
           ) : (
             <img src="/static/brand/aspora-wordmark.png" alt="Aspora" className="h-7" />
           )}
@@ -94,67 +117,85 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
       </div>
 
-      {!collapsed && (
-        <div className="px-5 pt-4 pb-2 text-[11px] uppercase tracking-wider text-muted-foreground">
-          Compliance OS
-        </div>
-      )}
-
       {/* Nav */}
-      <nav className="flex-1 px-2 py-2 space-y-1">
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          const isGated = item.adminOnly && !isAdmin;
-          if (isGated && collapsed) return null;
-          const showBadge = item.badge === "tasks" && typeof openCount === "number" && openCount > 0;
-          if (isGated) {
-            return (
-              <div
-                key={item.to}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground/60",
-                  collapsed && "justify-center px-2",
-                )}
-                title={`${item.label} (admin only)`}
-              >
-                <Icon className="h-[18px] w-[18px] shrink-0" />
-                {!collapsed && (
-                  <>
-                    <span className="truncate flex-1">{item.label}</span>
-                    <Lock className="h-3 w-3 shrink-0 opacity-70" />
-                  </>
-                )}
-              </div>
-            );
-          }
+      <nav className="flex-1 px-2 py-2 space-y-3">
+        {NAV_GROUPS.map((group, gi) => {
+          // Hide the whole Admin group from non-admins.
+          if (group.adminOnly && !isAdmin) return null;
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-aspora-50 text-aspora-700"
-                    : "text-foreground/70 hover:bg-secondary hover:text-foreground",
-                  collapsed && "justify-center px-2",
-                )
-              }
-              title={collapsed ? item.label : undefined}
-            >
-              <Icon className="h-[18px] w-[18px] shrink-0" />
+            <div key={group.heading} className="space-y-1">
               {!collapsed && (
-                <>
-                  <span className="truncate flex-1">{item.label}</span>
-                  {showBadge && (
-                    <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full bg-aspora-600 text-white text-[10px] font-semibold tabular-nums">
-                      {openCount}
-                    </span>
+                <div
+                  className={cn(
+                    "px-3 text-[11px] uppercase tracking-wider text-muted-foreground",
+                    gi === 0 ? "pt-2 pb-2" : "pt-3 pb-2",
                   )}
-                </>
+                >
+                  {group.heading}
+                </div>
               )}
-            </NavLink>
+              {collapsed && gi > 0 && (
+                <div className="mx-2 my-2 border-t border-border" />
+              )}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isGated = item.adminOnly && !isAdmin;
+                if (isGated && collapsed) return null;
+                const showBadge =
+                  item.badge === "tasks" &&
+                  typeof openCount === "number" &&
+                  openCount > 0;
+                if (isGated) {
+                  return (
+                    <div
+                      key={item.to}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground/60",
+                        collapsed && "justify-center px-2",
+                      )}
+                      title={`${item.label} (admin only)`}
+                    >
+                      <Icon className="h-[18px] w-[18px] shrink-0" />
+                      {!collapsed && (
+                        <>
+                          <span className="truncate flex-1">{item.label}</span>
+                          <Lock className="h-3 w-3 shrink-0 opacity-70" />
+                        </>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === "/"}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-aspora-50 text-aspora-700"
+                          : "text-foreground/70 hover:bg-secondary hover:text-foreground",
+                        collapsed && "justify-center px-2",
+                      )
+                    }
+                    title={collapsed ? item.label : undefined}
+                  >
+                    <Icon className="h-[18px] w-[18px] shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="truncate flex-1">{item.label}</span>
+                        {showBadge && (
+                          <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full bg-aspora-600 text-white text-[10px] font-semibold tabular-nums">
+                            {openCount}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </div>
           );
         })}
       </nav>

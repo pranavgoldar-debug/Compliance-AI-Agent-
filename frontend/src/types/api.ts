@@ -27,6 +27,7 @@ export interface Entity {
   name: string;
   legal_type: string;
   jurisdiction_code: string;
+  short_code: string | null;
   registration_number: string | null;
   incorporation_date: string | null;
   fiscal_year_end: string | null;
@@ -341,4 +342,64 @@ export interface RegulationView {
   regulation: RegulationSummary;
   extraction: ExtractionResult;
   verification: VerificationResult | null;
+}
+
+// -----------------------------------------------------------------------
+// Licenses
+// -----------------------------------------------------------------------
+export type LicenseExpiryStatus = "valid" | "expiring" | "expired" | "unknown";
+
+export interface License {
+  id: number;
+  entity_id: number;
+  entity_name: string;
+  name: string;
+  license_type: string;
+  authority: string;
+  jurisdiction_code: string;
+  license_number: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+  notes: string | null;
+  has_file: boolean;
+  filename: string | null;
+  size_bytes: number;
+  content_type: string | null;
+  created_at: string;
+  updated_at: string;
+  expiry_status: LicenseExpiryStatus;
+  days_to_expiry: number | null;
+}
+
+export interface LicenseAssignee {
+  id: number;
+  email: string;
+  full_name: string | null;
+}
+
+export interface LicenseRuleHit {
+  id: number;
+  name: string;
+  form_name: string;
+  authority: string;
+  category: string;
+  area: string;
+  frequency: string;
+  due_date_rule: string;
+  payment_rule: string | null;
+  applicability: string;
+  relevance: "direct" | "entity";
+  match_reason: string | null;
+  next_obligation_id: number | null;
+  next_due_date: string | null;
+  next_status: string | null;
+  next_assignee: LicenseAssignee | null;
+  days_to_next: number | null;
+}
+
+export interface ApplicableRulesResponse {
+  license_id: number;
+  direct: LicenseRuleHit[];
+  entity_other: LicenseRuleHit[];
+  counts: Record<string, number>;
 }
