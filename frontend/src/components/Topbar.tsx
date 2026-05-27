@@ -161,13 +161,52 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 60_000,
   });
 
+  // Optimistically flip read=true in the cache the moment the user clicks
+  // a notification, so the unread dot disappears immediately. The server
+  // refetch backfills any drift. Rolls back if the API call fails.
   const markReadMutation = useMutation({
     mutationFn: (ids: number[]) => api.post("/api/notifications/read", { ids }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      const previous = queryClient.getQueryData<NotificationOut[]>(["notifications"]);
+      if (previous) {
+        queryClient.setQueryData<NotificationOut[]>(
+          ["notifications"],
+          previous.map((n) =>
+            n.id != null && ids.includes(n.id) ? { ...n, read: true } : n,
+          ),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(["notifications"], ctx.previous);
+      }
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
   });
   const markAllReadMutation = useMutation({
     mutationFn: () => api.post("/api/notifications/read-all"),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      const previous = queryClient.getQueryData<NotificationOut[]>(["notifications"]);
+      if (previous) {
+        queryClient.setQueryData<NotificationOut[]>(
+          ["notifications"],
+          previous.map((n) => (n.id != null ? { ...n, read: true } : n)),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _v, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(["notifications"], ctx.previous);
+      }
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
   });
 
   const visible = notifications.filter((n) => {

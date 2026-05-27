@@ -267,6 +267,11 @@ export function TasksPage({ defaultDepartment }: TasksPageProps = {}) {
       if (department !== "all") qs.set("department", department);
       return api.get<Obligation[]>(`/api/tasks?${qs.toString()}`);
     },
+    // Poll every 30s so admins see employee status changes (submit-for-
+    // review, in-progress) without manually refreshing. Cheap query, no
+    // joins beyond what's already loaded.
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],

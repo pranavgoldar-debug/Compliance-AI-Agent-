@@ -353,6 +353,10 @@ export function DashboardPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api.get<DashboardStats>("/api/dashboard"),
+    // Poll every minute — keeps the Awaiting review / Overdue tiles live
+    // so an admin sees a new "submit for review" without manual refresh.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const firstName = (user?.full_name || user?.email || "there").split(" ")[0];

@@ -82,6 +82,10 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
   const { data: obligation, isLoading } = useQuery({
     queryKey: ["obligation", obligationId],
     queryFn: () => api.get<Obligation>(`/api/obligations/${obligationId}`),
+    // Poll while open — so the admin reviewing an item sees the assignee's
+    // status flips (submit-for-review, comments) without manual refresh.
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: users = [] } = useQuery({
@@ -892,7 +896,10 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
           </ul>
         )}
 
-        <div className="rounded-lg border border-border bg-background overflow-hidden">
+        {/* Note: NO overflow-hidden here — the MentionTextarea's autocomplete
+            dropdown renders absolutely positioned above the textarea and got
+            clipped when the parent hid overflow. */}
+        <div className="rounded-lg border border-border bg-background">
           <MentionTextarea
             rows={2}
             value={draft}
