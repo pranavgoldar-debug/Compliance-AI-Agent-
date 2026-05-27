@@ -65,13 +65,67 @@ def init_db() -> None:
     """Create all tables. Idempotent. Safe to call on every boot.
 
     Also runs a tiny ad-hoc migration for SQLite to add columns we add
-    after the initial release — full Alembic comes later.
+    after the initial release — full Alembic comes later. On Render's
+    free tier where the Shell isn't available, also auto-seeds the
+    database the very first time it boots empty.
     """
     # Import here so the model module is registered before create_all.
     from compliance_agent.db import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
+    _auto_seed_if_empty()
+
+
+# Re-entry guard. run_seed() itself calls init_db(), so without this the
+# auto-seed would call run_seed which would call init_db which would call
+# auto-seed which would call run_seed ... → RecursionError.
+_AUTO_SEED_RUNNING = False
+
+
+def _auto_seed_if_empty() -> None:
+    """First-boot bootstrap. If the users table is empty, run the demo seed
+    so logins work without anyone having to SSH in. After that, this is a
+    one-query no-op on every restart.
+
+    Can be disabled by setting COMPLIANCE_AUTO_SEED=0 in the environment —
+    useful if you're about to import production data and don't want demo
+    rows in the way.
+    """
+    global _AUTO_SEED_RUNNING
+    if _AUTO_SEED_RUNNING:
+        return
+    if os.environ.get("COMPLIANCE_AUTO_SEED") == "0":
+        return
+    from sqlalchemy import func, select
+
+    from compliance_agent.db.models import User
+
+    with SessionLocal() as session:
+        try:
+            n = session.execute(select(func.count(User.id))).scalar_one()
+        except Exception:  # noqa: BLE001
+            # Tables not ready yet (rare race) — skip; next boot will catch it.
+            return
+        if n and n > 0:
+            return
+
+    _AUTO_SEED_RUNNING = True
+    try:
+        # Lazy import — the seed-only modules aren't needed in steady state.
+        from compliance_agent.db.seed import run_seed
+
+        run_seed()
+    except Exception as e:  # noqa: BLE001
+        # Never block boot on seed failure. Surface in logs so an admin
+        # can re-run seed manually if they need to.
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Auto-seed skipped due to error: %s", e
+        )
+    finally:
+        _AUTO_SEED_RUNNING = False
 
 
 def _add_missing_columns() -> None:
