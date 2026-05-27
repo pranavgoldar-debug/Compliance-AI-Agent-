@@ -465,6 +465,52 @@ def send_reminders_cmd(dry_run: bool) -> None:
     click.echo(f"{len(results)} reminder(s) processed.", err=True)
 
 
+@main.command(name="merge-finance-legs")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip the confirmation prompt.",
+)
+def merge_finance_legs(yes: bool) -> None:
+    """Delete the duplicate finance-leg obligations created by the old
+    dept-split approach (PR-B). One filing = one obligation again.
+
+    Idempotent: a no-op if there are no department=finance rows.
+    """
+    from sqlalchemy import select
+
+    from compliance_agent.db import (
+        Department,
+        Obligation,
+        init_db,
+        session_scope,
+    )
+
+    init_db()
+    with session_scope() as db:
+        rows = (
+            db.execute(select(Obligation).where(Obligation.department == Department.finance))
+            .scalars()
+            .all()
+        )
+        if not rows:
+            click.echo("No finance-leg obligations — nothing to merge.", err=True)
+            return
+        click.echo(
+            f"Will delete {len(rows)} finance-leg obligation(s). "
+            "Each had a matching compliance-leg row (same rule + entity + due_date) "
+            "which stays — that's where filing AND payment now live.",
+            err=True,
+        )
+        if not yes and not click.confirm("Proceed?", default=False):
+            click.echo("Aborted.", err=True)
+            return
+        for ob in rows:
+            db.delete(ob)
+        click.echo(f"Deleted {len(rows)} finance-leg rows.", err=True)
+
+
 @main.command(name="prune-entities")
 @click.option(
     "--yes",

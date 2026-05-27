@@ -118,6 +118,22 @@ def dashboard(
         )
     ).scalar_one()
 
+    # Compliance → finance hand-off queue: filing done, payment still owed.
+    # Computed in Python because the "rule has payment_rule" check joins on
+    # a text column that's expensive to express as a single SQL aggregate.
+    completed_with_payment_rule = db.execute(
+        select(Obligation)
+        .where(Obligation.status == ObligationStatus.completed)
+        .options(joinedload(Obligation.rule))
+    ).scalars().unique().all()
+    awaiting_payment = sum(
+        1
+        for o in completed_with_payment_rule
+        if o.rule
+        and (o.rule.payment_rule or "").strip()
+        and not (o.payment_reference or "").strip()
+    )
+
     open_tasks = db.execute(
         select(Obligation)
         .where(Obligation.assignee_id == user.id, Obligation.status.in_(open_statuses))
@@ -157,6 +173,7 @@ def dashboard(
         entity_count=entity_count,
         license_count=license_count,
         awaiting_review=awaiting_review,
+        awaiting_payment=awaiting_payment,
         open_tasks=[serialize_obligation(o) for o in open_tasks],
         items_in_alert_window=[serialize_obligation(o) for o in in_alert_items],
         this_week=[serialize_obligation(o) for o in this_week],

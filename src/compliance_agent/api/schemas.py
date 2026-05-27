@@ -216,6 +216,7 @@ class ObligationOut(_Base):
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
+    is_awaiting_payment: bool = False
     notes: Optional[str] = None
     days_remaining: int = 0
     is_overdue: bool = False
@@ -244,6 +245,7 @@ class DashboardStats(_Base):
     entity_count: int = 0
     license_count: int = 0
     awaiting_review: int = 0
+    awaiting_payment: int = 0
     open_tasks: list[ObligationOut]
     items_in_alert_window: list[ObligationOut]
     this_week: list[ObligationOut]

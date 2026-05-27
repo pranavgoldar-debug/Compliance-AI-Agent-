@@ -10,7 +10,6 @@ import {
   FileBadge,
   FolderOpen,
   ListChecks,
-  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +21,6 @@ interface Tab {
 
 const TABS: Tab[] = [
   { to: "/workspace/tasks", label: "Tasks", icon: ListChecks },
-  { to: "/workspace/finance", label: "Finance", icon: Wallet },
   { to: "/workspace/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/workspace/licenses", label: "Licenses", icon: FileBadge },
   { to: "/workspace/documents", label: "Documents", icon: FolderOpen },

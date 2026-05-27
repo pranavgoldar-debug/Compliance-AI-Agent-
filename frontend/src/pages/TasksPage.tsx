@@ -247,8 +247,9 @@ const DEPT_LABEL: Record<DepartmentFilter, string> = {
 };
 
 interface TasksPageProps {
-  /** When set, the page opens pre-filtered to that department (e.g. the
-      /workspace/finance route lands on Finance tasks). */
+  /** When set, the page opens pre-filtered to that department. Currently
+      only the legacy /workspace/finance redirect passes this through;
+      keep for compatibility. */
   defaultDepartment?: DepartmentFilter;
 }
 
@@ -257,19 +258,28 @@ export function TasksPage({ defaultDepartment }: TasksPageProps = {}) {
   const [department, setDepartment] = useState<DepartmentFilter>(
     defaultDepartment ?? "all",
   );
+  // Compliance → finance hand-off filter. Initial value comes from the
+  // ?awaiting_payment=1 query param so the old Finance tab redirect lands
+  // directly on the hand-off list.
+  const initialAwaitingPayment =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("awaiting_payment") === "1";
+  const [awaitingPayment, setAwaitingPayment] = useState<boolean>(
+    initialAwaitingPayment,
+  );
   const [filters, setFilters] = useState<Filters>(emptyFilters());
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["tasks", scope, department],
+    queryKey: ["tasks", scope, department, awaitingPayment],
     queryFn: () => {
       const qs = new URLSearchParams({ scope });
       if (department !== "all") qs.set("department", department);
+      if (awaitingPayment) qs.set("awaiting_payment", "1");
       return api.get<Obligation[]>(`/api/tasks?${qs.toString()}`);
     },
     // Poll every 30s so admins see employee status changes (submit-for-
-    // review, in-progress) without manually refreshing. Cheap query, no
-    // joins beyond what's already loaded.
+    // review, in-progress) without manually refreshing.
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -336,9 +346,28 @@ export function TasksPage({ defaultDepartment }: TasksPageProps = {}) {
         </TabsList>
       </Tabs>
 
-      {/* Department chips — split tax/payroll filings between compliance
-          and finance teams. Click a chip to show only that team's queue. */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Quick filter chips */}
+      <div className="flex flex-wrap gap-1.5 items-center">
+        {/* The most useful chip in daily use: "Awaiting payment" surfaces
+            the compliance → finance hand-off list. Filing's done, payment
+            still owed. */}
+        <button
+          type="button"
+          onClick={() => setAwaitingPayment((v) => !v)}
+          className={
+            awaitingPayment
+              ? "rounded-full border border-amber-400 bg-amber-50 px-3 py-1 text-xs text-amber-800 font-medium"
+              : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
+          }
+          title="Filings that have been completed but the payment reference hasn't been logged yet"
+        >
+          Awaiting payment
+        </button>
+
+        {/* Department chips — secondary filter for teams that want to slice
+            by who owns the work. Mostly stays on "All departments" in
+            day-to-day use. */}
+        <div className="text-xs text-muted-foreground mx-1">·</div>
         {(Object.keys(DEPT_LABEL) as DepartmentFilter[]).map((d) => (
           <button
             key={d}

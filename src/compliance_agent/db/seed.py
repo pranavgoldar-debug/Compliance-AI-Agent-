@@ -327,28 +327,16 @@ def _offsets_for_frequency(frequency: str) -> list[int]:
     return [20, 60]  # safe default
 
 
-_PAYMENT_SPLIT_CATEGORIES = {
-    "direct tax",
-    "indirect tax",
-    "pensions",
-    "social security",
-    "hr / payroll",
-    "provincial payroll taxes",
-}
-
-
 def _needs_payment_split(rule: Rule) -> bool:
-    """Whether a rule's obligations should be split into a compliance-owned
-    filing task + a separate finance-owned payment task.
-
-    Heuristic: the rule has a payment_rule (i.e. money changes hands AND it's
-    distinct from the filing deadline), AND it falls in a category where the
-    finance team conventionally owns the payment leg.
+    """Deprecated. The original dept-split approach created two obligations
+    per filing (one compliance, one finance) which confused users — the
+    real workflow is one filing, compliance hands off to finance via
+    @-mention / comment. Always returns False; payment tracking now lives
+    on the existing single obligation's payment_amount / payment_reference
+    fields. Kept as a function so callers don't break.
     """
-    if not rule.payment_rule:
-        return False
-    cat = (rule.category or "").strip().lower()
-    return cat in _PAYMENT_SPLIT_CATEGORIES
+    _ = rule  # silence linter
+    return False
 
 
 def _ensure_obligations(db: Session, rules: list[Rule], users: dict[str, User]) -> int:

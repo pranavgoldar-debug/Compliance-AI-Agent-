@@ -85,6 +85,7 @@ export interface Obligation {
   filing_reference: string | null;
   payment_amount: string | null;
   payment_reference: string | null;
+  is_awaiting_payment: boolean;
   notes: string | null;
   days_remaining: number;
   is_overdue: boolean;
@@ -123,6 +124,7 @@ export interface DashboardStats {
   entity_count: number;
   license_count: number;
   awaiting_review: number;
+  awaiting_payment: number;
   open_tasks: Obligation[];
   items_in_alert_window: Obligation[];
   this_week: Obligation[];
