@@ -5,6 +5,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ObligationDrawerProvider } from "@/contexts/ObligationDrawerContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/AppShell";
+import { WorkspaceLayout } from "@/components/WorkspaceLayout";
+import { LibraryLayout } from "@/components/LibraryLayout";
 import { LoginPage } from "@/pages/LoginPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
@@ -51,12 +53,28 @@ export default function App() {
                 }
               >
                 <Route index element={<DashboardPage />} />
-                <Route path="calendar" element={<CalendarPage />} />
-                <Route path="catalog" element={<FilingsCatalogPage />} />
+
+                {/* Compliance Workspace — daily operational hub */}
+                <Route path="workspace" element={<WorkspaceLayout />}>
+                  <Route index element={<Navigate to="queue" replace />} />
+                  <Route path="queue" element={<TasksPage />} />
+                  <Route path="calendar" element={<CalendarPage />} />
+                  <Route path="licenses" element={<LicensesPage />} />
+                  <Route path="documents" element={<DocumentsPage />} />
+                </Route>
+
+                {/* Regulatory Library — catalog + source regulations */}
+                <Route path="library" element={<LibraryLayout />}>
+                  <Route index element={<Navigate to="catalog" replace />} />
+                  <Route path="catalog" element={<FilingsCatalogPage />} />
+                  <Route path="regulations" element={<RegulationLibraryPage />} />
+                </Route>
+
+                {/* Entities live under Settings now, but keep deep links working */}
                 <Route path="entities" element={<EntitiesPage />} />
                 <Route path="entities/:entityId" element={<EntityDetailPage />} />
-                <Route path="tasks" element={<TasksPage />} />
-                <Route path="regulations" element={<RegulationLibraryPage />} />
+
+                {/* Admin — kept as separate sidebar group */}
                 <Route
                   path="rules"
                   element={
@@ -65,8 +83,6 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 />
-                <Route path="documents" element={<DocumentsPage />} />
-                <Route path="licenses" element={<LicensesPage />} />
                 <Route
                   path="audit-log"
                   element={
@@ -75,12 +91,22 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 />
-                <Route path="obligations/:obligationId" element={<ObligationDetailPage />} />
-                <Route path="settings" element={<SettingsPage />} />
                 <Route
                   path="admin/users"
                   element={<Navigate to="/settings?tab=users" replace />}
                 />
+
+                {/* Backwards-compat redirects for old URLs / bookmarks */}
+                <Route path="tasks" element={<Navigate to="/workspace/queue" replace />} />
+                <Route path="calendar" element={<Navigate to="/workspace/calendar" replace />} />
+                <Route path="licenses" element={<Navigate to="/workspace/licenses" replace />} />
+                <Route path="documents" element={<Navigate to="/workspace/documents" replace />} />
+                <Route path="catalog" element={<Navigate to="/library/catalog" replace />} />
+                <Route path="regulations" element={<Navigate to="/library/regulations" replace />} />
+
+                {/* Obligation detail + Settings — leaf pages */}
+                <Route path="obligations/:obligationId" element={<ObligationDetailPage />} />
+                <Route path="settings" element={<SettingsPage />} />
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />

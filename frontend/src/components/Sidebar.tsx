@@ -2,14 +2,10 @@ import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
-  CalendarDays,
-  Building2,
-  ListChecks,
-  Library,
+  Briefcase,
   BookOpen,
-  Table2,
-  FolderOpen,
-  FileBadge,
+  Building2,
+  Library,
   ScrollText,
   Settings,
   Users,
@@ -41,13 +37,14 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Compliance OS",
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/calendar", label: "Compliance Calendar", icon: CalendarDays },
-      { to: "/catalog", label: "Filings Catalog", icon: Table2 },
+      {
+        to: "/workspace",
+        label: "Compliance Workspace",
+        icon: Briefcase,
+        badge: "tasks",
+      },
+      { to: "/library", label: "Regulatory Library", icon: BookOpen },
       { to: "/entities", label: "Entities", icon: Building2 },
-      { to: "/tasks", label: "Tasks", icon: ListChecks, badge: "tasks" },
-      { to: "/regulations", label: "Regulation Library", icon: BookOpen },
-      { to: "/documents", label: "Documents", icon: FolderOpen },
-      { to: "/licenses", label: "Licenses", icon: FileBadge },
     ],
   },
   {
@@ -70,7 +67,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
-  // Live count of obligations assigned to me, surfaced as a badge on Tasks.
+  // Live count of obligations assigned to me, surfaced as a badge on
+  // Compliance Workspace (the new home of the Tasks view).
   const { data: openCount } = useQuery({
     queryKey: ["sidebar-task-count"],
     queryFn: async () => {
@@ -120,7 +118,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Nav */}
       <nav className="flex-1 px-2 py-2 space-y-3">
         {NAV_GROUPS.map((group, gi) => {
-          // Hide the whole Admin group from non-admins.
           if (group.adminOnly && !isAdmin) return null;
           return (
             <div key={group.heading} className="space-y-1">
@@ -141,10 +138,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 const Icon = item.icon;
                 const isGated = item.adminOnly && !isAdmin;
                 if (isGated && collapsed) return null;
+                const badgeCount =
+                  item.badge === "tasks" ? openCount : undefined;
                 const showBadge =
-                  item.badge === "tasks" &&
-                  typeof openCount === "number" &&
-                  openCount > 0;
+                  typeof badgeCount === "number" && badgeCount > 0;
                 if (isGated) {
                   return (
                     <div
@@ -169,6 +166,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    // Dashboard ("/") needs exact match. Workspace + Library
+                    // are parent routes whose child routes should keep them
+                    // highlighted, so no `end` prop on those.
                     end={item.to === "/"}
                     className={({ isActive }) =>
                       cn(
@@ -187,7 +187,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         <span className="truncate flex-1">{item.label}</span>
                         {showBadge && (
                           <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full bg-aspora-600 text-white text-[10px] font-semibold tabular-nums">
-                            {openCount}
+                            {badgeCount}
                           </span>
                         )}
                       </>
