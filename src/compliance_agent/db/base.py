@@ -74,7 +74,48 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
+    _migrate_obligation_unique()
     _auto_seed_if_empty()
+
+
+def _migrate_obligation_unique() -> None:
+    """Replace the pre-PR-B `(rule_id, entity_id, due_date)` unique constraint
+    with the post-PR-B `(rule_id, entity_id, due_date, department)` version.
+
+    `Base.metadata.create_all` only creates tables that don't exist — it
+    won't ALTER existing constraints. SQLite and Postgres both handle
+    `DROP INDEX IF EXISTS` + `CREATE UNIQUE INDEX` cleanly, so we do the
+    swap here. Idempotent: skips both steps when the new index is already
+    present.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "obligations" not in inspector.get_table_names():
+        return
+
+    cols = {c["name"] for c in inspector.get_columns("obligations")}
+    if "department" not in cols:
+        # Column hasn't been added yet (will run again on next boot).
+        return
+
+    indexes = inspector.get_indexes("obligations")
+    have_old = any(i["name"] == "uq_obligation_rule_entity_date" for i in indexes)
+    have_new = any(i["name"] == "uq_obligation_rule_entity_date_dept" for i in indexes)
+    if have_new and not have_old:
+        return
+
+    with engine.begin() as conn:
+        if have_old:
+            conn.execute(text("DROP INDEX IF EXISTS uq_obligation_rule_entity_date"))
+        if not have_new:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "uq_obligation_rule_entity_date_dept "
+                    "ON obligations (rule_id, entity_id, due_date, department)"
+                )
+            )
 
 
 # Re-entry guard. run_seed() itself calls init_db(), so without this the
