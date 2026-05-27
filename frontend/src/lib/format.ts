@@ -3,20 +3,37 @@
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import type { EffortBand, ObligationStatus } from "@/types/api";
 
-// Country code → flag emoji + display name. Used by JurisdictionBadge.
-export const JURISDICTIONS: Record<string, { name: string; flag: string }> = {
-  india: { name: "India", flag: "🇮🇳" },
-  uk: { name: "United Kingdom", flag: "🇬🇧" },
-  us: { name: "United States", flag: "🇺🇸" },
-  eu: { name: "European Union", flag: "🇪🇺" },
-  uae: { name: "United Arab Emirates", flag: "🇦🇪" },
-  singapore: { name: "Singapore", flag: "🇸🇬" },
-  canada: { name: "Canada", flag: "🇨🇦" },
-  lithuania: { name: "Lithuania", flag: "🇱🇹" },
+// Country code → display name + ISO 3166-1 alpha-2 for the flag CDN.
+// `flag` (emoji) is kept for backwards compatibility with anything still
+// rendering text-flags, but the JurisdictionBadge component now uses
+// `iso2` to pull a PNG flag from flagcdn.com — Windows / Linux can't
+// render the emoji flags reliably, the PNG approach works everywhere.
+export const JURISDICTIONS: Record<
+  string,
+  { name: string; flag: string; iso2: string }
+> = {
+  india: { name: "India", flag: "🇮🇳", iso2: "in" },
+  uk: { name: "United Kingdom", flag: "🇬🇧", iso2: "gb" },
+  us: { name: "United States", flag: "🇺🇸", iso2: "us" },
+  eu: { name: "European Union", flag: "🇪🇺", iso2: "eu" },
+  uae: { name: "United Arab Emirates", flag: "🇦🇪", iso2: "ae" },
+  singapore: { name: "Singapore", flag: "🇸🇬", iso2: "sg" },
+  canada: { name: "Canada", flag: "🇨🇦", iso2: "ca" },
+  lithuania: { name: "Lithuania", flag: "🇱🇹", iso2: "lt" },
 };
 
-export function jurisdiction(code: string): { name: string; flag: string } {
-  return JURISDICTIONS[code] ?? { name: code.toUpperCase(), flag: "🏳️" };
+export function jurisdiction(code: string): {
+  name: string;
+  flag: string;
+  iso2: string;
+} {
+  return (
+    JURISDICTIONS[code] ?? {
+      name: code.toUpperCase(),
+      flag: "🏳️",
+      iso2: "",
+    }
+  );
 }
 
 export function fmtDate(iso: string | null | undefined, pattern = "d MMM yyyy"): string {

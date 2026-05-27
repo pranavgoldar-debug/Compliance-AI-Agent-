@@ -58,6 +58,12 @@ export default function App() {
                 <Route path="workspace" element={<WorkspaceLayout />}>
                   <Route index element={<Navigate to="tasks" replace />} />
                   <Route path="tasks" element={<TasksPage />} />
+                  {/* Finance team home — same Tasks page, pre-scoped to
+                      department=finance via the defaultDepartment prop. */}
+                  <Route
+                    path="finance"
+                    element={<TasksPage defaultDepartment="finance" />}
+                  />
                   {/* Backwards-compat for the original /workspace/queue URL */}
                   <Route path="queue" element={<Navigate to="/workspace/tasks" replace />} />
                   <Route path="calendar" element={<CalendarPage />} />

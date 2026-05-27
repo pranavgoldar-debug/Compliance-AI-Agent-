@@ -246,9 +246,17 @@ const DEPT_LABEL: Record<DepartmentFilter, string> = {
   operations: "Operations",
 };
 
-export function TasksPage() {
+interface TasksPageProps {
+  /** When set, the page opens pre-filtered to that department (e.g. the
+      /workspace/finance route lands on Finance tasks). */
+  defaultDepartment?: DepartmentFilter;
+}
+
+export function TasksPage({ defaultDepartment }: TasksPageProps = {}) {
   const [scope, setScope] = useState<Scope>("assigned");
-  const [department, setDepartment] = useState<DepartmentFilter>("all");
+  const [department, setDepartment] = useState<DepartmentFilter>(
+    defaultDepartment ?? "all",
+  );
   const [filters, setFilters] = useState<Filters>(emptyFilters());
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 

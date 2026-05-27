@@ -435,9 +435,6 @@ export function DashboardPage() {
         )}
       </div>
 
-      {/* Entities — click a card to drill in */}
-      <EntitiesStrip />
-
       {/* Open tasks */}
       <Card className="overflow-hidden">
         <SectionHeader
@@ -536,97 +533,3 @@ export function DashboardPage() {
 }
 
 
-// ---------------------------------------------------------------------------
-// Entities strip — at-a-glance per-entity status. Click a card to drill in.
-// ---------------------------------------------------------------------------
-function EntitiesStrip() {
-  const { data: entities, isLoading } = useQuery({
-    queryKey: ["entities", "dashboard-strip"],
-    queryFn: () => api.get<Entity[]>("/api/entities"),
-    staleTime: 60_000,
-  });
-
-  return (
-    <Card className="overflow-hidden">
-      <SectionHeader
-        title="Entities"
-        count={entities?.length ?? 0}
-        href="/entities"
-      />
-      <CardContent className="p-4">
-        {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-[88px]" />
-            ))}
-          </div>
-        ) : !entities || entities.length === 0 ? (
-          <EmptyState
-            icon={<Building2 className="h-6 w-6" />}
-            title="No entities yet"
-            description="Add an entity in Admin → Entities to start tracking its filings."
-          />
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {entities.map((e) => (
-              <Link
-                key={e.id}
-                to={`/entities/${e.id}`}
-                className="group rounded-lg border border-border hover:border-aspora-300 hover:bg-aspora-50/30 transition-colors p-3 flex items-start gap-3"
-              >
-                <div className="h-10 w-10 rounded-lg bg-aspora-100 grid place-items-center text-aspora-700 font-semibold text-[11px] shrink-0">
-                  {e.short_code || initials(e.name)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate flex items-center gap-2">
-                    {e.name}
-                    <JurisdictionBadge
-                      code={e.jurisdiction_code}
-                      showName={false}
-                    />
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {e.legal_type || "—"}
-                  </div>
-                  <div className="text-[11px] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                    <span
-                      className={cn(
-                        e.overdue_obligations_count > 0
-                          ? "text-red-700"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {e.overdue_obligations_count} overdue
-                    </span>
-                    <span
-                      className={cn(
-                        e.in_alert_window_count > 0
-                          ? "text-amber-700"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {e.in_alert_window_count} in alert
-                    </span>
-                    <span className="text-muted-foreground">
-                      {e.active_obligations_count} active
-                    </span>
-                  </div>
-                </div>
-                <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </Link>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}

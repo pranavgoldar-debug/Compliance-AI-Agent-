@@ -215,9 +215,14 @@ function ActionBar({
   saving: boolean;
   currentUser: { id: number; role: string } | null;
 }) {
+  const isAdmin = currentUser?.role === "admin";
+  const isAssignee = currentUser?.id === obligation.assignee?.id;
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
       <div className="flex items-center gap-2 px-5 py-2.5 flex-wrap">
+        {/* Anyone can pop the status menu, but for employees it's only
+            useful on items assigned to them. Admins can manipulate any item. */}
+        {(isAdmin || isAssignee) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" disabled={saving}>
@@ -239,7 +244,9 @@ function ActionBar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
 
+        {isAdmin && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" disabled={saving}>
@@ -270,12 +277,11 @@ function ActionBar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
 
         {/* Verification workflow buttons — shown based on status + role.
             Employees submit for review; admins approve or send back. */}
         {(() => {
-          const isAdmin = currentUser?.role === "admin";
-          const isAssignee = currentUser?.id === obligation.assignee?.id;
           const status = obligation.status;
 
           // Done — show a quiet "reopen" affordance for admins only
