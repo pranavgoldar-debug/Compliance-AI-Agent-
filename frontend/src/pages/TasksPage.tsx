@@ -235,15 +235,15 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
 }
 
 
-type DepartmentFilter = "all" | "compliance" | "finance" | "legal" | "risk" | "operations";
+// The Department enum on the backend still includes legal / risk / operations
+// for future use, but the only two we surface today are compliance + finance
+// since that's where the actual hand-off happens.
+type DepartmentFilter = "all" | "compliance" | "finance";
 
 const DEPT_LABEL: Record<DepartmentFilter, string> = {
   all: "All departments",
   compliance: "Compliance",
   finance: "Finance",
-  legal: "Legal",
-  risk: "Risk",
-  operations: "Operations",
 };
 
 interface TasksPageProps {
