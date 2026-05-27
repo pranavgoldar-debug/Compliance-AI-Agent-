@@ -12,6 +12,7 @@ import {
   Loader2,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -538,6 +539,252 @@ function Field({
 // ---------------------------------------------------------------------------
 // Detail dialog — license summary + applicable rules
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AI extract dialog — reads the uploaded license file, surfaces obligations,
+// admin ticks which ones to create as Staging rules.
+// ---------------------------------------------------------------------------
+interface CandidateRule {
+  name: string;
+  category: string;
+  area: string;
+  form_name: string;
+  authority: string;
+  frequency: string;
+  due_date_rule: string;
+  payment_rule: string | null;
+  applicability: string;
+  applicability_note: string | null;
+}
+
+interface AIExtractResponse {
+  available: boolean;
+  license_id: number;
+  jurisdiction_hint: string | null;
+  extracted_chars: number;
+  candidates: CandidateRule[];
+  notes: string | null;
+}
+
+function AIExtractDialog({
+  license,
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  license: License;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreated: () => void;
+}) {
+  const [response, setResponse] = useState<AIExtractResponse | null>(null);
+  const [kept, setKept] = useState<Set<number>>(new Set());
+
+  const extractMutation = useMutation({
+    mutationFn: () =>
+      api.post<AIExtractResponse>(`/api/licenses/${license.id}/ai-extract`),
+    onSuccess: (data) => {
+      setResponse(data);
+      // Default to all candidates ticked.
+      setKept(new Set(data.candidates.map((_, i) => i)));
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      if (!response) throw new Error("Extract first.");
+      const picked = response.candidates.filter((_, i) => kept.has(i));
+      return api.post("/api/rules/bulk-create", {
+        jurisdiction_code:
+          response.jurisdiction_hint ?? license.jurisdiction_code,
+        rules: picked,
+        entity_ids: [license.entity_id],
+        status: "staging",
+      });
+    },
+    onSuccess: () => {
+      onCreated();
+      onOpenChange(false);
+      setResponse(null);
+      setKept(new Set());
+    },
+  });
+
+  function reset() {
+    setResponse(null);
+    setKept(new Set());
+    extractMutation.reset();
+    createMutation.reset();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) reset();
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-aspora-600" />
+            Extract obligations from this license
+          </DialogTitle>
+          <DialogDescription>
+            Claude reads the uploaded license file and pulls out every ongoing
+            compliance obligation the licensee owes. You review, tick the ones
+            to keep, and they're created as Staging rules attached to{" "}
+            <strong>{license.entity_name}</strong>.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="p-6 space-y-4">
+          {!response ? (
+            <div className="text-sm text-muted-foreground space-y-3">
+              <p>
+                Hit Extract — we'll read{" "}
+                <strong>{license.filename || "your license file"}</strong> and
+                ask Claude what filings it triggers. Takes ~20–30 seconds.
+              </p>
+              {extractMutation.error && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>{(extractMutation.error as Error).message}</div>
+                </div>
+              )}
+            </div>
+          ) : !response.available ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="font-medium mb-1">Couldn't extract.</div>
+              <div className="text-amber-800/80">{response.notes}</div>
+            </div>
+          ) : response.candidates.length === 0 ? (
+            <div className="rounded-lg border border-border bg-secondary/40 px-4 py-3 text-sm">
+              <div className="font-medium mb-1">No obligations detected.</div>
+              <div className="text-muted-foreground">
+                {response.notes ||
+                  "Claude didn't find any recurring filings in this document. Either the file doesn't list ongoing obligations or the text didn't extract cleanly."}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm">
+                Found <strong>{response.candidates.length}</strong> candidate{" "}
+                obligation{response.candidates.length === 1 ? "" : "s"}. Tick
+                the ones to create — they'll land in{" "}
+                <strong>Compliance Rules → Staging</strong> for an admin to
+                approve.
+              </div>
+              {response.notes && (
+                <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+                  {response.notes}
+                </div>
+              )}
+              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
+                {response.candidates.map((r, i) => {
+                  const isKept = kept.has(i);
+                  return (
+                    <label
+                      key={i}
+                      className={`flex gap-3 items-start rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-colors ${
+                        isKept
+                          ? "border-aspora-300 bg-aspora-50/50"
+                          : "border-border hover:bg-secondary/40"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isKept}
+                        onChange={(e) => {
+                          const copy = new Set(kept);
+                          if (e.target.checked) copy.add(i);
+                          else copy.delete(i);
+                          setKept(copy);
+                        }}
+                        className="mt-1 accent-aspora-600"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{r.form_name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {r.authority} · {r.category} · {r.frequency}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1 italic">
+                          {r.due_date_rule}
+                        </div>
+                        {r.payment_rule && (
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            <strong>Payment:</strong> {r.payment_rule}
+                          </div>
+                        )}
+                        {r.applicability_note && (
+                          <div className="text-[11px] text-muted-foreground mt-0.5">
+                            {r.applicability_note}
+                          </div>
+                        )}
+                      </div>
+                      <Badge
+                        variant={
+                          r.applicability === "Mandatory" ? "alert" : "neutral"
+                        }
+                      >
+                        {r.applicability}
+                      </Badge>
+                    </label>
+                  );
+                })}
+              </div>
+              {createMutation.error && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>{(createMutation.error as Error).message}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          {!response ? (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => extractMutation.mutate()}
+                disabled={extractMutation.isPending}
+              >
+                {extractMutation.isPending && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                <Sparkles className="h-4 w-4" />
+                Extract
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={reset}>
+                Re-extract
+              </Button>
+              {response.available && response.candidates.length > 0 && (
+                <Button
+                  onClick={() => createMutation.mutate()}
+                  disabled={kept.size === 0 || createMutation.isPending}
+                >
+                  {createMutation.isPending && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  Create {kept.size} rule{kept.size === 1 ? "" : "s"} as Staging
+                </Button>
+              )}
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
 function LicenseDetailDialog({
   license,
   onClose,
@@ -550,6 +797,7 @@ function LicenseDetailDialog({
   onChanged: () => void;
 }) {
   const open = license !== null;
+  const [aiOpen, setAiOpen] = useState(false);
 
   const rulesQuery = useQuery({
     queryKey: ["license-rules", license?.id],
@@ -643,16 +891,29 @@ function LicenseDetailDialog({
 
               {/* Applicable rules */}
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                   <div className="text-sm font-semibold">
                     Applicable regulations
                   </div>
-                  {rulesQuery.data && (
-                    <div className="text-xs text-muted-foreground">
-                      {rulesQuery.data.direct.length} direct ·{" "}
-                      {rulesQuery.data.entity_other.length} other for this entity
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {rulesQuery.data && (
+                      <div className="text-xs text-muted-foreground">
+                        {rulesQuery.data.direct.length} direct ·{" "}
+                        {rulesQuery.data.entity_other.length} other for this entity
+                      </div>
+                    )}
+                    {isAdmin && license.has_file && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAiOpen(true)}
+                        title="Read the uploaded license with Claude and surface obligations"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Extract with AI
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {rulesQuery.isLoading ? (
@@ -718,6 +979,15 @@ function LicenseDetailDialog({
                 </div>
               )}
             </div>
+
+            <AIExtractDialog
+              license={license}
+              open={aiOpen}
+              onOpenChange={setAiOpen}
+              onCreated={() => {
+                onChanged();
+              }}
+            />
 
             <DialogFooter>
               {isAdmin && (

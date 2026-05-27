@@ -12,7 +12,6 @@ import {
   ScrollText,
   Settings,
   Users,
-  Wallet,
   PanelLeftClose,
   PanelLeft,
   Lock,
@@ -27,7 +26,7 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
-  badge?: "tasks" | "awaiting_payment";
+  badge?: "tasks";
   exact?: boolean;
 }
 
@@ -37,8 +36,12 @@ interface NavGroup {
   adminOnly?: boolean;
 }
 
-// Flat IA — top-level entries for the 5 daily-use screens. Admin stuff
+// Flat IA — top-level entries for the daily-use screens. Admin stuff
 // stays in its own collapsible group out of the way.
+//
+// Compliance & Finance is a SINGLE entry (matches the user's reference
+// design): one Tasks page where compliance + finance teams both work,
+// with the Awaiting payment chip distinguishing the two phases.
 const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Compliance OS",
@@ -47,16 +50,10 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/licenses", label: "Licenses", icon: FileBadge },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       {
-        to: "/compliance",
-        label: "Compliance",
+        to: "/tasks",
+        label: "Compliance & Finance",
         icon: CheckCircle2,
         badge: "tasks",
-      },
-      {
-        to: "/finance",
-        label: "Finance",
-        icon: Wallet,
-        badge: "awaiting_payment",
       },
     ],
   },
@@ -84,26 +81,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const isAdmin = user?.role === "admin";
 
   // Live count of obligations assigned to me — drives the badge on
-  // the Compliance entry.
+  // Compliance & Finance.
   const { data: openCount } = useQuery({
     queryKey: ["sidebar-task-count"],
     queryFn: async () => {
       const tasks = await api.get<Obligation[]>("/api/tasks?scope=assigned");
       return tasks.filter((t) => t.status !== "completed" && t.status !== "not_applicable").length;
-    },
-    enabled: !!user,
-    staleTime: 60_000,
-  });
-
-  // Live count of filings awaiting payment processing — drives the badge
-  // on the Finance entry so the finance team sees their queue size.
-  const { data: awaitingPaymentCount } = useQuery({
-    queryKey: ["sidebar-awaiting-payment-count"],
-    queryFn: async () => {
-      const items = await api.get<Obligation[]>(
-        "/api/tasks?scope=all&awaiting_payment=1",
-      );
-      return items.length;
     },
     enabled: !!user,
     staleTime: 60_000,
@@ -169,11 +152,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 const isGated = item.adminOnly && !isAdmin;
                 if (isGated && collapsed) return null;
                 const badgeCount =
-                  item.badge === "tasks"
-                    ? openCount
-                    : item.badge === "awaiting_payment"
-                      ? awaitingPaymentCount
-                      : undefined;
+                  item.badge === "tasks" ? openCount : undefined;
                 const showBadge =
                   typeof badgeCount === "number" && badgeCount > 0;
                 if (isGated) {

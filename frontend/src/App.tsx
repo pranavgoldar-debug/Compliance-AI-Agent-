@@ -49,19 +49,22 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
-                {/* Flat IA — 5 daily-use pages at the top level */}
+                {/* Flat IA — 4 daily-use pages at the top level */}
                 <Route index element={<DashboardPage />} />
                 <Route path="licenses" element={<LicensesPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
-                {/* Compliance = Tasks page, default to compliance dept */}
+                {/* Combined Compliance & Finance — one Tasks page where
+                    both teams work. The Awaiting payment chip is the
+                    main slicer for the finance side. */}
+                <Route path="tasks" element={<TasksPage />} />
+                {/* Backwards-compat: split routes from the previous PR */}
                 <Route
                   path="compliance"
-                  element={<TasksPage defaultDepartment="compliance" />}
+                  element={<Navigate to="/tasks" replace />}
                 />
-                {/* Finance = Tasks page, pre-filtered to awaiting payment */}
                 <Route
                   path="finance"
-                  element={<TasksPage defaultAwaitingPayment={true} />}
+                  element={<Navigate to="/tasks?awaiting_payment=1" replace />}
                 />
 
                 {/* Admin pages */}
@@ -94,15 +97,15 @@ export default function App() {
                 <Route path="workspace" element={<Navigate to="/compliance" replace />} />
                 <Route
                   path="workspace/tasks"
-                  element={<Navigate to="/compliance" replace />}
+                  element={<Navigate to="/tasks" replace />}
                 />
                 <Route
                   path="workspace/queue"
-                  element={<Navigate to="/compliance" replace />}
+                  element={<Navigate to="/tasks" replace />}
                 />
                 <Route
                   path="workspace/finance"
-                  element={<Navigate to="/finance" replace />}
+                  element={<Navigate to="/tasks?awaiting_payment=1" replace />}
                 />
                 <Route
                   path="workspace/calendar"
@@ -128,7 +131,6 @@ export default function App() {
                   path="library/regulations"
                   element={<Navigate to="/regulations" replace />}
                 />
-                <Route path="tasks" element={<Navigate to="/compliance" replace />} />
                 <Route path="catalog" element={<Navigate to="/rules" replace />} />
 
                 {/* Obligation detail + Settings — leaf pages */}

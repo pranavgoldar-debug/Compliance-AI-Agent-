@@ -328,18 +328,12 @@ export function TasksPage({
     filters.statuses.length +
     (filters.dueWithinDays != null ? 1 : 0);
 
-  // Title + description adapt to which entry point loaded the page so a
-  // finance user lands on something that says "Finance", not "Tasks".
-  const pageTitle = defaultAwaitingPayment
-    ? "Finance"
-    : defaultDepartment === "compliance"
-      ? "Compliance"
-      : "Tasks";
-  const pageDescription = defaultAwaitingPayment
-    ? "Filings the compliance team has completed — finance to verify the payment and log the reference."
-    : defaultDepartment === "compliance"
-      ? "Filings the compliance team owns. Overdue first, alert window next, the rest after."
-      : "Your work inbox — overdue first, alert window next, the rest after.";
+  // Header copy. The page is a single combined "Compliance & Finance"
+  // queue — the Awaiting payment chip + department chips are how teams
+  // slice their own work without us splitting them into separate pages.
+  const pageTitle = "Compliance & Finance";
+  const pageDescription =
+    "Your queue. Compliance owns the filing; finance picks up the payment leg via the Awaiting payment filter.";
 
   return (
     <div className="space-y-5">

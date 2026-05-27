@@ -390,6 +390,168 @@ def download_license_file(
 
 
 # ---------------------------------------------------------------------------
+# AI extraction — read the uploaded license file, ask Claude to surface
+# every compliance obligation a holder of this license owes, and return
+# them as CandidateRule rows the admin can review + materialise.
+# ---------------------------------------------------------------------------
+class LicenseAIExtractResponse(BaseModel):
+    available: bool
+    license_id: int
+    jurisdiction_hint: Optional[str] = None
+    extracted_chars: int = 0
+    candidates: list = []  # list[CandidateRule] — typed late to avoid cycle
+    notes: Optional[str] = None
+
+
+_MAX_EXTRACT_BYTES = 4_000_000   # ~4 MB of source text — enough for any single licence
+_MAX_PROMPT_CHARS = 60_000        # rough char cap to keep Claude prompt manageable
+
+
+def _read_license_text(lic: License) -> str:
+    """Pull plain text out of the uploaded license file. PDFs go through
+    pypdf; text-like uploads pass through. Returns '' if no file."""
+    if not lic.storage_path:
+        return ""
+    path = storage.absolute_path(lic.storage_path)
+    if not path.exists():
+        return ""
+    if path.stat().st_size > _MAX_EXTRACT_BYTES:
+        return ""
+
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".pdf":
+            from pypdf import PdfReader
+
+            reader = PdfReader(str(path))
+            return "\n\n".join((p.extract_text() or "") for p in reader.pages)
+        # Best-effort text read for .txt / .md / .csv etc. Binary files (e.g.
+        # an image) will just return empty after decode-with-replace.
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+@router.post(
+    "/{license_id}/ai-extract", response_model=LicenseAIExtractResponse
+)
+def ai_extract_obligations(
+    license_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> LicenseAIExtractResponse:
+    """Read the license file, ask Claude what obligations the holder owes,
+    return candidate rules for the admin to tick + create.
+
+    Falls back gracefully when:
+      - no file is attached → returns available=False with a hint
+      - AI is off (no ANTHROPIC_API_KEY / COMPLIANCE_AGENT_LIVE) → available=False
+      - the PDF has no extractable text → notes explain
+    """
+    from compliance_agent.rule_extractor import (
+        extract_rules_from_text,
+        is_live,
+        RuleExtractorUnavailable,
+    )
+
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found.")
+
+    if not lic.storage_path:
+        return LicenseAIExtractResponse(
+            available=False,
+            license_id=license_id,
+            jurisdiction_hint=lic.jurisdiction_code,
+            notes=(
+                "No license file attached. Upload the regulator's license / "
+                "authorisation letter (PDF works best) then click "
+                "Extract obligations again."
+            ),
+        )
+
+    if not is_live():
+        return LicenseAIExtractResponse(
+            available=False,
+            license_id=license_id,
+            jurisdiction_hint=lic.jurisdiction_code,
+            notes=(
+                "AI extraction is off in this deployment. Set "
+                "COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY in the server "
+                "environment, then retry."
+            ),
+        )
+
+    text = _read_license_text(lic)
+    if len(text.strip()) < 200:
+        return LicenseAIExtractResponse(
+            available=False,
+            license_id=license_id,
+            jurisdiction_hint=lic.jurisdiction_code,
+            extracted_chars=len(text),
+            notes=(
+                "Couldn't pull readable text from the uploaded file. If it's "
+                "a scanned PDF, run it through OCR first. If it's an image, "
+                "convert to PDF / paste the relevant text into Compliance "
+                "Rules → Add from text instead."
+            ),
+        )
+
+    # Prepend a short context line so Claude knows what this document is.
+    primer = (
+        f"This is a regulator-issued license / authorisation document for "
+        f"jurisdiction {lic.jurisdiction_code.upper()}, issued by "
+        f"{lic.authority}. The license name is: {lic.name}. "
+        f"Extract every ongoing compliance obligation the LICENSEE owes "
+        f"as a result of HOLDING this license: filings, returns, fees, "
+        f"reporting, periodic confirmations, change notifications, AML "
+        f"obligations. Ignore one-off pre-licensing steps that have "
+        f"already happened.\n\n--- LICENSE TEXT BEGINS ---\n\n"
+    )
+    truncated = text[: max(0, _MAX_PROMPT_CHARS - len(primer))]
+    payload_text = primer + truncated
+
+    try:
+        result = extract_rules_from_text(
+            payload_text, jurisdiction_hint=lic.jurisdiction_code
+        )
+    except RuleExtractorUnavailable as exc:
+        return LicenseAIExtractResponse(
+            available=False,
+            license_id=license_id,
+            jurisdiction_hint=lic.jurisdiction_code,
+            extracted_chars=len(text),
+            notes=str(exc),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502, detail=f"Claude call failed: {exc}"
+        ) from exc
+
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="license.ai_extracted",
+        target_type="license",
+        target_id=license_id,
+        payload={
+            "candidates": len(result.rules),
+            "chars": len(text),
+        },
+    )
+    db.commit()
+
+    return LicenseAIExtractResponse(
+        available=True,
+        license_id=license_id,
+        jurisdiction_hint=result.jurisdiction_hint or lic.jurisdiction_code,
+        extracted_chars=len(text),
+        candidates=[c.model_dump() for c in result.rules],
+        notes=result.notes,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Applicable regulations
 # ---------------------------------------------------------------------------
 @router.get("/{license_id}/applicable-rules", response_model=ApplicableRulesResponse)
