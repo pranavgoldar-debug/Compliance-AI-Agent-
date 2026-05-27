@@ -149,10 +149,12 @@ def _add_missing_columns() -> None:
     bool_default_true = "BOOLEAN NOT NULL DEFAULT 1" if not is_pg else "BOOLEAN NOT NULL DEFAULT TRUE"
 
     table_additions: dict[str, list[tuple[str, str]]] = {
-        # Phase 5: effort bands on obligations
+        # Phase 5: effort bands on obligations.
+        # PR-B (department split): every obligation owns by a department.
         "obligations": [
             ("effort_band", f"{varchar(8)} NOT NULL DEFAULT 'w4'"),
             ("effort_band_reason", text_type),
+            ("department", f"{varchar(16)} NOT NULL DEFAULT 'compliance'"),
         ],
         # Phase 7: source provenance on rules
         "rules": [

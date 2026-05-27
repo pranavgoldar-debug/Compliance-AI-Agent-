@@ -78,6 +78,7 @@ export interface Obligation {
   due_date: string;
   period_label: string | null;
   status: ObligationStatus;
+  department: "compliance" | "finance" | "legal" | "risk" | "operations";
   assignee: UserBrief | null;
   effort_band: EffortBand;
   effort_band_reason: string | null;

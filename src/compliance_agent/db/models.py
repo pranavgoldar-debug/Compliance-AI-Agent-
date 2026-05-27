@@ -47,6 +47,16 @@ class ObligationStatus(str, enum.Enum):
     not_applicable = "not_applicable"
 
 
+class Department(str, enum.Enum):
+    """Owning team for an obligation. Drives the Workspace's department
+    filter and (later) Slack routing + escalation chains."""
+    compliance = "compliance"  # files returns, manages regulatory submissions
+    finance = "finance"        # pays bills, verifies payment references
+    legal = "legal"            # reviews contracts, opinions, change notifications
+    risk = "risk"              # risk-assessment outputs, audits
+    operations = "operations"  # day-to-day operational tasks
+
+
 class RuleStatus(str, enum.Enum):
     production = "production"
     staging = "staging"
@@ -216,8 +226,14 @@ class Obligation(Base):
     """
     __tablename__ = "obligations"
     __table_args__ = (
-        # Avoid duplicate (rule, entity, due_date) rows if generation runs twice.
-        UniqueConstraint("rule_id", "entity_id", "due_date", name="uq_obligation_rule_entity_date"),
+        # Avoid duplicate rows if generation runs twice. PR-B added the
+        # department leg — a single filing now spawns one compliance row
+        # (filing) and optionally one finance row (payment) per due_date,
+        # so the unique key includes department.
+        UniqueConstraint(
+            "rule_id", "entity_id", "due_date", "department",
+            name="uq_obligation_rule_entity_date_dept",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -229,6 +245,9 @@ class Obligation(Base):
 
     status: Mapped[ObligationStatus] = mapped_column(
         SAEnum(ObligationStatus), nullable=False, default=ObligationStatus.not_started, index=True
+    )
+    department: Mapped[Department] = mapped_column(
+        SAEnum(Department), nullable=False, default=Department.compliance, index=True
     )
     effort_band: Mapped[EffortBand] = mapped_column(
         SAEnum(EffortBand), nullable=False, default=EffortBand.w4

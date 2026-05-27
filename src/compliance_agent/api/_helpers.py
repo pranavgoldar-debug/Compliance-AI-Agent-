@@ -116,6 +116,7 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         due_date=o.due_date,
         period_label=o.period_label,
         status=o.status,
+        department=(o.department.value if o.department else "compliance"),
         assignee=serialize_user(o.assignee),
         effort_band=band,
         effort_band_reason=o.effort_band_reason,

@@ -235,14 +235,30 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
 }
 
 
+type DepartmentFilter = "all" | "compliance" | "finance" | "legal" | "risk" | "operations";
+
+const DEPT_LABEL: Record<DepartmentFilter, string> = {
+  all: "All departments",
+  compliance: "Compliance",
+  finance: "Finance",
+  legal: "Legal",
+  risk: "Risk",
+  operations: "Operations",
+};
+
 export function TasksPage() {
   const [scope, setScope] = useState<Scope>("assigned");
+  const [department, setDepartment] = useState<DepartmentFilter>("all");
   const [filters, setFilters] = useState<Filters>(emptyFilters());
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["tasks", scope],
-    queryFn: () => api.get<Obligation[]>(`/api/tasks?scope=${scope}`),
+    queryKey: ["tasks", scope, department],
+    queryFn: () => {
+      const qs = new URLSearchParams({ scope });
+      if (department !== "all") qs.set("department", department);
+      return api.get<Obligation[]>(`/api/tasks?${qs.toString()}`);
+    },
   });
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
@@ -306,6 +322,25 @@ export function TasksPage() {
           ))}
         </TabsList>
       </Tabs>
+
+      {/* Department chips — split tax/payroll filings between compliance
+          and finance teams. Click a chip to show only that team's queue. */}
+      <div className="flex flex-wrap gap-1.5">
+        {(Object.keys(DEPT_LABEL) as DepartmentFilter[]).map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => setDepartment(d)}
+            className={
+              department === d
+                ? "rounded-full border border-aspora-500 bg-aspora-50 px-3 py-1 text-xs text-aspora-700 font-medium"
+                : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
+            }
+          >
+            {DEPT_LABEL[d]}
+          </button>
+        ))}
+      </div>
 
       {/* Filter + sort bar */}
       <div className="flex flex-wrap items-center gap-2">

@@ -209,6 +209,7 @@ class ObligationOut(_Base):
     due_date: date
     period_label: Optional[str] = None
     status: ObligationStatus
+    department: str = "compliance"
     assignee: Optional[UserBrief] = None
     effort_band: EffortBand = EffortBand.w4
     effort_band_reason: Optional[str] = None
