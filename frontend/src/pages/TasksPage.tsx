@@ -247,25 +247,30 @@ const DEPT_LABEL: Record<DepartmentFilter, string> = {
 };
 
 interface TasksPageProps {
-  /** When set, the page opens pre-filtered to that department. Currently
-      only the legacy /workspace/finance redirect passes this through;
-      keep for compatibility. */
+  /** When set, the page opens pre-filtered to that department. The /compliance
+      route renders TasksPage with defaultDepartment="compliance". */
   defaultDepartment?: DepartmentFilter;
+  /** When true, the page opens with the Awaiting payment filter on. The
+      /finance route renders TasksPage with defaultAwaitingPayment=true. */
+  defaultAwaitingPayment?: boolean;
 }
 
-export function TasksPage({ defaultDepartment }: TasksPageProps = {}) {
+export function TasksPage({
+  defaultDepartment,
+  defaultAwaitingPayment,
+}: TasksPageProps = {}) {
   const [scope, setScope] = useState<Scope>("assigned");
   const [department, setDepartment] = useState<DepartmentFilter>(
     defaultDepartment ?? "all",
   );
-  // Compliance → finance hand-off filter. Initial value comes from the
-  // ?awaiting_payment=1 query param so the old Finance tab redirect lands
-  // directly on the hand-off list.
+  // Initial Awaiting-payment state: prop wins, then ?awaiting_payment=1
+  // query param (for old links), else off.
   const initialAwaitingPayment =
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("awaiting_payment") === "1";
+    defaultAwaitingPayment ??
+    (typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("awaiting_payment") === "1");
   const [awaitingPayment, setAwaitingPayment] = useState<boolean>(
-    initialAwaitingPayment,
+    Boolean(initialAwaitingPayment),
   );
   const [filters, setFilters] = useState<Filters>(emptyFilters());
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
@@ -323,11 +328,24 @@ export function TasksPage({ defaultDepartment }: TasksPageProps = {}) {
     filters.statuses.length +
     (filters.dueWithinDays != null ? 1 : 0);
 
+  // Title + description adapt to which entry point loaded the page so a
+  // finance user lands on something that says "Finance", not "Tasks".
+  const pageTitle = defaultAwaitingPayment
+    ? "Finance"
+    : defaultDepartment === "compliance"
+      ? "Compliance"
+      : "Tasks";
+  const pageDescription = defaultAwaitingPayment
+    ? "Filings the compliance team has completed — finance to verify the payment and log the reference."
+    : defaultDepartment === "compliance"
+      ? "Filings the compliance team owns. Overdue first, alert window next, the rest after."
+      : "Your work inbox — overdue first, alert window next, the rest after.";
+
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Tasks"
-        description="Your work inbox — overdue first, alert window next, the rest after."
+        title={pageTitle}
+        description={pageDescription}
         actions={<ExportMenu kind="obligations" />}
       />
 

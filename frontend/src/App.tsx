@@ -5,8 +5,6 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ObligationDrawerProvider } from "@/contexts/ObligationDrawerContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/AppShell";
-import { WorkspaceLayout } from "@/components/WorkspaceLayout";
-import { LibraryLayout } from "@/components/LibraryLayout";
 import { LoginPage } from "@/pages/LoginPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
@@ -21,7 +19,6 @@ import { DocumentsPage } from "@/pages/DocumentsPage";
 import { AuditLogPage } from "@/pages/AuditLogPage";
 import { ObligationDetailPage } from "@/pages/ObligationDetailPage";
 import { RegulationLibraryPage } from "@/pages/RegulationLibraryPage";
-import { FilingsCatalogPage } from "@/pages/FilingsCatalogPage";
 import { LicensesPage } from "@/pages/LicensesPage";
 
 const queryClient = new QueryClient({
@@ -52,37 +49,24 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
+                {/* Flat IA — 5 daily-use pages at the top level */}
                 <Route index element={<DashboardPage />} />
+                <Route path="licenses" element={<LicensesPage />} />
+                <Route path="calendar" element={<CalendarPage />} />
+                {/* Compliance = Tasks page, default to compliance dept */}
+                <Route
+                  path="compliance"
+                  element={<TasksPage defaultDepartment="compliance" />}
+                />
+                {/* Finance = Tasks page, pre-filtered to awaiting payment */}
+                <Route
+                  path="finance"
+                  element={<TasksPage defaultAwaitingPayment={true} />}
+                />
 
-                {/* Compliance Workspace — daily operational hub */}
-                <Route path="workspace" element={<WorkspaceLayout />}>
-                  <Route index element={<Navigate to="tasks" replace />} />
-                  <Route path="tasks" element={<TasksPage />} />
-                  {/* Backwards-compat: old Finance tab + Queue URL */}
-                  <Route
-                    path="finance"
-                    element={
-                      <Navigate to="/workspace/tasks?awaiting_payment=1" replace />
-                    }
-                  />
-                  <Route path="queue" element={<Navigate to="/workspace/tasks" replace />} />
-                  <Route path="calendar" element={<CalendarPage />} />
-                  <Route path="licenses" element={<LicensesPage />} />
-                  <Route path="documents" element={<DocumentsPage />} />
-                </Route>
-
-                {/* Regulatory Library — catalog + source regulations */}
-                <Route path="library" element={<LibraryLayout />}>
-                  <Route index element={<Navigate to="catalog" replace />} />
-                  <Route path="catalog" element={<FilingsCatalogPage />} />
-                  <Route path="regulations" element={<RegulationLibraryPage />} />
-                </Route>
-
-                {/* Entities live under Settings now, but keep deep links working */}
+                {/* Admin pages */}
                 <Route path="entities" element={<EntitiesPage />} />
                 <Route path="entities/:entityId" element={<EntityDetailPage />} />
-
-                {/* Admin — kept as separate sidebar group */}
                 <Route
                   path="rules"
                   element={
@@ -91,6 +75,8 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route path="documents" element={<DocumentsPage />} />
+                <Route path="regulations" element={<RegulationLibraryPage />} />
                 <Route
                   path="audit-log"
                   element={
@@ -104,13 +90,46 @@ export default function App() {
                   element={<Navigate to="/settings?tab=users" replace />}
                 />
 
-                {/* Backwards-compat redirects for old URLs / bookmarks */}
-                <Route path="tasks" element={<Navigate to="/workspace/queue" replace />} />
-                <Route path="calendar" element={<Navigate to="/workspace/calendar" replace />} />
-                <Route path="licenses" element={<Navigate to="/workspace/licenses" replace />} />
-                <Route path="documents" element={<Navigate to="/workspace/documents" replace />} />
-                <Route path="catalog" element={<Navigate to="/library/catalog" replace />} />
-                <Route path="regulations" element={<Navigate to="/library/regulations" replace />} />
+                {/* Backwards-compat redirects for the old Workspace shell URLs */}
+                <Route path="workspace" element={<Navigate to="/compliance" replace />} />
+                <Route
+                  path="workspace/tasks"
+                  element={<Navigate to="/compliance" replace />}
+                />
+                <Route
+                  path="workspace/queue"
+                  element={<Navigate to="/compliance" replace />}
+                />
+                <Route
+                  path="workspace/finance"
+                  element={<Navigate to="/finance" replace />}
+                />
+                <Route
+                  path="workspace/calendar"
+                  element={<Navigate to="/calendar" replace />}
+                />
+                <Route
+                  path="workspace/licenses"
+                  element={<Navigate to="/licenses" replace />}
+                />
+                <Route
+                  path="workspace/documents"
+                  element={<Navigate to="/documents" replace />}
+                />
+                <Route
+                  path="library"
+                  element={<Navigate to="/regulations" replace />}
+                />
+                <Route
+                  path="library/catalog"
+                  element={<Navigate to="/rules" replace />}
+                />
+                <Route
+                  path="library/regulations"
+                  element={<Navigate to="/regulations" replace />}
+                />
+                <Route path="tasks" element={<Navigate to="/compliance" replace />} />
+                <Route path="catalog" element={<Navigate to="/rules" replace />} />
 
                 {/* Obligation detail + Settings — leaf pages */}
                 <Route path="obligations/:obligationId" element={<ObligationDetailPage />} />

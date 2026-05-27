@@ -2,13 +2,17 @@ import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
-  Briefcase,
+  CalendarDays,
+  CheckCircle2,
+  FileBadge,
+  FolderOpen,
   BookOpen,
   Building2,
   Library,
   ScrollText,
   Settings,
   Users,
+  Wallet,
   PanelLeftClose,
   PanelLeft,
   Lock,
@@ -23,7 +27,8 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
-  badge?: "tasks";
+  badge?: "tasks" | "awaiting_payment";
+  exact?: boolean;
 }
 
 interface NavGroup {
@@ -32,26 +37,37 @@ interface NavGroup {
   adminOnly?: boolean;
 }
 
+// Flat IA — top-level entries for the 5 daily-use screens. Admin stuff
+// stays in its own collapsible group out of the way.
 const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Compliance OS",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+      { to: "/licenses", label: "Licenses", icon: FileBadge },
+      { to: "/calendar", label: "Calendar", icon: CalendarDays },
       {
-        to: "/workspace",
-        label: "Compliance Workspace",
-        icon: Briefcase,
+        to: "/compliance",
+        label: "Compliance",
+        icon: CheckCircle2,
         badge: "tasks",
       },
-      { to: "/library", label: "Regulatory Library", icon: BookOpen },
-      { to: "/entities", label: "Entities", icon: Building2 },
+      {
+        to: "/finance",
+        label: "Finance",
+        icon: Wallet,
+        badge: "awaiting_payment",
+      },
     ],
   },
   {
     heading: "Admin",
     adminOnly: true,
     items: [
+      { to: "/entities", label: "Entities", icon: Building2, adminOnly: true },
       { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
+      { to: "/regulations", label: "Regulations", icon: BookOpen, adminOnly: true },
+      { to: "/documents", label: "Documents", icon: FolderOpen, adminOnly: true },
       { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
       { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
     ],
@@ -67,13 +83,27 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
-  // Live count of obligations assigned to me, surfaced as a badge on
-  // Compliance Workspace (the new home of the Tasks view).
+  // Live count of obligations assigned to me — drives the badge on
+  // the Compliance entry.
   const { data: openCount } = useQuery({
     queryKey: ["sidebar-task-count"],
     queryFn: async () => {
       const tasks = await api.get<Obligation[]>("/api/tasks?scope=assigned");
       return tasks.filter((t) => t.status !== "completed" && t.status !== "not_applicable").length;
+    },
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
+  // Live count of filings awaiting payment processing — drives the badge
+  // on the Finance entry so the finance team sees their queue size.
+  const { data: awaitingPaymentCount } = useQuery({
+    queryKey: ["sidebar-awaiting-payment-count"],
+    queryFn: async () => {
+      const items = await api.get<Obligation[]>(
+        "/api/tasks?scope=all&awaiting_payment=1",
+      );
+      return items.length;
     },
     enabled: !!user,
     staleTime: 60_000,
@@ -139,7 +169,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 const isGated = item.adminOnly && !isAdmin;
                 if (isGated && collapsed) return null;
                 const badgeCount =
-                  item.badge === "tasks" ? openCount : undefined;
+                  item.badge === "tasks"
+                    ? openCount
+                    : item.badge === "awaiting_payment"
+                      ? awaitingPaymentCount
+                      : undefined;
                 const showBadge =
                   typeof badgeCount === "number" && badgeCount > 0;
                 if (isGated) {
@@ -166,10 +200,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    // Dashboard ("/") needs exact match. Workspace + Library
-                    // are parent routes whose child routes should keep them
-                    // highlighted, so no `end` prop on those.
-                    end={item.to === "/"}
+                    // Top-level items match exact — they're leaf pages now,
+                    // no child routes to keep them highlighted for.
+                    end={item.exact ?? true}
                     className={({ isActive }) =>
                       cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
