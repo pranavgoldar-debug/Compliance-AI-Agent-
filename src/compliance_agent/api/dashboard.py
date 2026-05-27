@@ -14,7 +14,14 @@ from compliance_agent.api._helpers import (
 )
 from compliance_agent.api.schemas import DashboardStats
 from compliance_agent.auth import get_current_user
-from compliance_agent.db import Obligation, ObligationStatus, User, get_session
+from compliance_agent.db import (
+    Entity,
+    License,
+    Obligation,
+    ObligationStatus,
+    User,
+    get_session,
+)
 
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -95,6 +102,22 @@ def dashboard(
         )
     ).scalar_one()
 
+    # Active entities + uploaded licenses — at-a-glance footprint on the
+    # dashboard so the team can see the size of what they're managing.
+    entity_count = db.execute(
+        select(func.count(Entity.id)).where(Entity.archived_at.is_(None))
+    ).scalar_one()
+
+    license_count = db.execute(select(func.count(License.id))).scalar_one()
+
+    # Items the assignee has submitted but admin hasn't approved yet —
+    # drives the "Awaiting your review" affordance for admins.
+    awaiting_review = db.execute(
+        select(func.count(Obligation.id)).where(
+            Obligation.status == ObligationStatus.pending_review
+        )
+    ).scalar_one()
+
     open_tasks = db.execute(
         select(Obligation)
         .where(Obligation.assignee_id == user.id, Obligation.status.in_(open_statuses))
@@ -131,6 +154,9 @@ def dashboard(
         due_this_week=due_this_week,
         due_this_month=due_this_month,
         unassigned=unassigned,
+        entity_count=entity_count,
+        license_count=license_count,
+        awaiting_review=awaiting_review,
         open_tasks=[serialize_obligation(o) for o in open_tasks],
         items_in_alert_window=[serialize_obligation(o) for o in in_alert_items],
         this_week=[serialize_obligation(o) for o in this_week],

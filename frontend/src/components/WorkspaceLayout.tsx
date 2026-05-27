@@ -20,7 +20,7 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-  { to: "/workspace/queue", label: "Queue", icon: ListChecks },
+  { to: "/workspace/tasks", label: "Tasks", icon: ListChecks },
   { to: "/workspace/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/workspace/licenses", label: "Licenses", icon: FileBadge },
   { to: "/workspace/documents", label: "Documents", icon: FolderOpen },

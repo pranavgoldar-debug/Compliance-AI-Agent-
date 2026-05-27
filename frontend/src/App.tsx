@@ -56,8 +56,10 @@ export default function App() {
 
                 {/* Compliance Workspace — daily operational hub */}
                 <Route path="workspace" element={<WorkspaceLayout />}>
-                  <Route index element={<Navigate to="queue" replace />} />
-                  <Route path="queue" element={<TasksPage />} />
+                  <Route index element={<Navigate to="tasks" replace />} />
+                  <Route path="tasks" element={<TasksPage />} />
+                  {/* Backwards-compat for the original /workspace/queue URL */}
+                  <Route path="queue" element={<Navigate to="/workspace/tasks" replace />} />
                   <Route path="calendar" element={<CalendarPage />} />
                   <Route path="licenses" element={<LicensesPage />} />
                   <Route path="documents" element={<DocumentsPage />} />

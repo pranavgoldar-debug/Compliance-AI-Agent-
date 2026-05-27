@@ -671,13 +671,35 @@ function LicenseDetailDialog({
                 ) : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
                     <TrackingCounts counts={rulesQuery.data.counts} />
-                    {rulesQuery.data.direct.length > 0 && (
-                      <RuleGroup
-                        title="Directly applicable"
-                        subtitle="Matched on jurisdiction + authority / license type tokens."
-                        items={rulesQuery.data.direct}
-                      />
-                    )}
+                    {(() => {
+                      const direct = rulesQuery.data.direct;
+                      const mandatory = direct.filter(
+                        (r) => r.applicability === "Mandatory",
+                      );
+                      const optional = direct.filter(
+                        (r) => r.applicability !== "Mandatory",
+                      );
+                      return (
+                        <>
+                          {mandatory.length > 0 && (
+                            <RuleGroup
+                              title={`Mandatory · ${mandatory.length}`}
+                              subtitle="You MUST file these — non-compliance is a regulatory breach."
+                              items={mandatory}
+                              tone="mandatory"
+                            />
+                          )}
+                          {optional.length > 0 && (
+                            <RuleGroup
+                              title={`Conditional / Sector-specific · ${optional.length}`}
+                              subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
+                              items={optional}
+                              tone="conditional"
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                     {rulesQuery.data.entity_other.length > 0 && (
                       <RuleGroup
                         title="Other obligations for this entity"
@@ -793,14 +815,22 @@ function RuleGroup({
   title,
   subtitle,
   items,
+  tone,
 }: {
   title: string;
   subtitle: string;
   items: LicenseRuleHit[];
+  tone?: "mandatory" | "conditional";
 }) {
+  const headingClass =
+    tone === "mandatory"
+      ? "text-red-700"
+      : tone === "conditional"
+        ? "text-amber-700"
+        : "text-muted-foreground";
   return (
     <div>
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">
+      <div className={`text-xs uppercase tracking-wider font-semibold ${headingClass}`}>
         {title}
       </div>
       <div className="text-[11px] text-muted-foreground mb-2">{subtitle}</div>

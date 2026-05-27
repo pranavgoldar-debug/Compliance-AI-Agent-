@@ -119,6 +119,9 @@ export interface DashboardStats {
   due_this_week: number;
   due_this_month: number;
   unassigned: number;
+  entity_count: number;
+  license_count: number;
+  awaiting_review: number;
   open_tasks: Obligation[];
   items_in_alert_window: Obligation[];
   this_week: Obligation[];

@@ -240,6 +240,9 @@ class DashboardStats(_Base):
     due_this_week: int
     due_this_month: int
     unassigned: int
+    entity_count: int = 0
+    license_count: int = 0
+    awaiting_review: int = 0
     open_tasks: list[ObligationOut]
     items_in_alert_window: list[ObligationOut]
     this_week: list[ObligationOut]

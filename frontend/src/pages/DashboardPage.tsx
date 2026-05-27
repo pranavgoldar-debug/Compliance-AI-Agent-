@@ -4,8 +4,11 @@ import {
   ArrowUpRight,
   AlertCircle,
   BellRing,
+  Building2,
   CalendarClock,
   CalendarDays,
+  CheckCircle2,
+  FileBadge,
   UserPlus,
   Sun,
 } from "lucide-react";
@@ -27,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { fmtShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { DashboardStats, Obligation } from "@/types/api";
+import type { DashboardStats, Entity, Obligation } from "@/types/api";
 
 function greetingFor(hour: number): string {
   if (hour < 12) return "Good morning";
@@ -374,9 +377,11 @@ export function DashboardPage() {
       {!isLoading && data && <AlertBanners overdue={data.overdue} inAlert={data.in_alert_window} />}
 
       {/* Metric strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {isLoading || !data ? (
           <>
+            <Skeleton className="h-[70px]" />
+            <Skeleton className="h-[70px]" />
             <Skeleton className="h-[70px]" />
             <Skeleton className="h-[70px]" />
             <Skeleton className="h-[70px]" />
@@ -389,32 +394,49 @@ export function DashboardPage() {
               label="Overdue"
               tone={data.overdue > 0 ? "overdue" : "muted"}
               icon={AlertCircle}
-              href="/calendar"
+              href="/workspace/calendar"
             />
             <MetricCard
               value={data.due_this_week}
               label="Due this week"
               tone={data.due_this_week > 0 ? "alert" : "muted"}
               icon={CalendarClock}
-              href="/tasks"
+              href="/workspace/tasks"
             />
             <MetricCard
-              value={data.due_this_month}
-              label="Due this month"
-              tone="neutral"
-              icon={CalendarDays}
-              href="/calendar"
+              value={data.awaiting_review}
+              label="Awaiting review"
+              tone={data.awaiting_review > 0 ? "alert" : "muted"}
+              icon={CheckCircle2}
+              href="/workspace/tasks"
             />
             <MetricCard
               value={data.unassigned}
               label="Unassigned"
               tone={data.unassigned > 0 ? "alert" : "muted"}
               icon={UserPlus}
-              href="/calendar"
+              href="/workspace/tasks"
+            />
+            <MetricCard
+              value={data.entity_count}
+              label="Entities"
+              tone="neutral"
+              icon={Building2}
+              href="/entities"
+            />
+            <MetricCard
+              value={data.license_count}
+              label="Licenses"
+              tone="neutral"
+              icon={FileBadge}
+              href="/workspace/licenses"
             />
           </>
         )}
       </div>
+
+      {/* Entities — click a card to drill in */}
+      <EntitiesStrip />
 
       {/* Open tasks */}
       <Card className="overflow-hidden">
@@ -511,4 +533,100 @@ export function DashboardPage() {
 
     </div>
   );
+}
+
+
+// ---------------------------------------------------------------------------
+// Entities strip — at-a-glance per-entity status. Click a card to drill in.
+// ---------------------------------------------------------------------------
+function EntitiesStrip() {
+  const { data: entities, isLoading } = useQuery({
+    queryKey: ["entities", "dashboard-strip"],
+    queryFn: () => api.get<Entity[]>("/api/entities"),
+    staleTime: 60_000,
+  });
+
+  return (
+    <Card className="overflow-hidden">
+      <SectionHeader
+        title="Entities"
+        count={entities?.length ?? 0}
+        href="/entities"
+      />
+      <CardContent className="p-4">
+        {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-[88px]" />
+            ))}
+          </div>
+        ) : !entities || entities.length === 0 ? (
+          <EmptyState
+            icon={<Building2 className="h-6 w-6" />}
+            title="No entities yet"
+            description="Add an entity in Admin → Entities to start tracking its filings."
+          />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {entities.map((e) => (
+              <Link
+                key={e.id}
+                to={`/entities/${e.id}`}
+                className="group rounded-lg border border-border hover:border-aspora-300 hover:bg-aspora-50/30 transition-colors p-3 flex items-start gap-3"
+              >
+                <div className="h-10 w-10 rounded-lg bg-aspora-100 grid place-items-center text-aspora-700 font-semibold text-[11px] shrink-0">
+                  {e.short_code || initials(e.name)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium truncate flex items-center gap-2">
+                    {e.name}
+                    <JurisdictionBadge
+                      code={e.jurisdiction_code}
+                      showName={false}
+                    />
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {e.legal_type || "—"}
+                  </div>
+                  <div className="text-[11px] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span
+                      className={cn(
+                        e.overdue_obligations_count > 0
+                          ? "text-red-700"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {e.overdue_obligations_count} overdue
+                    </span>
+                    <span
+                      className={cn(
+                        e.in_alert_window_count > 0
+                          ? "text-amber-700"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {e.in_alert_window_count} in alert
+                    </span>
+                    <span className="text-muted-foreground">
+                      {e.active_obligations_count} active
+                    </span>
+                  </div>
+                </div>
+                <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              </Link>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
