@@ -39,25 +39,32 @@ def days_remaining(due: date) -> int:
     return (due - today()).days
 
 
-def lead_time_days(band: EffortBand) -> int:
-    """How many days BEFORE the due date the obligation enters its alert
-    / reminder window. Tuned to Aspora's filing policy:
+def reminder_offsets_days(band: EffortBand) -> list[int]:
+    """When to send reminders (days BEFORE due date). One entry per ping.
 
-      Monthly  (w1)   →  7 days
-      Quarterly (w2)  → 18 days   (policy: 15-20)
-      Half-year (w4)  → 30 days
-      Annual    (w8)  → 40 days   (policy: 30-45)
-      Long-form (w12) → 60 days
+    Aspora policy:
+      Monthly   (w1)  →  [7]              one reminder, a week before
+      Quarterly (w2)  →  [25, 15]         two reminders, 25 and 15 days before
+      Half-year (w4)  →  [30, 15]
+      Annual    (w8)  →  [45, 30]         two reminders, 45 and 30 days before
+      Long-form (w12) →  [60, 30]
     """
-    return _ALERT_LEAD_DAYS.get(band, 30)
+    return _REMINDER_OFFSETS.get(band, [30])
 
 
-_ALERT_LEAD_DAYS: dict[EffortBand, int] = {
-    EffortBand.w1: 7,
-    EffortBand.w2: 18,
-    EffortBand.w4: 30,
-    EffortBand.w8: 40,
-    EffortBand.w12: 60,
+def lead_time_days(band: EffortBand) -> int:
+    """Outer edge of the reminder window — used for the in-app
+    "in alert" badge / dashboard count. Equals the earliest reminder
+    offset for the band."""
+    return max(reminder_offsets_days(band))
+
+
+_REMINDER_OFFSETS: dict[EffortBand, list[int]] = {
+    EffortBand.w1: [7],
+    EffortBand.w2: [25, 15],
+    EffortBand.w4: [30, 15],
+    EffortBand.w8: [45, 30],
+    EffortBand.w12: [60, 30],
 }
 
 

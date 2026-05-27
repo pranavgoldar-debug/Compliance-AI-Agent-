@@ -434,15 +434,16 @@ def setup_email(test_to: Optional[str]) -> None:
     help="List who'd be reminded without sending email / Slack or persisting notifications.",
 )
 def send_reminders_cmd(dry_run: bool) -> None:
-    """Send deadline reminders for obligations entering their alert window.
+    """Send deadline reminders for obligations whose days-remaining hit
+    a reminder offset for their effort band.
 
-    Cadence per effort band (≈ frequency):
-       monthly   (w1)  → 7 days before
-       quarterly (w2)  → 18 days before (policy: 15-20)
-       annual    (w8)  → 40 days before (policy: 30-45)
+    Cadence (≈ frequency):
+       monthly   (w1)  →  7 days before               (one ping)
+       quarterly (w2)  →  25 and 15 days before       (two pings)
+       annual    (w8)  →  45 and 30 days before       (two pings)
 
-    Idempotent — a notification is persisted on first send so daily cron
-    runs never double-message.
+    Idempotent — each (assignee, obligation, offset) fires exactly once
+    across daily cron runs.
     """
     from compliance_agent.db import init_db
     from compliance_agent.reminders import send_reminders
@@ -457,7 +458,8 @@ def send_reminders_cmd(dry_run: bool) -> None:
     for r in results:
         click.echo(
             f"{prefix}reminder to {r.assignee_email}  obligation={r.obligation_id}  "
-            f"days_left={r.days_remaining}  email={r.email_sent}  slack={r.slack_sent}",
+            f"days_left={r.days_remaining}  offset=T-{r.offset_days}d  "
+            f"email={r.email_sent}  slack={r.slack_sent}",
             err=True,
         )
     click.echo(f"{len(results)} reminder(s) processed.", err=True)

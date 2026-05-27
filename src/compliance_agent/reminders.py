@@ -1,18 +1,21 @@
 """Outbound deadline reminders.
 
-When an obligation enters its alert window (computed from its effort band
-via `lead_time_days`), send the assignee a one-time email + Slack ping
-and persist an `alert_window` notification so the in-app bell shows it
-and so subsequent CLI runs don't re-send.
+For each open assigned obligation, we send a reminder when its
+days-remaining hits one of the offsets defined per effort band in
+`reminder_offsets_days()`. Aspora policy:
+
+  Monthly   →  7 days before              (one ping)
+  Quarterly →  25 and 15 days before      (two pings)
+  Annual    →  45 and 30 days before      (two pings)
 
 Intended to be run on a daily schedule:
 
   python -m compliance_agent.cli send-reminders          # actually send
   python -m compliance_agent.cli send-reminders --dry-run
 
-Idempotent: dedup key is (user_id, kind=alert_window, obligation_id).
-Once a reminder Notification row exists for a given user + obligation we
-never resend, even across runs.
+Idempotent — each (assignee, obligation, offset) fires exactly once.
+A Notification row with the offset baked into its title is the dedup
+anchor, so cron runs never double-send.
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import slack_service
-from compliance_agent.api._helpers import lead_time_days, today
+from compliance_agent.api._helpers import lead_time_days, reminder_offsets_days, today
 from compliance_agent.db import (
     EffortBand,
     Notification,
@@ -36,24 +39,19 @@ from compliance_agent.db import (
 from compliance_agent.email_service import send_email
 
 
+# Marker baked into Notification.title so cron runs can dedup per-offset
+# without needing a new column.
+_OFFSET_TAG = "[T-{}d]"
+
+
 @dataclass
 class ReminderResult:
     obligation_id: int
     assignee_email: str
     days_remaining: int
+    offset_days: int
     email_sent: bool
     slack_sent: bool
-
-
-def _frequency_phrase(band: EffortBand, days: int) -> str:
-    """Human-readable cadence so the email subject matches policy."""
-    if band == EffortBand.w1:
-        return "weekly filing — due in a week"
-    if band == EffortBand.w2:
-        return f"quarterly filing — due in {days} days"
-    if band == EffortBand.w8:
-        return f"annual filing — due in {days} days"
-    return f"due in {days} days"
 
 
 def _build_email_body(obligation: Obligation, days_remaining: int) -> tuple[str, str]:
@@ -94,23 +92,31 @@ def _slack_text(obligation: Obligation, assignee: User, days_remaining: int) -> 
     )
 
 
-def _already_reminded(db: Session, user_id: int, obligation_id: int) -> bool:
+def _already_reminded_at_offset(
+    db: Session,
+    user_id: int,
+    obligation_id: int,
+    offset_days: int,
+) -> bool:
+    tag = _OFFSET_TAG.format(offset_days)
     return (
         db.execute(
-            select(Notification.id).where(
+            select(Notification.id)
+            .where(
                 Notification.user_id == user_id,
                 Notification.kind == NotificationKind.alert_window,
                 Notification.obligation_id == obligation_id,
-            ).limit(1)
+                Notification.title.contains(tag),
+            )
+            .limit(1)
         ).scalar_one_or_none()
         is not None
     )
 
 
 def find_due_for_reminder(db: Session) -> list[Obligation]:
-    """All open, assigned obligations whose due_date is between today and
-    today + lead_time_days(band). The caller filters out ones we've already
-    reminded about."""
+    """All open, assigned, future obligations. The caller filters which
+    offsets apply per-band."""
     today_d = today()
     stmt = (
         select(Obligation)
@@ -135,9 +141,38 @@ def find_due_for_reminder(db: Session) -> list[Obligation]:
     return db.execute(stmt).scalars().unique().all()
 
 
+def _trigger_offset(
+    offsets: list[int],
+    days_left: int,
+) -> Optional[int]:
+    """Pick the offset that fires today.
+
+    Fires when days_left is at-or-just-passed an offset boundary AND we
+    haven't passed the next (smaller) offset yet. In practice that means
+    the cron run that lands on or first dips below an offset triggers it.
+
+    Examples for annual offsets [45, 30]:
+       days_left=46 → returns None  (not in any window yet)
+       days_left=45 → returns 45    (entering 45-day window)
+       days_left=40 → returns 45    (still in 45-day window, will dedup
+                                      against existing 45d notification)
+       days_left=30 → returns 30    (entering 30-day window)
+       days_left=10 → returns 30    (still under 30d, dedup against 30d)
+
+    The de-dup check in send_reminders handles the "fire only once" part;
+    this function just routes today's run to the right offset bucket.
+    """
+    candidates = [o for o in offsets if days_left <= o]
+    if not candidates:
+        return None
+    # Tightest (smallest) offset that still applies — so once we cross
+    # 30 days for an annual, future runs route to the 30d slot, not 45d.
+    return min(candidates)
+
+
 def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
-    """Send a reminder for every open assigned obligation inside its
-    alert window that we haven't already reminded about."""
+    """Walk every open assigned obligation, decide which reminder offset
+    (if any) fires today, and send / dedup accordingly."""
     results: list[ReminderResult] = []
     today_d = today()
 
@@ -146,16 +181,17 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
 
         for ob in find_due_for_reminder(db):
             band = ob.effort_band or EffortBand.w4
-            lead = lead_time_days(band)
+            offsets = reminder_offsets_days(band)
             days_left = (ob.due_date - today_d).days
-            if days_left > lead:
-                # Not yet in the alert window for this band.
+
+            offset = _trigger_offset(offsets, days_left)
+            if offset is None:
                 continue
 
             assignee: Optional[User] = ob.assignee
             if assignee is None:
                 continue
-            if _already_reminded(db, assignee.id, ob.id):
+            if _already_reminded_at_offset(db, assignee.id, ob.id, offset):
                 continue
 
             subject, body = _build_email_body(ob, days_left)
@@ -163,13 +199,12 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
             slack_sent = False
 
             if not dry_run:
-                # Persist the in-app notification first — that's also our
-                # idempotency anchor for the next CLI run.
+                form = ob.rule.form_name if ob.rule else "Compliance item"
                 db.add(
                     Notification(
                         user_id=assignee.id,
                         kind=NotificationKind.alert_window,
-                        title=f"Reminder: {ob.rule.form_name if ob.rule else 'Compliance item'} due in {days_left}d",
+                        title=f"Reminder {_OFFSET_TAG.format(offset)}: {form} due in {days_left}d",
                         body=(ob.entity.name if ob.entity else None),
                         link_url=f"/obligations/{ob.id}",
                         obligation_id=ob.id,
@@ -199,13 +234,18 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                     obligation_id=ob.id,
                     assignee_email=assignee.email,
                     days_remaining=days_left,
+                    offset_days=offset,
                     email_sent=email_sent,
                     slack_sent=slack_sent,
                 )
             )
 
-        # Commit all the new Notification rows in one go.
         if not dry_run and results:
             db.commit()
 
     return results
+
+
+# Re-exported for tests / callers that need the outer-edge of the window
+# (also drives the in-app "in alert window" badge via api/_helpers.py).
+__all__ = ["send_reminders", "ReminderResult", "lead_time_days"]
