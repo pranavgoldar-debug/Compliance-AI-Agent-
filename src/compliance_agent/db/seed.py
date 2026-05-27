@@ -339,17 +339,25 @@ def _needs_payment_split(rule: Rule) -> bool:
     return False
 
 
-def _ensure_obligations(db: Session, rules: list[Rule], users: dict[str, User]) -> int:
+def _ensure_obligations(
+    db: Session,
+    rules: list[Rule],
+    users: dict[str, User],
+    *,
+    auto_assign: bool = True,
+) -> int:
     """Generate obligations for every (rule, entity) combination using the
     frequency to spread due dates across a sensible window.
 
-    Splits payment-bearing tax/payroll rules into 2 obligations per period:
-       - filing leg → department=compliance
-       - payment leg → department=finance
+    auto_assign — when True, distribute obligations randomly across employee
+    users. When False, every obligation is created unassigned (admin will
+    assign explicitly later).
     """
     base = date.today()
     rng = random.Random(20260525)
-    assignable = [u for u in users.values() if u.role == Role.employee]
+    assignable: list[User] = (
+        [u for u in users.values() if u.role == Role.employee] if auto_assign else []
+    )
 
     created_count = 0
     for rule in rules:
@@ -479,8 +487,13 @@ def _backfill_effort_bands(db: Session) -> int:
     return touched
 
 
-def run_seed() -> dict[str, int]:
-    """Idempotent seed. Returns counts of created objects."""
+def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
+    """Idempotent seed. Returns counts of created objects.
+
+    auto_assign — when True (default), randomly distribute obligations
+    across the demo employee users so the dashboard / queue look populated.
+    Set False for a production-like seed where everything starts unassigned.
+    """
     from compliance_agent.db import init_db
 
     init_db()
@@ -488,7 +501,7 @@ def run_seed() -> dict[str, int]:
         users = _ensure_users(db)
         entities_map = _ensure_entities(db, users)
         rules = _ensure_rules(db, list(entities_map.values()))
-        ob_count = _ensure_obligations(db, rules, users)
+        ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
         backfilled = _backfill_effort_bands(db)
     return {
         "users": len(users),

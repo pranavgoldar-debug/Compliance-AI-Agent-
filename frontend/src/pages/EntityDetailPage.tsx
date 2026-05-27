@@ -77,12 +77,16 @@ export function EntityDetailPage() {
     queryKey: ["entity", entityId],
     queryFn: () => api.get<Entity>(`/api/entities/${entityId}`),
     enabled: !!entityId,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: obligations, isLoading: loadingObs } = useQuery({
     queryKey: ["entity-obligations", entityId],
     queryFn: () => api.get<Obligation[]>(`/api/obligations?entity_id=${entityId}&limit=200`),
     enabled: !!entityId,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   if (loadingEntity) {

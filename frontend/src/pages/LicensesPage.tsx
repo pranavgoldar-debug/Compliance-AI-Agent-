@@ -82,6 +82,10 @@ export function LicensesPage() {
       if (jurisdiction) params.set("jurisdiction_code", jurisdiction);
       return api.get<License[]>(`/api/licenses?${params.toString()}`);
     },
+    // Poll every 60s + on window focus so a license an admin uploaded
+    // in one tab shows up in an employee's tab without manual refresh.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const filtered = useMemo(() => {
