@@ -1,6 +1,7 @@
 // Settings — proper tabbed shell. Profile is available to every user; the
 // rest are admin-only (visible to non-admins with a Lock badge but read-only).
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -68,7 +69,18 @@ const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.Compo
 export function SettingsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [tab, setTab] = useState<TabKey>("profile");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (searchParams.get("tab") as TabKey | null) ?? "profile";
+  const [tab, setTabState] = useState<TabKey>(initialTab);
+
+  function setTab(next: TabKey) {
+    setTabState(next);
+    // Mirror to the URL so deep-linking + back-button work.
+    const next_params = new URLSearchParams(searchParams);
+    if (next === "profile") next_params.delete("tab");
+    else next_params.set("tab", next);
+    setSearchParams(next_params, { replace: true });
+  }
 
   if (!user) return null;
 

@@ -669,7 +669,8 @@ function LicenseDetailDialog({
                     rule with a matching authority.
                   </div>
                 ) : (
-                  <div className="space-y-4 max-h-[440px] overflow-y-auto pr-1 scrollbar-thin">
+                  <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
+                    <TrackingCounts counts={rulesQuery.data.counts} />
                     {rulesQuery.data.direct.length > 0 && (
                       <RuleGroup
                         title="Directly applicable"
@@ -745,6 +746,49 @@ function Stat({
   );
 }
 
+function TrackingCounts({ counts }: { counts: Record<string, number> }) {
+  const items: { key: string; label: string; tone: string }[] = [
+    { key: "total", label: "Applicable rules", tone: "bg-secondary/60 text-foreground" },
+    { key: "not_scheduled", label: "No deadline scheduled", tone: "bg-slate-100 text-slate-700" },
+    { key: "unassigned", label: "Unassigned", tone: "bg-amber-100 text-amber-800" },
+    { key: "not_started", label: "Not started", tone: "bg-slate-100 text-slate-700" },
+    { key: "in_progress", label: "In progress", tone: "bg-blue-100 text-blue-700" },
+    { key: "pending_review", label: "Pending review", tone: "bg-purple-100 text-purple-700" },
+  ];
+  return (
+    <div className="flex flex-wrap gap-2 text-xs">
+      {items.map((it) => {
+        const n = counts[it.key] ?? 0;
+        if (it.key !== "total" && n === 0) return null;
+        return (
+          <span
+            key={it.key}
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${it.tone}`}
+          >
+            <span className="font-semibold tabular-nums">{n}</span>
+            <span>{it.label}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function statusBadgeVariant(
+  status: string | null,
+): "completed" | "progress" | "review" | "neutral" | "overdue" {
+  if (!status) return "neutral";
+  if (status === "completed") return "completed";
+  if (status === "in_progress") return "progress";
+  if (status === "pending_review") return "review";
+  return "neutral";
+}
+
+function statusLabel(status: string | null): string {
+  if (!status) return "Not scheduled";
+  return status.replace(/_/g, " ");
+}
+
 function RuleGroup({
   title,
   subtitle,
@@ -760,40 +804,94 @@ function RuleGroup({
         {title}
       </div>
       <div className="text-[11px] text-muted-foreground mb-2">{subtitle}</div>
-      <div className="space-y-1.5">
-        {items.map((r) => (
-          <div
-            key={r.id}
-            className="rounded-lg border border-border bg-background px-3 py-2"
-          >
-            <div className="flex items-center gap-2">
-              <div className="text-sm font-medium truncate flex-1">
-                {r.form_name}
-              </div>
-              <Badge variant="neutral">{r.frequency}</Badge>
-              <a
-                href={`/rules`}
-                onClick={(e) => e.stopPropagation()}
-                className="text-muted-foreground hover:text-aspora-600"
-                title="View in Rules"
-              >
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              {r.authority} · {r.category}
-              {r.area ? ` · ${r.area}` : ""}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 italic">
-              {r.due_date_rule}
-            </div>
-            {r.match_reason && (
-              <div className="text-[11px] text-aspora-700 mt-1">
-                {r.match_reason}
-              </div>
-            )}
-          </div>
-        ))}
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Filing</th>
+              <th className="px-3 py-2 text-left font-medium">Status</th>
+              <th className="px-3 py-2 text-left font-medium">Assignee</th>
+              <th className="px-3 py-2 text-left font-medium">Next due</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.map((r) => {
+              const assignee = r.next_assignee;
+              const daysOut = r.days_to_next;
+              return (
+                <tr
+                  key={r.id}
+                  className="hover:bg-secondary/20 cursor-pointer"
+                  onClick={(e) => {
+                    if (r.next_obligation_id) {
+                      e.stopPropagation();
+                      window.location.href = `/obligations/${r.next_obligation_id}`;
+                    }
+                  }}
+                >
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium text-sm">{r.form_name}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.authority} · {r.category}
+                      {r.area ? ` · ${r.area}` : ""}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
+                      <Badge variant="neutral">{r.frequency}</Badge>
+                      {r.match_reason && (
+                        <span className="text-aspora-700">{r.match_reason}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <Badge variant={statusBadgeVariant(r.next_status)}>
+                      {statusLabel(r.next_status)}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {assignee ? (
+                      <div>
+                        <div className="text-sm">
+                          {assignee.full_name || assignee.email}
+                        </div>
+                        {assignee.full_name && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {assignee.email}
+                          </div>
+                        )}
+                      </div>
+                    ) : r.next_obligation_id ? (
+                      <span className="text-xs text-amber-700">Unassigned</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {r.next_due_date ? (
+                      <div>
+                        <div>{r.next_due_date}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {daysOut !== null && daysOut !== undefined
+                            ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+                            : ""}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">
+                        {r.due_date_rule}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-right">
+                    {r.next_obligation_id && (
+                      <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

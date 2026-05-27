@@ -371,6 +371,12 @@ export interface License {
   days_to_expiry: number | null;
 }
 
+export interface LicenseAssignee {
+  id: number;
+  email: string;
+  full_name: string | null;
+}
+
 export interface LicenseRuleHit {
   id: number;
   name: string;
@@ -384,10 +390,16 @@ export interface LicenseRuleHit {
   applicability: string;
   relevance: "direct" | "entity";
   match_reason: string | null;
+  next_obligation_id: number | null;
+  next_due_date: string | null;
+  next_status: string | null;
+  next_assignee: LicenseAssignee | null;
+  days_to_next: number | null;
 }
 
 export interface ApplicableRulesResponse {
   license_id: number;
   direct: LicenseRuleHit[];
   entity_other: LicenseRuleHit[];
+  counts: Record<string, number>;
 }

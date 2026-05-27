@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
 from compliance_agent.api._helpers import log_activity
@@ -37,6 +37,8 @@ from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
     Entity,
     License,
+    Obligation,
+    ObligationStatus,
     Rule,
     RuleStatus,
     User,
@@ -78,6 +80,12 @@ class LicenseOut(_Base):
     days_to_expiry: Optional[int] = None
 
 
+class LicenseAssignee(_Base):
+    id: int
+    email: str
+    full_name: Optional[str] = None
+
+
 class LicenseRuleHit(_Base):
     id: int
     name: str
@@ -91,12 +99,21 @@ class LicenseRuleHit(_Base):
     applicability: str
     relevance: str  # "direct" | "entity"
     match_reason: Optional[str] = None
+    # Tracking — the next upcoming obligation for (this rule, license.entity).
+    next_obligation_id: Optional[int] = None
+    next_due_date: Optional[date] = None
+    next_status: Optional[str] = None
+    next_assignee: Optional[LicenseAssignee] = None
+    days_to_next: Optional[int] = None
 
 
 class ApplicableRulesResponse(_Base):
     license_id: int
     direct: list[LicenseRuleHit]
     entity_other: list[LicenseRuleHit]
+    # Aggregate roll-up so the UI can show counts without re-counting on the
+    # client.
+    counts: dict[str, int] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +424,68 @@ def applicable_rules(
     if entity is not None:
         entity_rule_ids = {r.id for r in entity.rules}
 
+    # 3. Tracking — for each rule, find the next upcoming, not-yet-completed
+    # obligation against THIS license's entity. One query, then bucket by
+    # rule_id.
+    today_d = date.today()
+    next_by_rule: dict[int, Obligation] = {}
+    if entity is not None:
+        rows = (
+            db.execute(
+                select(Obligation)
+                .options(
+                    joinedload(Obligation.assignee),
+                )
+                .where(
+                    Obligation.entity_id == entity.id,
+                    Obligation.status.notin_(
+                        [
+                            ObligationStatus.completed,
+                            ObligationStatus.not_applicable,
+                        ]
+                    ),
+                    Obligation.due_date >= today_d,
+                )
+                .order_by(Obligation.rule_id, Obligation.due_date)
+            )
+            .scalars()
+            .unique()
+            .all()
+        )
+        for ob in rows:
+            # First encounter per rule_id is the soonest due_date (ASC order).
+            if ob.rule_id not in next_by_rule:
+                next_by_rule[ob.rule_id] = ob
+
+    def _hit(rule: Rule, *, relevance: str, match_reason: str) -> LicenseRuleHit:
+        ob = next_by_rule.get(rule.id)
+        assignee = None
+        if ob is not None and ob.assignee is not None:
+            assignee = LicenseAssignee(
+                id=ob.assignee.id,
+                email=ob.assignee.email,
+                full_name=ob.assignee.full_name,
+            )
+        return LicenseRuleHit(
+            id=rule.id,
+            name=rule.name,
+            form_name=rule.form_name,
+            authority=rule.authority,
+            category=rule.category,
+            area=rule.area,
+            frequency=rule.frequency,
+            due_date_rule=rule.due_date_rule,
+            payment_rule=rule.payment_rule,
+            applicability=rule.applicability.value if rule.applicability else "",
+            relevance=relevance,
+            match_reason=match_reason,
+            next_obligation_id=ob.id if ob else None,
+            next_due_date=ob.due_date if ob else None,
+            next_status=ob.status.value if ob and ob.status else None,
+            next_assignee=assignee,
+            days_to_next=((ob.due_date - today_d).days if ob else None),
+        )
+
     direct: list[LicenseRuleHit] = []
     entity_other: list[LicenseRuleHit] = []
 
@@ -414,44 +493,42 @@ def applicable_rules(
         rule_tokens = _tokens(rule.authority, rule.category, rule.area)
         shared = license_tokens & rule_tokens
         is_attached = rule.id in entity_rule_ids
-
         if shared:
             direct.append(
-                LicenseRuleHit(
-                    id=rule.id,
-                    name=rule.name,
-                    form_name=rule.form_name,
-                    authority=rule.authority,
-                    category=rule.category,
-                    area=rule.area,
-                    frequency=rule.frequency,
-                    due_date_rule=rule.due_date_rule,
-                    payment_rule=rule.payment_rule,
-                    applicability=rule.applicability.value if rule.applicability else "",
+                _hit(
+                    rule,
                     relevance="direct",
                     match_reason=f"matched on: {', '.join(sorted(shared))}",
                 )
             )
         elif is_attached:
             entity_other.append(
-                LicenseRuleHit(
-                    id=rule.id,
-                    name=rule.name,
-                    form_name=rule.form_name,
-                    authority=rule.authority,
-                    category=rule.category,
-                    area=rule.area,
-                    frequency=rule.frequency,
-                    due_date_rule=rule.due_date_rule,
-                    payment_rule=rule.payment_rule,
-                    applicability=rule.applicability.value if rule.applicability else "",
-                    relevance="entity",
-                    match_reason="attached to this entity",
-                )
+                _hit(rule, relevance="entity", match_reason="attached to this entity")
             )
+
+    # Roll-up counts so the UI can show "5 unassigned · 3 in progress · …"
+    counts: dict[str, int] = {
+        "total": len(direct) + len(entity_other),
+        "not_scheduled": 0,
+        "unassigned": 0,
+        "not_started": 0,
+        "in_progress": 0,
+        "pending_review": 0,
+        "completed_next": 0,  # next upcoming was completed — rare; left for sanity
+    }
+    for hit in (*direct, *entity_other):
+        if hit.next_obligation_id is None:
+            counts["not_scheduled"] += 1
+            continue
+        if hit.next_assignee is None:
+            counts["unassigned"] += 1
+        status_key = hit.next_status or "not_started"
+        if status_key in counts:
+            counts[status_key] += 1
 
     return ApplicableRulesResponse(
         license_id=license_id,
         direct=direct,
         entity_other=entity_other,
+        counts=counts,
     )

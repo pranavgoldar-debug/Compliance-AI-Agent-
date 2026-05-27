@@ -77,6 +77,10 @@ export default function App() {
                 />
                 <Route path="obligations/:obligationId" element={<ObligationDetailPage />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route
+                  path="admin/users"
+                  element={<Navigate to="/settings?tab=users" replace />}
+                />
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />
