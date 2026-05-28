@@ -12,7 +12,6 @@ import {
   ExternalLink,
   Loader2,
   MessageCircle,
-  MoreHorizontal,
   Pencil,
   Send,
   UserCheck,
@@ -241,7 +240,7 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
     tone = "amber";
     title = "Step 3 — Finance pays";
     body =
-      "Filing is verified. Finance picks this up via the Awaiting payment chip on Tasks — log the payment amount + UTR to close it out.";
+      "Filing is verified. Finance has been pinged (notification + Slack). Log the payment amount + UTR below to close it out.";
   } else if (obligation.status === "completed") {
     tone = "emerald";
     title = "Done";
@@ -434,20 +433,6 @@ function ActionBar({
               Saving…
             </span>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem disabled>View rule template</DropdownMenuItem>
-              <DropdownMenuItem disabled>Duplicate</DropdownMenuItem>
-              <DropdownMenuItem disabled className="text-red-600">
-                Archive
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
     </div>
@@ -737,18 +722,24 @@ function AlertScheduleCard({ obligation }: { obligation: Obligation }) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
+        <div className="text-[11px] text-muted-foreground">
+          Reminders fire on these channels when the assignee has them enabled:
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+          <span className="inline-flex items-center gap-1" title="Workspace channel — admin pastes a webhook URL in Settings → Integrations">
             <Slack className="h-3 w-3" />
             Slack
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1" title="In-app inbox always works. Email pings need SMTP creds on the server">
             <Mail className="h-3 w-3" />
             Email
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span
+            className="inline-flex items-center gap-1 opacity-60"
+            title="Google Calendar sync — not yet wired"
+          >
             <CalendarIcon className="h-3 w-3" />
-            Calendar
+            Calendar (soon)
           </span>
         </div>
       </div>

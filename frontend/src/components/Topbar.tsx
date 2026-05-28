@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Sparkles,
   Beaker,
+  Banknote,
 } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -145,6 +146,8 @@ function iconFor(kind: NotificationOut["kind"]) {
       return { Icon: UserCheck, classes: "bg-aspora-100 text-aspora-700" };
     case "status_change":
       return { Icon: CheckCircle2, classes: "bg-emerald-100 text-emerald-700" };
+    case "payment_request":
+      return { Icon: Banknote, classes: "bg-amber-100 text-amber-700" };
   }
 }
 

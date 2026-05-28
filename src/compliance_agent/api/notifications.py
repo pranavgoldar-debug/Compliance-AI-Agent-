@@ -277,6 +277,67 @@ def emit_mentions(
             )
 
 
+def emit_payment_request(
+    db: Session,
+    *,
+    obligation: Obligation,
+    actor: User,
+) -> None:
+    """Filing's been approved and the rule has a payment leg — explicitly
+    ping the finance team (admins) that they need to pay. Without this, the
+    "Awaiting payment" chip on Tasks is invisible until somebody thinks to
+    look at it; this turns the hand-off into a real notification.
+
+    Targets all active admins (they're the payment approvers). Also fires a
+    workspace Slack ping if configured.
+    """
+    from compliance_agent.db import Role
+
+    rule = obligation.rule
+    entity = obligation.entity
+    form = rule.form_name if rule else "Compliance item"
+    entity_name = entity.name if entity else "—"
+    amount_hint = (rule.payment_rule or "").strip() if rule else ""
+
+    admins = (
+        db.execute(
+            select(User).where(User.role == Role.admin, User.is_active.is_(True))
+        )
+        .scalars()
+        .all()
+    )
+    title = f"Payment requested — {form}"
+    body = (
+        f"{entity_name} · filing approved by "
+        f"{actor.full_name or actor.email}. Log the payment + UTR to close it out."
+    )
+    if amount_hint:
+        body = f"{body}\nPayment rule: {amount_hint}"
+
+    for admin in admins:
+        # Skip the actor themselves — they just approved it, they know.
+        if admin.id == actor.id:
+            continue
+        db.add(
+            Notification(
+                user_id=admin.id,
+                kind=NotificationKind.payment_request,
+                title=title,
+                body=body,
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=actor.id,
+            )
+        )
+
+    if slack_service.is_configured(db):
+        slack_service.post(
+            f":money_with_wings: *Payment requested* — *{form}* ({entity_name}). "
+            f"Filing approved by {actor.full_name or actor.email}. "
+            f"Finance, please log the payment + UTR."
+        )
+
+
 def emit_status_change(
     db: Session,
     *,
