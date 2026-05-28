@@ -1,7 +1,7 @@
 // Tasks — personal work inbox. Urgency-grouped, sub-tabbed scope, filter bar,
 // sort dropdown, hover quick actions.
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Coffee, ChevronDown, MoreHorizontal, CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -308,7 +308,7 @@ export function TasksPage({
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ["tasks", scope, department, awaitingPayment],
     queryFn: () => {
       const qs = new URLSearchParams({ scope });
@@ -320,6 +320,11 @@ export function TasksPage({
     // review, in-progress) without manually refreshing.
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+    // Keep the previously-loaded list visible while the new query runs.
+    // Switching tabs (Assigned to me → Completed) no longer blanks the
+    // page to a skeleton — the old list stays put with a subtle "fetching"
+    // indicator instead.
+    placeholderData: keepPreviousData,
   });
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],

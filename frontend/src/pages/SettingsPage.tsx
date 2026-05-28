@@ -1109,10 +1109,33 @@ function SlackCard() {
                 placeholder="https://hooks.slack.com/services/T…/B…/…"
                 className="font-mono text-xs mt-1"
               />
+              {webhook.trim() &&
+                !webhook.trim().startsWith("https://hooks.slack.com/") && (
+                  <div className="mt-1 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                    That doesn't look like a webhook URL. A webhook starts with{" "}
+                    <span className="font-mono">https://hooks.slack.com/services/</span> —
+                    a channel link like <span className="font-mono">slack.com/archives/…</span>{" "}
+                    won't work.
+                  </div>
+                )}
               <p className="text-[11px] text-muted-foreground mt-1">
-                Slack → your workspace → Apps → search "Incoming Webhooks" → Add Configuration →
-                pick a channel → copy the Webhook URL.
+                Get one at{" "}
+                <a
+                  href="https://api.slack.com/apps"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-aspora-700 hover:underline"
+                >
+                  api.slack.com/apps
+                </a>{" "}
+                → Create New App → From scratch → enable "Incoming Webhooks"
+                → "Add New Webhook to Workspace" → pick a channel → copy URL.
               </p>
+              {saveMutation.error && (
+                <div className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                  {(saveMutation.error as Error).message}
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">
@@ -1138,7 +1161,12 @@ function SlackCard() {
                     enabled: true,
                   })
                 }
-                disabled={saveMutation.isPending || (!webhook.trim() && !cfg.configured)}
+                disabled={
+                  saveMutation.isPending ||
+                  (!webhook.trim() && !cfg.configured) ||
+                  (webhook.trim().length > 0 &&
+                    !webhook.trim().startsWith("https://hooks.slack.com/"))
+                }
               >
                 {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Save
