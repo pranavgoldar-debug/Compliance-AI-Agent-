@@ -55,6 +55,9 @@ const NAV_GROUPS: NavGroup[] = [
         icon: CheckCircle2,
         badge: "tasks",
       },
+      // Employees should see what admin uploaded — the page itself
+      // gates the upload affordance on isAdmin, but reading is open.
+      { to: "/documents", label: "Documents", icon: FolderOpen },
     ],
   },
   {
@@ -64,7 +67,6 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/entities", label: "Entities", icon: Building2, adminOnly: true },
       { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
       { to: "/regulations", label: "Regulations", icon: BookOpen, adminOnly: true },
-      { to: "/documents", label: "Documents", icon: FolderOpen, adminOnly: true },
       { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
       { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
     ],

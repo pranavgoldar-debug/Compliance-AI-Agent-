@@ -208,24 +208,52 @@ export function DocumentsPage() {
               />
             </>
           ) : selection.kind === "entity" ? (
-            <DocumentList
-              key={`e-${selection.entityId}`}
-              scope={{ kind: "entity", entityId: selection.entityId }}
-              layout={layout}
-              showEntityColumn={false}
-              title={undefined}
-              hint="Drag files onto the dropzone to add new ones."
-            />
+            <>
+              <CategoryCards
+                entityName={
+                  entities.find((e) => e.id === selection.entityId)?.name ?? "Entity"
+                }
+                counts={countsByEntity.get(selection.entityId) ?? new Map()}
+                onPick={(cat) =>
+                  setSelection({
+                    kind: "entity-category",
+                    entityId: selection.entityId,
+                    category: cat,
+                  })
+                }
+              />
+              <DocumentList
+                key={`e-${selection.entityId}`}
+                scope={{ kind: "entity", entityId: selection.entityId }}
+                layout={layout}
+                showEntityColumn={false}
+                title={undefined}
+                hint="Drag files here to upload. Set the category after upload, or pick a category card above for a category-targeted upload."
+              />
+            </>
           ) : (
-            <DocumentList
-              key={`ec-${selection.entityId}-${selection.category}`}
-              scope={{ kind: "entity", entityId: selection.entityId }}
-              layout={layout}
-              showEntityColumn={false}
-              defaultCategory={selection.category}
-              title={undefined}
-              hint={`Files in ${selection.category}.`}
-            />
+            <>
+              <div className="flex items-center gap-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelection({ kind: "entity", entityId: selection.entityId })
+                  }
+                  className="text-aspora-700 hover:underline"
+                >
+                  ← All categories for this entity
+                </button>
+              </div>
+              <DocumentList
+                key={`ec-${selection.entityId}-${selection.category}`}
+                scope={{ kind: "entity", entityId: selection.entityId }}
+                layout={layout}
+                showEntityColumn={false}
+                defaultCategory={selection.category}
+                title={selection.category}
+                hint={`New uploads here will be tagged as ${selection.category}.`}
+              />
+            </>
           )}
         </div>
       </div>
@@ -356,6 +384,60 @@ function SelectionCrumbs({
 // ---------------------------------------------------------------------------
 // All-documents view (no upload here — pick an entity first)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Category cards — shown when an entity is selected. Each card jumps to that
+// entity's documents filtered to a category. Lets the user upload as a
+// specific category in one click instead of uploading and renaming after.
+// ---------------------------------------------------------------------------
+function CategoryCards({
+  entityName,
+  counts,
+  onPick,
+}: {
+  entityName: string;
+  counts: Map<DocumentCategory, number>;
+  onPick: (cat: DocumentCategory) => void;
+}) {
+  const CATEGORY_HINTS: Record<DocumentCategory, string> = {
+    "Formation": "Incorporation docs, MoA / AoA, certificates of registration.",
+    "Filings": "Filed returns, ACK receipts, regulator portal printouts.",
+    "Contracts": "Agreements, NDAs, vendor / customer contracts.",
+    "Expert notes": "Country expert advice, opinions, internal SOPs.",
+    "Other": "Templates, blank forms, anything that doesn't fit the rest.",
+  };
+  return (
+    <div className="space-y-2">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">
+        Upload to {entityName} — pick a category
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+        {DOCUMENT_CATEGORIES.map((cat) => {
+          const n = counts.get(cat) ?? 0;
+          return (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => onPick(cat)}
+              className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-3 py-2.5 text-left transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold">{cat}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {n}
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                {CATEGORY_HINTS[cat]}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function AllDocsView({
   documents,
   layout,
