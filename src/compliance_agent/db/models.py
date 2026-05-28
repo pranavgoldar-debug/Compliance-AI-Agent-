@@ -112,6 +112,12 @@ class User(Base):
     # Personal Slack member id (e.g. U0123ABCD). When set, our channel-wide
     # webhook pings can <@-mention> this user. Optional.
     slack_user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Functional department — drives "Request payment from finance" routing.
+    # Nullable so the admin can leave it unset for users who don't fit a single
+    # bucket; those users are excluded from department-specific fanouts.
+    department: Mapped[Optional[Department]] = mapped_column(
+        SAEnum(Department), nullable=True, index=True
+    )
 
     led_entities: Mapped[list["Entity"]] = relationship(
         "Entity", back_populates="country_lead", foreign_keys="Entity.country_lead_id"

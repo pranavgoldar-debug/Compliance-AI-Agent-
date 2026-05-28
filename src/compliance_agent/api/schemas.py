@@ -36,6 +36,7 @@ class UserOut(_Base):
     full_name: str
     role: Role
     is_active: bool
+    department: Optional[str] = None
     created_at: datetime
     last_login_at: Optional[datetime] = None
 
@@ -44,6 +45,7 @@ class UserCreate(BaseModel):
     email: str
     full_name: str
     role: Role = Role.employee
+    department: Optional[str] = None
     password: str
 
 
@@ -51,6 +53,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     role: Optional[Role] = None
     is_active: Optional[bool] = None
+    department: Optional[str] = None
     password: Optional[str] = None  # admin password reset
 
 

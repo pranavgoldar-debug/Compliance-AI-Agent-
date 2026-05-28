@@ -68,12 +68,15 @@ def create_user(
     existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="A user with that email already exists.")
+    from compliance_agent.db import Department as _Department
+
     user = User(
         email=email,
         password_hash=hash_password(payload.password),
         full_name=(payload.full_name or "").strip() or email.split("@")[0],
         role=payload.role,
         is_active=True,
+        department=(_Department(payload.department) if payload.department else None),
     )
     db.add(user)
     db.flush()
@@ -113,6 +116,12 @@ def update_user(
         if len(data["password"]) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
         user.password_hash = hash_password(data.pop("password"))
+
+    if "department" in data:
+        from compliance_agent.db import Department as _Department
+
+        raw = data.pop("department")
+        user.department = _Department(raw) if raw else None
 
     for field, value in data.items():
         if value is not None:
