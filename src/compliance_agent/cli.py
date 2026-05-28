@@ -209,11 +209,29 @@ def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> N
 
     import uvicorn
 
+    # --live forces the env var on; without the flag we respect whatever
+    # the surrounding shell already set. The flag is now a convenience for
+    # one-off CLI invocations; production deploys set COMPLIANCE_AGENT_LIVE
+    # in Render/dotenv/PowerShell directly.
     if live:
         os.environ["COMPLIANCE_AGENT_LIVE"] = "1"
-        click.echo("Live mode — requests will call Anthropic API.", err=True)
+
+    env_live = os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
+    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_openrouter = bool(os.environ.get("OPENROUTER_API_KEY"))
+    if env_live and (has_anthropic or has_openrouter):
+        backend = "OpenRouter" if has_openrouter and not has_anthropic else "Anthropic"
+        click.echo(
+            f"Live mode — AI features will call {backend}.",
+            err=True,
+        )
+    elif env_live:
+        click.echo(
+            "COMPLIANCE_AGENT_LIVE=1 is set but no API key was found. "
+            "Set ANTHROPIC_API_KEY or OPENROUTER_API_KEY. Falling back to mock mode.",
+            err=True,
+        )
     else:
-        os.environ.pop("COMPLIANCE_AGENT_LIVE", None)
         click.echo("Mock mode — no API key required.", err=True)
 
     # Pre-flight: detect "port already in use" before uvicorn spews a traceback.
