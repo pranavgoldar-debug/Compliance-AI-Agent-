@@ -38,14 +38,12 @@ type Selection =
 
 
 // Buckets shown as top-of-page chips. Maps to the DocumentCategory enum
-// for the filter; "all" is the unfiltered passthrough.
+// for the filter; "all" is the unfiltered passthrough. Trimmed to the
+// two categories actually surfaced in the entity upload cards.
 const CATEGORY_CHIPS: { key: "all" | DocumentCategory; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "Filings", label: "Filed documents" },
-  { key: "Formation", label: "Formation" },
-  { key: "Contracts", label: "Templates" },
-  { key: "Expert notes", label: "Reference" },
-  { key: "Other", label: "Other" },
+  { key: "Filings", label: "Filings" },
+  { key: "Templates", label: "Templates" },
 ];
 
 export function DocumentsPage() {
@@ -398,19 +396,16 @@ function CategoryCards({
   counts: Map<DocumentCategory, number>;
   onPick: (cat: DocumentCategory) => void;
 }) {
-  const CATEGORY_HINTS: Record<DocumentCategory, string> = {
-    "Formation": "Incorporation docs, MoA / AoA, certificates of registration.",
+  const CATEGORY_HINTS: Partial<Record<DocumentCategory, string>> = {
     "Filings": "Filed returns, ACK receipts, regulator portal printouts.",
-    "Contracts": "Agreements, NDAs, vendor / customer contracts.",
-    "Expert notes": "Country expert advice, opinions, internal SOPs.",
-    "Other": "Templates, blank forms, anything that doesn't fit the rest.",
+    "Templates": "Blank forms, MIS templates, reusable drafts.",
   };
   return (
     <div className="space-y-2">
       <div className="text-xs uppercase tracking-wider text-muted-foreground">
         Upload to {entityName} — pick a category
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {DOCUMENT_CATEGORIES.map((cat) => {
           const n = counts.get(cat) ?? 0;
           return (
@@ -418,7 +413,7 @@ function CategoryCards({
               key={cat}
               type="button"
               onClick={() => onPick(cat)}
-              className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-3 py-2.5 text-left transition-colors"
+              className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-4 py-3 text-left transition-colors"
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">{cat}</span>
@@ -426,7 +421,7 @@ function CategoryCards({
                   {n}
                 </span>
               </div>
-              <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+              <div className="text-[11px] text-muted-foreground mt-0.5">
                 {CATEGORY_HINTS[cat]}
               </div>
             </button>

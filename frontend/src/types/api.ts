@@ -151,19 +151,18 @@ export interface Comment {
 // Phase 5 — documents, activities, users
 // ---------------------------------------------------------------------------
 export type DocumentCategory =
-  | "Formation"
   | "Filings"
+  | "Templates"
+  // Legacy values kept so existing rows render. Don't surface in pickers.
+  | "Formation"
   | "Contracts"
   | "Expert notes"
   | "Other";
 
-export const DOCUMENT_CATEGORIES: DocumentCategory[] = [
-  "Formation",
-  "Filings",
-  "Contracts",
-  "Expert notes",
-  "Other",
-];
+// Categories shown as upload targets / cards. Trimmed to the two that
+// actually matter for the current workflow — filings (proofs of filing)
+// and templates (blank forms and reusable assets).
+export const DOCUMENT_CATEGORIES: DocumentCategory[] = ["Filings", "Templates"];
 
 export interface DocumentOut {
   id: number;

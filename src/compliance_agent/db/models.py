@@ -324,8 +324,13 @@ class Activity(Base):
 # Documents — uploaded files attached to entities and/or obligations
 # ---------------------------------------------------------------------------
 class DocumentCategory(str, enum.Enum):
-    formation = "Formation"
+    # Active categories — surfaced in the UI as upload targets.
     filings = "Filings"
+    templates = "Templates"
+    # Legacy values kept so existing rows in the DB don't fail to load.
+    # They no longer appear as upload-target cards; users can still see
+    # any rows in those categories via the entity's full document list.
+    formation = "Formation"
     contracts = "Contracts"
     expert_notes = "Expert notes"
     other = "Other"
