@@ -989,16 +989,41 @@ function LicenseDetailDialog({
                         </>
                       );
                     })()}
-                    {rulesQuery.data.entity_other.length > 0 && (
-                      <RuleGroup
-                        title="Other obligations for this entity"
-                        subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
-                        items={rulesQuery.data.entity_other}
-                        licenseId={license.id}
-                        isAdmin={isAdmin}
-                        onScheduled={() => rulesQuery.refetch()}
-                      />
-                    )}
+                    {rulesQuery.data.entity_other.length > 0 && (() => {
+                      const other = rulesQuery.data.entity_other;
+                      const otherMandatory = other.filter(
+                        (r) => r.applicability === "Mandatory",
+                      );
+                      const otherOptional = other.filter(
+                        (r) => r.applicability !== "Mandatory",
+                      );
+                      return (
+                        <>
+                          {otherMandatory.length > 0 && (
+                            <RuleGroup
+                              title={`Other entity rules — Mandatory · ${otherMandatory.length}`}
+                              subtitle="Linked to this entity via the rule catalogue, didn't match this license's keywords directly. Treat as required."
+                              items={otherMandatory}
+                              tone="mandatory"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
+                            />
+                          )}
+                          {otherOptional.length > 0 && (
+                            <RuleGroup
+                              title={`Other entity rules — Optional · ${otherOptional.length}`}
+                              subtitle="Linked to this entity but only file if your business actually triggers the conditions (turnover thresholds, sector activity, etc.)."
+                              items={otherOptional}
+                              tone="conditional"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -1227,10 +1252,27 @@ function RuleGroup({
                       {r.authority} · {r.category}
                       {r.area ? ` · ${r.area}` : ""}
                     </div>
-                    <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
+                    <div className="flex flex-wrap gap-1 mt-1 items-center">
                       <Badge variant="neutral">{r.frequency}</Badge>
+                      <Badge
+                        variant={
+                          r.applicability === "Mandatory" ? "overdue" : "alert"
+                        }
+                        title={
+                          r.applicability === "Mandatory"
+                            ? "You MUST file this. Non-compliance = regulatory breach."
+                            : "File only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
+                        }
+                      >
+                        {r.applicability === "Mandatory" ? "Mandatory" : "Optional"}
+                      </Badge>
                       {r.match_reason && (
-                        <span className="text-aspora-700">{r.match_reason}</span>
+                        <span
+                          className="text-[11px] text-muted-foreground italic"
+                          title="How we matched this rule to the license — either license keywords (authority / type) or because the rule is registered against this entity."
+                        >
+                          {r.match_reason}
+                        </span>
                       )}
                     </div>
                   </td>
