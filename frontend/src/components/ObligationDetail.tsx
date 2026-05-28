@@ -371,71 +371,151 @@ function Header({
 // → done pipeline. Helps employees + finance know what's expected of them
 // without reading the status enum.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WorkflowBanner — 4-step visual stepper:
+//   1. Compliance prepares the filing
+//   2. Admin verifies + hands off
+//   3. Finance pays + logs UTR
+//   4. Admin final sign-off
+//
+// State derivation:
+//   - "completed"                     → all 4 done
+//   - status=pending_review with
+//     payment_reference filled        → 4 (admin final sign-off)
+//   - status=in_progress / not_started
+//     with finance assignee or
+//     department=finance              → 3 (finance pays)
+//   - status=pending_review (no
+//     payment_reference)              → 2 (admin verifies)
+//   - status=not_started / in_progress
+//     (compliance side)               → 1 (compliance prepares)
+//
+// We always show all 4 steps so the user sees the whole arc — past steps
+// are green, current is amber, upcoming is grey. Same UI for every
+// obligation regardless of whether the rule has a payment_rule tagged.
+// ---------------------------------------------------------------------------
 function WorkflowBanner({ obligation }: { obligation: Obligation }) {
-  const hasPaymentLeg = Boolean(obligation.rule_payment_rule);
   const hasPaymentLogged = Boolean(obligation.payment_reference?.trim());
-  const isFinanceAssignee =
+  const isFinanceLeg =
+    obligation.department === "finance" ||
     (obligation.assignee?.department ?? "") === "finance";
 
-  let tone: "info" | "amber" | "emerald" = "info";
-  let title = "";
-  let body = "";
-
-  if (obligation.status === "not_started") {
-    tone = "info";
-    title = "Step 1 — Compliance prepares the filing";
-    body = "Assignee works on the filing. When ready, hit Submit for review and an admin will verify it.";
-  } else if (obligation.status === "in_progress") {
-    if (isFinanceAssignee || (hasPaymentLeg && !hasPaymentLogged && obligation.department === "finance")) {
-      // Admin handed off to finance — Step 3
-      tone = "amber";
-      title = "Step 3 — Finance logs the payment";
-      body = "Filing was verified by the admin. Enter the payment amount + UTR below, then hit Submit for review for the final sign-off.";
-    } else {
-      tone = "info";
-      title = "Step 1 — Compliance prepares the filing";
-      body = "Assignee works on the filing. When ready, hit Submit for review and an admin will verify it.";
-    }
+  // Which step is "active right now"?
+  let activeStep: 1 | 2 | 3 | 4 | 5 = 1; // 5 = done
+  if (obligation.status === "completed") {
+    activeStep = 5;
   } else if (obligation.status === "pending_review") {
-    if (hasPaymentLogged) {
-      // Finance submitted payment — admin's final review
-      tone = "amber";
-      title = "Step 4 — Admin final sign-off";
-      body = "Finance has logged the payment. Admin: review the UTR + amount and click Approve & close to finish.";
-    } else {
-      tone = "amber";
-      title = "Step 2 — Admin verifies the filing";
-      body = hasPaymentLeg
-        ? "Compliance submitted. Admin will verify, then hand off to finance for payment."
-        : "Compliance submitted. Admin will verify and approve.";
-    }
-  } else if (obligation.status === "completed" && obligation.is_awaiting_payment) {
-    // Legacy state — pre-handoff completion. Shouldn't reach here in the new flow.
-    tone = "amber";
-    title = "Step 3 — Finance pays";
-    body = "Filing approved. Log the payment amount + UTR below to close it out.";
-  } else if (obligation.status === "completed") {
-    tone = "emerald";
-    title = "Done";
-    body = hasPaymentLogged
-      ? "Filed and paid. Sitting in the audit trail."
-      : hasPaymentLeg
-        ? "Marked completed without a payment record. Verify in Filing Record below."
-        : "Filed. No payment leg on this rule.";
+    activeStep = hasPaymentLogged ? 4 : 2;
+  } else if (isFinanceLeg) {
+    activeStep = 3;
   } else {
-    return null;
+    activeStep = 1;
   }
 
-  const toneClasses = {
-    info: "border-aspora-200 bg-aspora-50 text-aspora-900",
-    amber: "border-amber-200 bg-amber-50 text-amber-900",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
-  }[tone];
+  const steps: { n: number; title: string; team: string; action: string }[] = [
+    {
+      n: 1,
+      title: "Prepare filing",
+      team: "Compliance",
+      action: "Fill the filing reference + supporting docs, then Submit for review.",
+    },
+    {
+      n: 2,
+      title: "Verify filing",
+      team: "Admin",
+      action: "Review compliance's work. Approve & hand off to finance, or Send back.",
+    },
+    {
+      n: 3,
+      title: "Log payment",
+      team: "Finance",
+      action: "Enter payment amount + UTR / transaction id, then Submit for review.",
+    },
+    {
+      n: 4,
+      title: "Final sign-off",
+      team: "Admin",
+      action: "Verify the payment reference. Click Approve & close.",
+    },
+  ];
+
+  const active = steps.find((s) => s.n === activeStep);
 
   return (
-    <div className={cn("border-b px-5 py-2.5 text-sm", toneClasses)}>
-      <span className="font-medium">{title}</span>
-      <span className="text-foreground/70"> — {body}</span>
+    <div className="border-b border-border bg-secondary/20">
+      {/* Compact step rail */}
+      <div className="flex items-stretch px-5 pt-3 pb-2 gap-1">
+        {steps.map((s, i) => {
+          const isDone = activeStep > s.n;
+          const isActive = activeStep === s.n;
+          return (
+            <div key={s.n} className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "shrink-0 h-5 w-5 rounded-full grid place-items-center text-[10px] font-semibold",
+                    isDone && "bg-emerald-600 text-white",
+                    isActive && "bg-amber-500 text-white ring-2 ring-amber-200",
+                    !isDone && !isActive && "bg-secondary text-muted-foreground border border-border",
+                  )}
+                >
+                  {isDone ? "✓" : s.n}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={cn(
+                      "text-[11px] font-semibold uppercase tracking-wider truncate",
+                      isDone && "text-emerald-700",
+                      isActive && "text-amber-700",
+                      !isDone && !isActive && "text-muted-foreground",
+                    )}
+                  >
+                    {s.team}
+                  </div>
+                  <div
+                    className={cn(
+                      "text-xs truncate",
+                      isActive ? "font-medium text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {s.title}
+                  </div>
+                </div>
+              </div>
+              {i < steps.length - 1 && (
+                <div
+                  className={cn(
+                    "h-0.5 ml-2 mt-1",
+                    isDone ? "bg-emerald-300" : "bg-border",
+                  )}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Active step's action */}
+      <div className="px-5 py-2 border-t border-border/60 bg-amber-50/40">
+        {activeStep === 5 ? (
+          <div className="text-sm flex items-center gap-2">
+            <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-emerald-600 text-white text-[11px]">
+              ✓
+            </span>
+            <span className="font-medium text-emerald-800">Done</span>
+            <span className="text-muted-foreground">
+              · Filed{hasPaymentLogged ? " and paid" : ""}. Sitting in the audit trail.
+            </span>
+          </div>
+        ) : active ? (
+          <div className="text-sm">
+            <span className="font-medium text-amber-900">
+              Now: {active.team} — {active.title}.
+            </span>{" "}
+            <span className="text-foreground/70">{active.action}</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -541,34 +621,46 @@ function ActionBar({
             ) : null;
           }
 
-          // Pending admin review — admin gets Approve / Send back.
-          // Two flavours: filing review (compliance just finished prepping)
-          // vs payment review (finance just logged the UTR). We pick which
-          // by checking payment_reference: empty = filing phase, filled =
-          // payment phase. Filing phase + payment_rule → Hand off button.
+          // Pending admin review — split into:
+          //   A) "Payment review" (finance has logged a UTR; admin signs off → Done)
+          //   B) "Filing review" (compliance just finished; admin verifies, then
+          //       EITHER hands off to finance (if payment is needed) OR closes
+          //       it directly (no payment leg). Both buttons are always shown
+          //       so the admin picks per-obligation, not based on whether the
+          //       rule template happened to be tagged with payment_rule.)
           if (status === "pending_review") {
-            const hasPaymentLeg = Boolean(obligation.rule_payment_rule);
-            const isPaymentReview =
-              hasPaymentLeg && Boolean(obligation.payment_reference?.trim());
+            const isPaymentReview = Boolean(
+              obligation.payment_reference?.trim(),
+            );
             return isAdmin ? (
               <>
-                {hasPaymentLeg && !isPaymentReview ? (
-                  // Filing-review phase + payment leg exists → admin hands
-                  // off to finance instead of completing directly.
-                  <HandoffToFinanceButton
-                    obligationId={obligation.id}
-                    users={users}
-                    disabled={saving}
-                  />
-                ) : (
+                {isPaymentReview ? (
                   <Button
                     size="sm"
                     onClick={() => onPatch({ status: "completed" })}
                     disabled={saving}
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    {isPaymentReview ? "Approve & close" : "Approve & file"}
+                    Approve & close
                   </Button>
+                ) : (
+                  <>
+                    <HandoffToFinanceButton
+                      obligationId={obligation.id}
+                      users={users}
+                      disabled={saving}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onPatch({ status: "completed" })}
+                      disabled={saving}
+                      title="No payment needed — close it without sending to finance"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Approve without payment
+                    </Button>
+                  </>
                 )}
                 <Button
                   variant="outline"
@@ -587,9 +679,12 @@ function ActionBar({
             );
           }
 
-          // Not started / in progress
-          // - Assignee submits for review when they're done
-          // - Admins can ALSO directly approve & file in one click
+          // Not started / in progress — assignee submits for review when
+          // they're done. The "Mark as filed" admin shortcut is gone: it
+          // bypassed verification + the finance hand-off and made the new
+          // 4-step flow toothless. Admins go through review like everyone
+          // else; their "Approve without payment" is the fast-path for
+          // no-money filings.
           return (
             <>
               {(isAssignee || isAdmin) && (
@@ -601,17 +696,6 @@ function ActionBar({
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Submit for review
-                </Button>
-              )}
-              {isAdmin && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onPatch({ status: "completed" })}
-                  disabled={saving}
-                  title="Skip review and mark as filed directly"
-                >
-                  Mark as filed
                 </Button>
               )}
             </>
