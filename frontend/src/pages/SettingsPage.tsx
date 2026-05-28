@@ -480,6 +480,7 @@ function UsersTab() {
             <div className="h-10 bg-secondary/50 animate-pulse rounded" />
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-secondary/30 text-[11px] uppercase tracking-wider text-muted-foreground">
               <tr>
@@ -489,7 +490,7 @@ function UsersTab() {
                 <th className="px-5 py-2.5 text-left font-medium">Team</th>
                 <th className="px-5 py-2.5 text-left font-medium">Last active</th>
                 <th className="px-5 py-2.5 text-left font-medium">Status</th>
-                <th className="px-5 py-2.5 text-right font-medium">Actions</th>
+                <th className="px-5 py-2.5 pr-6 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -535,7 +536,7 @@ function UsersTab() {
                       <Badge variant="neutral">Inactive</Badge>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 pr-6 text-right whitespace-nowrap">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -550,6 +551,7 @@ function UsersTab() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </CardContent>
 

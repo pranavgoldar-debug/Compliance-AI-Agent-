@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Calendar,
+  CheckCircle2,
   Download,
   ExternalLink,
   FileBadge,
@@ -75,6 +76,9 @@ export function LicensesPage() {
   const [jurisdiction, setJurisdiction] = useState<string>("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [activeLicense, setActiveLicense] = useState<License | null>(null);
+  // Brief check-mark flash after a successful manual refresh so the user
+  // gets visual confirmation even when no new data arrived.
+  const [justRefreshed, setJustRefreshed] = useState(false);
 
   const licensesQuery = useQuery({
     queryKey: ["licenses", jurisdiction],
@@ -150,16 +154,22 @@ export function LicensesPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => licensesQuery.refetch()}
+          onClick={async () => {
+            await licensesQuery.refetch();
+            setJustRefreshed(true);
+            setTimeout(() => setJustRefreshed(false), 1500);
+          }}
           disabled={licensesQuery.isFetching}
           title="Fetch the latest licenses from the server"
         >
           {licensesQuery.isFetching ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : justRefreshed ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          Refresh
+          {justRefreshed ? "Up to date" : "Refresh"}
         </Button>
       </div>
 
@@ -924,7 +934,7 @@ function LicenseDetailDialog({
                         {rulesQuery.data.entity_other.length} other for this entity
                       </div>
                     )}
-                    {isAdmin && license.has_file && (
+                    {isAdmin && license.has_file ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -934,7 +944,14 @@ function LicenseDetailDialog({
                         <Sparkles className="h-3.5 w-3.5" />
                         Extract with AI
                       </Button>
-                    )}
+                    ) : isAdmin ? (
+                      <span
+                        className="text-[11px] text-muted-foreground italic"
+                        title="Re-open this license, upload the PDF, and Extract with AI will appear here."
+                      >
+                        Upload a file to enable AI extract
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 

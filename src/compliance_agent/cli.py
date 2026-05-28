@@ -696,5 +696,46 @@ def create_user(email: str, password: str, full_name: str, role: str) -> None:
     click.echo(f"Created user {email} ({role}).", err=True)
 
 
+@main.command(name="send-digest")
+@click.option(
+    "--kind",
+    type=click.Choice(["employee_daily", "admin_weekly"]),
+    default="employee_daily",
+    show_default=True,
+    help="Which digest to send. 'employee_daily' = morning brief to every active user. 'admin_weekly' = team recap to every admin.",
+)
+@click.option(
+    "--user",
+    "only_email",
+    default=None,
+    help="Send only to this email (otherwise everyone eligible).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Compose the messages but don't post / email. Prints output to stderr.",
+)
+def send_digest_cmd(kind: str, only_email: Optional[str], dry_run: bool) -> None:
+    """AI-composed Slack + email digest. Wire this to a daily / weekly cron.
+
+    Defaults:
+      employee_daily — runs every morning, brief per assignee
+      admin_weekly   — runs Mondays, team-wide recap to all admins
+
+    Idempotent: the same user can't get the same kind twice in one day.
+    """
+    from compliance_agent.ai.digest import send_admin_recap, send_employee_digests
+
+    if kind == "admin_weekly":
+        counts = send_admin_recap(dry_run=dry_run, only_email=only_email)
+    else:
+        counts = send_employee_digests(dry_run=dry_run, only_email=only_email)
+
+    click.echo(f"Digest ({kind}, dry_run={dry_run}):", err=True)
+    for k, v in counts.items():
+        click.echo(f"  {k}: {v}", err=True)
+
+
 if __name__ == "__main__":
     main()
