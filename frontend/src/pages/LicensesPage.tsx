@@ -970,6 +970,9 @@ function LicenseDetailDialog({
                               subtitle="You MUST file these — non-compliance is a regulatory breach."
                               items={mandatory}
                               tone="mandatory"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
                             />
                           )}
                           {optional.length > 0 && (
@@ -978,6 +981,9 @@ function LicenseDetailDialog({
                               subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
                               items={optional}
                               tone="conditional"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
                             />
                           )}
                         </>
@@ -988,6 +994,9 @@ function LicenseDetailDialog({
                         title="Other obligations for this entity"
                         subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
                         items={rulesQuery.data.entity_other}
+                        licenseId={license.id}
+                        isAdmin={isAdmin}
+                        onScheduled={() => rulesQuery.refetch()}
                       />
                     )}
                   </div>
@@ -1042,6 +1051,50 @@ function LicenseDetailDialog({
     </Dialog>
   );
 }
+
+function ScheduleRuleButton({
+  licenseId,
+  ruleId,
+  onScheduled,
+}: {
+  licenseId: number;
+  ruleId: number;
+  onScheduled: () => void;
+}) {
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post<{ obligation_id: number; due_date: string }>(
+        `/api/licenses/${licenseId}/schedule-rule`,
+        { rule_id: ruleId },
+      ),
+    onSuccess: (result) => {
+      onScheduled();
+      // Drop the user straight into the new obligation — they wanted to
+      // schedule it because they're about to assign / work on it.
+      window.location.href = `/obligations/${result.obligation_id}`;
+    },
+  });
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        mutation.mutate();
+      }}
+      disabled={mutation.isPending}
+      className="inline-flex items-center gap-1 rounded-md border border-aspora-300 bg-aspora-50 px-2 py-1 text-[11px] font-medium text-aspora-800 hover:bg-aspora-100 disabled:opacity-50"
+      title="Create a single obligation for this rule + entity. Default due date is based on the rule's frequency; you can change it after."
+    >
+      {mutation.isPending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <Plus className="h-3 w-3" />
+      )}
+      Schedule
+    </button>
+  );
+}
+
 
 function Stat({
   label,
@@ -1108,11 +1161,17 @@ function RuleGroup({
   subtitle,
   items,
   tone,
+  licenseId,
+  isAdmin,
+  onScheduled,
 }: {
   title: string;
   subtitle: string;
   items: LicenseRuleHit[];
   tone?: "mandatory" | "conditional";
+  licenseId: number;
+  isAdmin: boolean;
+  onScheduled: () => void;
 }) {
   const headingClass =
     tone === "mandatory"
@@ -1205,9 +1264,15 @@ function RuleGroup({
                     )}
                   </td>
                   <td className="px-3 py-2 align-top text-right">
-                    {r.next_obligation_id && (
+                    {r.next_obligation_id ? (
                       <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
-                    )}
+                    ) : isAdmin ? (
+                      <ScheduleRuleButton
+                        licenseId={licenseId}
+                        ruleId={r.id}
+                        onScheduled={onScheduled}
+                      />
+                    ) : null}
                   </td>
                 </tr>
               );

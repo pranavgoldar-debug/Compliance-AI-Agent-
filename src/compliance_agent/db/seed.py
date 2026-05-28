@@ -487,12 +487,22 @@ def _backfill_effort_bands(db: Session) -> int:
     return touched
 
 
-def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
+def run_seed(
+    *,
+    auto_assign: bool = True,
+    create_obligations: bool = True,
+) -> dict[str, int]:
     """Idempotent seed. Returns counts of created objects.
 
     auto_assign — when True (default), randomly distribute obligations
     across the demo employee users so the dashboard / queue look populated.
     Set False for a production-like seed where everything starts unassigned.
+
+    create_obligations — when False, seed only users / entities / rules and
+    skip the obligation-generation step entirely. Use this when you want a
+    clean state where the admin manually creates obligations off the back of
+    licenses they've uploaded. Implies auto_assign=False (no obligations
+    to assign).
     """
     from compliance_agent.db import init_db
 
@@ -501,7 +511,10 @@ def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
         users = _ensure_users(db)
         entities_map = _ensure_entities(db, users)
         rules = _ensure_rules(db, list(entities_map.values()))
-        ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
+        if create_obligations:
+            ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
+        else:
+            ob_count = 0
         backfilled = _backfill_effort_bands(db)
     return {
         "users": len(users),
@@ -510,6 +523,37 @@ def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
         "obligations_created": ob_count,
         "effort_bands_backfilled": backfilled,
     }
+
+
+def purge_obligations() -> dict[str, int]:
+    """Wipe every Obligation row plus dependent rows (comments, notifications,
+    activities). Keeps users / entities / rules / licenses intact so the
+    admin can rebuild obligations explicitly from the licenses they upload.
+
+    Returns counts of deleted rows per table.
+    """
+    from sqlalchemy import delete
+    from compliance_agent.db import (
+        Activity,
+        Comment,
+        Notification,
+        Obligation,
+    )
+
+    counts = {"obligations": 0, "comments": 0, "notifications": 0, "activities": 0}
+    with session_scope() as db:
+        # Order matters — child rows first.
+        counts["comments"] = db.execute(
+            delete(Comment).where(Comment.obligation_id.is_not(None))
+        ).rowcount or 0
+        counts["notifications"] = db.execute(
+            delete(Notification).where(Notification.obligation_id.is_not(None))
+        ).rowcount or 0
+        counts["activities"] = db.execute(
+            delete(Activity).where(Activity.target_type == "obligation")
+        ).rowcount or 0
+        counts["obligations"] = db.execute(delete(Obligation)).rowcount or 0
+    return counts
 
 
 if __name__ == "__main__":
