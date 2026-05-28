@@ -27,6 +27,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { fmtShortDate, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Entity, Obligation, ObligationStatus, UserBrief } from "@/types/api";
@@ -134,9 +135,12 @@ function TaskRow({ ob }: { ob: Obligation }) {
 
 function RowQuickActions({ ob }: { ob: Obligation }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
     queryFn: () => api.get<UserBrief[]>("/api/users"),
+    enabled: isAdmin,
   });
 
   const mutation = useMutation({
@@ -184,20 +188,24 @@ function RowQuickActions({ ob }: { ob: Obligation }) {
           >
             Mark in progress
           </DropdownMenuItem>
-          <DropdownMenuLabel className="mt-1 text-[10px] uppercase tracking-wider">
-            Reassign to
-          </DropdownMenuLabel>
-          {users.slice(0, 6).map((u) => (
-            <DropdownMenuItem
-              key={u.id}
-              onClick={() =>
-                mutation.mutate({ assignee_id: u.id } as unknown as Partial<Obligation>)
-              }
-              disabled={ob.assignee?.id === u.id}
-            >
-              {u.full_name || u.email}
-            </DropdownMenuItem>
-          ))}
+          {isAdmin && (
+            <>
+              <DropdownMenuLabel className="mt-1 text-[10px] uppercase tracking-wider">
+                Reassign to
+              </DropdownMenuLabel>
+              {users.slice(0, 6).map((u) => (
+                <DropdownMenuItem
+                  key={u.id}
+                  onClick={() =>
+                    mutation.mutate({ assignee_id: u.id } as unknown as Partial<Obligation>)
+                  }
+                  disabled={ob.assignee?.id === u.id}
+                >
+                  {u.full_name || u.email}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -259,7 +267,6 @@ export function TasksPage({
   defaultDepartment,
   defaultAwaitingPayment,
 }: TasksPageProps = {}) {
-  const [scope, setScope] = useState<Scope>("assigned");
   const [department, setDepartment] = useState<DepartmentFilter>(
     defaultDepartment ?? "all",
   );
@@ -272,7 +279,33 @@ export function TasksPage({
   const [awaitingPayment, setAwaitingPayment] = useState<boolean>(
     Boolean(initialAwaitingPayment),
   );
-  const [filters, setFilters] = useState<Filters>(emptyFilters());
+  // ?status=pending_review (etc) pre-seeds the status filter so dashboard
+  // tile links land users in the right slice.
+  const initialFilters: Filters = (() => {
+    const base = emptyFilters();
+    if (typeof window === "undefined") return base;
+    const raw = new URLSearchParams(window.location.search).get("status");
+    if (!raw) return base;
+    const valid: ObligationStatus[] = [
+      "not_started",
+      "in_progress",
+      "pending_review",
+      "completed",
+      "not_applicable",
+    ];
+    const seeded = raw
+      .split(",")
+      .filter((s): s is ObligationStatus =>
+        valid.includes(s as ObligationStatus),
+      );
+    return { ...base, statuses: seeded };
+  })();
+  // When the user arrives with a URL pre-filter, default scope to "all" so
+  // they see every match (not just their own assignments).
+  const [scope, setScope] = useState<Scope>(
+    initialFilters.statuses.length > 0 ? "all" : "assigned",
+  );
+  const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
   const { data, isLoading } = useQuery({

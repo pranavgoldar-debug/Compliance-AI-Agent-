@@ -34,14 +34,14 @@ import { api } from "@/lib/api";
 import { fmtRelative, userInitials } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
-import type { NotificationOut, Obligation, SystemInfo } from "@/types/api";
+import type { Entity, NotificationOut, Obligation, SystemInfo } from "@/types/api";
 
 
 // ---------------------------------------------------------------------------
 // Breadcrumbs
 // ---------------------------------------------------------------------------
 const ROUTE_LABELS: Record<string, string> = {
-  "": "Dashboard",
+  "": "Home",
   calendar: "Compliance Calendar",
   entities: "Entities",
   tasks: "Tasks",
@@ -56,7 +56,7 @@ function useBreadcrumbs() {
   const location = useLocation();
   const segments = location.pathname.split("/").filter(Boolean);
   if (segments.length === 0) {
-    return [{ label: "Dashboard", to: "/" }];
+    return [{ label: "Home", to: "/" }];
   }
   const crumbs: { label: string; to: string }[] = [];
   let path = "";
@@ -344,6 +344,13 @@ function GlobalSearch() {
     staleTime: 60_000,
   });
 
+  const { data: entities } = useQuery({
+    queryKey: ["search-entities"],
+    queryFn: () => api.get<Entity[]>("/api/entities"),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+
   const needle = q.trim().toLowerCase();
   const obMatches = needle
     ? (obligations ?? [])
@@ -353,7 +360,17 @@ function GlobalSearch() {
             o.entity_name.toLowerCase().includes(needle) ||
             (o.period_label?.toLowerCase().includes(needle) ?? false),
         )
-        .slice(0, 8)
+        .slice(0, 6)
+    : [];
+  const entityMatches = needle
+    ? (entities ?? [])
+        .filter(
+          (e) =>
+            e.name.toLowerCase().includes(needle) ||
+            (e.short_code?.toLowerCase().includes(needle) ?? false) ||
+            e.jurisdiction_code.toLowerCase().includes(needle),
+        )
+        .slice(0, 6)
     : [];
 
   return (
@@ -397,41 +414,82 @@ function GlobalSearch() {
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                   Start typing — searches obligations and entities you have access to.
                 </div>
-              ) : obMatches.length === 0 ? (
+              ) : obMatches.length === 0 && entityMatches.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                   No matches for "{q}". Try the audit log for older items.
                 </div>
               ) : (
-                <ul className="divide-y divide-border">
-                  {obMatches.map((o) => (
-                    <li key={o.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          openObligation(o.id);
-                          setOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-secondary/40 flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">
-                            {o.rule_form_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {o.entity_name} · {o.period_label || o.rule_frequency}
-                          </div>
-                        </div>
-                        <Badge variant={o.is_overdue ? "overdue" : o.is_in_alert_window ? "alert" : "neutral"}>
-                          {o.is_overdue
-                            ? "Overdue"
-                            : o.is_in_alert_window
-                              ? "Alert"
-                              : o.status.replace(/_/g, " ")}
-                        </Badge>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <div>
+                  {entityMatches.length > 0 && (
+                    <>
+                      <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Entities
+                      </div>
+                      <ul className="divide-y divide-border">
+                        {entityMatches.map((e) => (
+                          <li key={`e-${e.id}`}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigate(`/entities/${e.id}`);
+                                setOpen(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-secondary/40 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">
+                                  {e.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {e.jurisdiction_code}
+                                  {e.short_code ? ` · ${e.short_code}` : ""}
+                                </div>
+                              </div>
+                              <Badge variant="neutral">Entity</Badge>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {obMatches.length > 0 && (
+                    <>
+                      <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Obligations
+                      </div>
+                      <ul className="divide-y divide-border">
+                        {obMatches.map((o) => (
+                          <li key={`o-${o.id}`}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openObligation(o.id);
+                                setOpen(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-secondary/40 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">
+                                  {o.rule_form_name}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {o.entity_name} · {o.period_label || o.rule_frequency}
+                                </div>
+                              </div>
+                              <Badge variant={o.is_overdue ? "overdue" : o.is_in_alert_window ? "alert" : "neutral"}>
+                                {o.is_overdue
+                                  ? "Overdue"
+                                  : o.is_in_alert_window
+                                    ? "Alert"
+                                    : o.status.replace(/_/g, " ")}
+                              </Badge>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
               )}
             </div>
             <div className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground flex items-center justify-between">

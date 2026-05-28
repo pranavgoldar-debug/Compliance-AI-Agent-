@@ -20,7 +20,6 @@ import {
   AlertTriangle,
   Slack,
   Mail,
-  ListChecks,
   Tag,
   FileText,
 } from "lucide-react";
@@ -121,6 +120,7 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
   return (
     <div className={cn(variant === "drawer" ? "flex flex-col h-full" : "")}>
       <Header obligation={obligation} variant={variant} onClose={onClose} />
+      <WorkflowBanner obligation={obligation} />
       <ActionBar
         obligation={obligation}
         users={users}
@@ -128,7 +128,13 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
         saving={patchMutation.isPending}
         currentUser={currentUser}
       />
-      <Body obligation={obligation} users={users} onPatch={(p) => patchMutation.mutate(p)} variant={variant} />
+      <Body
+        obligation={obligation}
+        users={users}
+        onPatch={(p) => patchMutation.mutate(p)}
+        variant={variant}
+        currentUser={currentUser}
+      />
     </div>
   );
 }
@@ -178,7 +184,11 @@ function Header({
           </Link>
 
           <div className="mt-4 flex items-center gap-2 flex-wrap">
-            <StatusPill status={obligation.status} isOverdue={obligation.is_overdue} />
+            <StatusPill
+              status={obligation.status}
+              isOverdue={obligation.is_overdue}
+              isAwaitingPayment={obligation.is_awaiting_payment}
+            />
             <Badge variant="neutral">Due {fmtDate(obligation.due_date)}</Badge>
             {obligation.period_label && <Badge variant="neutral">{obligation.period_label}</Badge>}
             <EffortBandBadge band={obligation.effort_band} showLabel />
@@ -198,6 +208,60 @@ function Header({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Workflow banner — shows where this item is in the verification → payment
+// → done pipeline. Helps employees + finance know what's expected of them
+// without reading the status enum.
+// ---------------------------------------------------------------------------
+function WorkflowBanner({ obligation }: { obligation: Obligation }) {
+  const hasPayment =
+    obligation.is_awaiting_payment ||
+    (obligation.status === "completed" && obligation.payment_reference);
+
+  let tone: "info" | "amber" | "emerald" = "info";
+  let title = "";
+  let body = "";
+
+  if (obligation.status === "not_started" || obligation.status === "in_progress") {
+    tone = "info";
+    title = "Step 1 — Compliance prepares the filing";
+    body =
+      "Assignee works on the filing. When ready, hit Submit for review and an admin will verify it.";
+  } else if (obligation.status === "pending_review") {
+    tone = "amber";
+    title = "Step 2 — Admin verification";
+    body =
+      "Waiting on an admin to verify and approve. They'll either approve & file, or send it back.";
+  } else if (obligation.status === "completed" && obligation.is_awaiting_payment) {
+    tone = "amber";
+    title = "Step 3 — Finance pays";
+    body =
+      "Filing is verified. Finance picks this up via the Awaiting payment chip on Tasks — log the payment amount + UTR to close it out.";
+  } else if (obligation.status === "completed") {
+    tone = "emerald";
+    title = "Done";
+    body = hasPayment
+      ? "Filed and paid. Sitting in the audit trail."
+      : "Filed. No payment leg on this rule.";
+  } else {
+    return null;
+  }
+
+  const toneClasses = {
+    info: "border-aspora-200 bg-aspora-50 text-aspora-900",
+    amber: "border-amber-200 bg-amber-50 text-amber-900",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  }[tone];
+
+  return (
+    <div className={cn("border-b px-5 py-2.5 text-sm", toneClasses)}>
+      <span className="font-medium">{title}</span>
+      <span className="text-foreground/70"> — {body}</span>
     </div>
   );
 }
@@ -399,19 +463,22 @@ function Body({
   users,
   onPatch,
   variant,
+  currentUser,
 }: {
   obligation: Obligation;
   users: UserBrief[];
   onPatch: (p: Partial<Obligation>) => void;
   variant: "drawer" | "page";
+  currentUser: { id: number; role: string } | null;
 }) {
   const showSecondOpinion = obligation.status === "pending_review";
+  const isAdmin = currentUser?.role === "admin";
   if (variant === "drawer") {
     return (
       <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
         <MainContent obligation={obligation} />
         {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
-        <Sidebar obligation={obligation} users={users} onPatch={onPatch} />
+        <Sidebar obligation={obligation} users={users} onPatch={onPatch} isAdmin={isAdmin} />
         <FilingFields obligation={obligation} onPatch={onPatch} />
         <CommentsSection obligationId={obligation.id} />
         <ActivityFeed obligationId={obligation.id} />
@@ -428,7 +495,7 @@ function Body({
         <ActivityFeed obligationId={obligation.id} />
       </div>
       <div className="space-y-4">
-        <Sidebar obligation={obligation} users={users} onPatch={onPatch} />
+        <Sidebar obligation={obligation} users={users} onPatch={onPatch} isAdmin={isAdmin} />
       </div>
     </div>
   );
@@ -514,10 +581,12 @@ function Sidebar({
   obligation,
   users,
   onPatch,
+  isAdmin,
 }: {
   obligation: Obligation;
   users: UserBrief[];
   onPatch: (p: Partial<Obligation>) => void;
+  isAdmin: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -526,22 +595,28 @@ function Sidebar({
           <FieldRow label="Assignee">
             <div className="flex items-center gap-2">
               <AssigneeChip user={obligation.assignee} size="sm" />
-              <select
-                value={obligation.assignee?.id ?? ""}
-                onChange={(e) =>
-                  onPatch({
-                    assignee_id: e.target.value ? Number(e.target.value) : null,
-                  } as Partial<Obligation>)
-                }
-                className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-              >
-                <option value="">Unassigned</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name}
-                  </option>
-                ))}
-              </select>
+              {isAdmin ? (
+                <select
+                  value={obligation.assignee?.id ?? ""}
+                  onChange={(e) =>
+                    onPatch({
+                      assignee_id: e.target.value ? Number(e.target.value) : null,
+                    } as Partial<Obligation>)
+                  }
+                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">Unassigned</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs text-muted-foreground italic">
+                  Admins manage assignment.
+                </span>
+              )}
             </div>
           </FieldRow>
 
@@ -552,19 +627,6 @@ function Sidebar({
           />
 
           <AlertScheduleCard obligation={obligation} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-4 space-y-3">
-          <h3 className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <ListChecks className="h-3.5 w-3.5" />
-            ClickUp task
-          </h3>
-          <div className="rounded-lg bg-secondary/30 border border-dashed border-border px-3 py-3 text-xs text-muted-foreground text-center">
-            Not yet pushed to ClickUp.<br />
-            Integration ships in Phase 5.
-          </div>
         </CardContent>
       </Card>
 

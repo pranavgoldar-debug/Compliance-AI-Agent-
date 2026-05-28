@@ -46,7 +46,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Compliance OS",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+      { to: "/", label: "Home", icon: LayoutDashboard, exact: true },
       { to: "/licenses", label: "Licenses", icon: FileBadge },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       {

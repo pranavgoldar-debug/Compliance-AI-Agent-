@@ -11,6 +11,7 @@ import {
   FileBadge,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Trash2,
@@ -82,10 +83,13 @@ export function LicensesPage() {
       if (jurisdiction) params.set("jurisdiction_code", jurisdiction);
       return api.get<License[]>(`/api/licenses?${params.toString()}`);
     },
-    // Poll every 60s + on window focus so a license an admin uploaded
-    // in one tab shows up in an employee's tab without manual refresh.
-    refetchInterval: 60_000,
+    // Poll every 20s + on window focus + on every mount so a license an admin
+    // uploaded in one tab shows up in an employee's tab quickly. staleTime: 0
+    // forces a fresh fetch when the page is revisited.
+    refetchInterval: 20_000,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const filtered = useMemo(() => {
@@ -143,6 +147,20 @@ export function LicensesPage() {
             </option>
           ))}
         </select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => licensesQuery.refetch()}
+          disabled={licensesQuery.isFetching}
+          title="Fetch the latest licenses from the server"
+        >
+          {licensesQuery.isFetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Refresh
+        </Button>
       </div>
 
       {licensesQuery.isLoading ? (

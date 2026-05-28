@@ -34,6 +34,7 @@ from compliance_agent.db import (
     Comment,
     Obligation,
     ObligationStatus,
+    Role,
     User,
     get_session,
 )
@@ -114,6 +115,18 @@ def update_obligation(
         raise HTTPException(status_code=404, detail="Obligation not found.")
 
     data = payload.model_dump(exclude_unset=True)
+
+    # Reassigning work is an admin-only action. Employees can self-update
+    # status / filing fields on items they own, but they can't push work to
+    # other people.
+    if "assignee_id" in data and user.role != Role.admin:
+        new_assignee = data.get("assignee_id")
+        if new_assignee != obligation.assignee_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can change assignees.",
+            )
+
     completed_now = (
         data.get("status") == ObligationStatus.completed
         and obligation.status != ObligationStatus.completed
@@ -283,6 +296,12 @@ def bulk_update(
     if payload.status is None and payload.assignee_id is None and not payload.clear_assignee:
         raise HTTPException(
             status_code=400, detail="Provide at least one of status, assignee_id, clear_assignee."
+        )
+    # Admin-only: bulk reassignment moves work between people.
+    if (payload.assignee_id is not None or payload.clear_assignee) and user.role != Role.admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can change assignees.",
         )
 
     obligations = db.execute(

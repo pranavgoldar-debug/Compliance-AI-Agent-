@@ -204,21 +204,21 @@ function ProfileTab({ user }: { user: UserBrief }) {
           <ToggleRow
             icon={<Slack className="h-4 w-4" />}
             label="Slack alerts"
-            description="Channel-wide pings on overdue / assignment / mention. Requires workspace Slack to be connected."
+            description="Pings the workspace channel on assignment / submit-for-review / overdue. Needs an admin to paste a webhook URL under Settings → Integrations."
             checked={prefs?.notify_slack ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_slack: v })}
           />
           <ToggleRow
             icon={<Mail className="h-4 w-4" />}
             label="Email"
-            description="Password resets + (when configured) overdue + assignment emails to your inbox."
+            description="Password resets + reminder pings to your inbox. Needs SMTP_HOST / SMTP_USER / SMTP_PASSWORD env vars on the server."
             checked={prefs?.notify_email ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_email: v })}
           />
           <ToggleRow
             icon={<CalendarIcon className="h-4 w-4" />}
             label="Google Calendar events"
-            description="Adds an all-day event on each due date. Coming next round."
+            description="Not yet wired. Use the Calendar tab in-app to see every due date for now."
             checked={calOn}
             onChange={setCalOn}
           />
@@ -1249,11 +1249,6 @@ SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
 
 function ComingSoonGrid() {
   const items: { name: string; description: string; icon: React.ReactNode }[] = [
-    {
-      name: "ClickUp",
-      description: "Push obligations as tasks for execution by the ops team",
-      icon: <ListChecks className="h-5 w-5" />,
-    },
     {
       name: "Google Calendar",
       description: "Per-user OAuth — drops events on each due date",
