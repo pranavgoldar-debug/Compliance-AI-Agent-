@@ -267,6 +267,8 @@ export function TasksPage({
   defaultDepartment,
   defaultAwaitingPayment,
 }: TasksPageProps = {}) {
+  const { user: me } = useAuth();
+  const userId = me?.id ?? null;
   const [department, setDepartment] = useState<DepartmentFilter>(
     defaultDepartment ?? "all",
   );
@@ -331,6 +333,46 @@ export function TasksPage({
     queryFn: () => api.get<Entity[]>("/api/entities"),
   });
 
+  // Always-on counts for the 4 scope tabs (Assigned / Watching / Completed
+  // / All). Single fetch of scope=all + a derive — way cheaper than 4
+  // parallel queries and the numbers stay consistent. Falls back to the
+  // currently-loaded data while the all-fetch is in flight.
+  const allTasksQuery = useQuery({
+    queryKey: ["tasks", "all", "counts"],
+    queryFn: () => api.get<Obligation[]>("/api/tasks?scope=all"),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 15_000,
+  });
+  const scopeCounts: Record<Scope, number | null> = useMemo(() => {
+    const all = allTasksQuery.data;
+    if (!all) {
+      // Pre-fill the active scope from `data` so the user sees at least
+      // one number immediately on first load.
+      return {
+        assigned: scope === "assigned" ? data?.length ?? null : null,
+        watching: scope === "watching" ? data?.length ?? null : null,
+        completed: scope === "completed" ? data?.length ?? null : null,
+        all: scope === "all" ? data?.length ?? null : null,
+      };
+    }
+    const meId = userId;
+    return {
+      assigned: all.filter(
+        (o) =>
+          o.assignee?.id === meId &&
+          o.status !== "completed" &&
+          o.status !== "not_applicable",
+      ).length,
+      // Watching needs the comment-author list — we don't have that on
+      // the client. Best approximation: items where I'm the assignee OR
+      // I'm tagged in payment_reference (rare). Leave as the active fetch.
+      watching: scope === "watching" ? data?.length ?? null : null,
+      completed: all.filter((o) => o.status === "completed").length,
+      all: all.length,
+    };
+  }, [allTasksQuery.data, data, scope, userId]);
+
   // Apply filters + sort.
   const visible = useMemo(() => {
     let arr = data ?? [];
@@ -383,16 +425,19 @@ export function TasksPage({
 
       <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>
         <TabsList>
-          {SCOPES.map((s) => (
-            <TabsTrigger key={s.key} value={s.key}>
-              {s.label}
-              {data && scope === s.key && (
-                <Badge variant="neutral" className="ml-1">
-                  {data.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          ))}
+          {SCOPES.map((s) => {
+            const n = scopeCounts[s.key];
+            return (
+              <TabsTrigger key={s.key} value={s.key}>
+                {s.label}
+                {n != null && (
+                  <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">
+                    ({n})
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
       </Tabs>
 
