@@ -11,9 +11,11 @@ services:
     runtime: python
     plan: free
     region: oregon
-    # Active feature branch. Switch to `main` once PR #6 (and successors)
-    # are merged into main.
-    branch: claude/optimistic-bell-LPA6N
+    # Active feature branch. Render's Blueprint reads `branch` from the
+    # version of this file on whatever branch is currently selected in the
+    # dashboard, so a branch change here doesn't move Render on its own —
+    # update Settings → Branch in the Render dashboard to match.
+    branch: claude/jolly-bohr-O61wA
     buildCommand: pip install -e ".[postgres]" && cd frontend && npm ci && npm run build
     startCommand: uvicorn compliance_agent.web:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/fintech/countries
@@ -45,7 +47,7 @@ services:
     runtime: python
     plan: free
     region: oregon
-    branch: claude/optimistic-bell-LPA6N
+    branch: claude/jolly-bohr-O61wA
     schedule: "0 9 * * *"
     buildCommand: pip install -e ".[postgres]"
     startCommand: python -m compliance_agent.cli send-reminders
