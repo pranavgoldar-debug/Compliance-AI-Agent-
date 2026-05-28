@@ -235,14 +235,58 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
 }
 
 
-export function TasksPage() {
+// The Department enum on the backend still includes legal / risk / operations
+// for future use, but the only two we surface today are compliance + finance
+// since that's where the actual hand-off happens.
+type DepartmentFilter = "all" | "compliance" | "finance";
+
+const DEPT_LABEL: Record<DepartmentFilter, string> = {
+  all: "All departments",
+  compliance: "Compliance",
+  finance: "Finance",
+};
+
+interface TasksPageProps {
+  /** When set, the page opens pre-filtered to that department. The /compliance
+      route renders TasksPage with defaultDepartment="compliance". */
+  defaultDepartment?: DepartmentFilter;
+  /** When true, the page opens with the Awaiting payment filter on. The
+      /finance route renders TasksPage with defaultAwaitingPayment=true. */
+  defaultAwaitingPayment?: boolean;
+}
+
+export function TasksPage({
+  defaultDepartment,
+  defaultAwaitingPayment,
+}: TasksPageProps = {}) {
   const [scope, setScope] = useState<Scope>("assigned");
+  const [department, setDepartment] = useState<DepartmentFilter>(
+    defaultDepartment ?? "all",
+  );
+  // Initial Awaiting-payment state: prop wins, then ?awaiting_payment=1
+  // query param (for old links), else off.
+  const initialAwaitingPayment =
+    defaultAwaitingPayment ??
+    (typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("awaiting_payment") === "1");
+  const [awaitingPayment, setAwaitingPayment] = useState<boolean>(
+    Boolean(initialAwaitingPayment),
+  );
   const [filters, setFilters] = useState<Filters>(emptyFilters());
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["tasks", scope],
-    queryFn: () => api.get<Obligation[]>(`/api/tasks?scope=${scope}`),
+    queryKey: ["tasks", scope, department, awaitingPayment],
+    queryFn: () => {
+      const qs = new URLSearchParams({ scope });
+      if (department !== "all") qs.set("department", department);
+      if (awaitingPayment) qs.set("awaiting_payment", "1");
+      return api.get<Obligation[]>(`/api/tasks?${qs.toString()}`);
+    },
+    // Poll every 30s so admins see employee status changes (submit-for-
+    // review, in-progress) without manually refreshing.
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
@@ -284,11 +328,18 @@ export function TasksPage() {
     filters.statuses.length +
     (filters.dueWithinDays != null ? 1 : 0);
 
+  // Header copy. The page is a single combined "Compliance & Finance"
+  // queue — the Awaiting payment chip + department chips are how teams
+  // slice their own work without us splitting them into separate pages.
+  const pageTitle = "Compliance & Finance";
+  const pageDescription =
+    "Your queue. Compliance owns the filing; finance picks up the payment leg via the Awaiting payment filter.";
+
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Tasks"
-        description="Your work inbox — overdue first, alert window next, the rest after."
+        title={pageTitle}
+        description={pageDescription}
         actions={<ExportMenu kind="obligations" />}
       />
 
@@ -306,6 +357,44 @@ export function TasksPage() {
           ))}
         </TabsList>
       </Tabs>
+
+      {/* Quick filter chips */}
+      <div className="flex flex-wrap gap-1.5 items-center">
+        {/* The most useful chip in daily use: "Awaiting payment" surfaces
+            the compliance → finance hand-off list. Filing's done, payment
+            still owed. */}
+        <button
+          type="button"
+          onClick={() => setAwaitingPayment((v) => !v)}
+          className={
+            awaitingPayment
+              ? "rounded-full border border-amber-400 bg-amber-50 px-3 py-1 text-xs text-amber-800 font-medium"
+              : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
+          }
+          title="Filings that have been completed but the payment reference hasn't been logged yet"
+        >
+          Awaiting payment
+        </button>
+
+        {/* Department chips — secondary filter for teams that want to slice
+            by who owns the work. Mostly stays on "All departments" in
+            day-to-day use. */}
+        <div className="text-xs text-muted-foreground mx-1">·</div>
+        {(Object.keys(DEPT_LABEL) as DepartmentFilter[]).map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => setDepartment(d)}
+            className={
+              department === d
+                ? "rounded-full border border-aspora-500 bg-aspora-50 px-3 py-1 text-xs text-aspora-700 font-medium"
+                : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
+            }
+          >
+            {DEPT_LABEL[d]}
+          </button>
+        ))}
+      </div>
 
       {/* Filter + sort bar */}
       <div className="flex flex-wrap items-center gap-2">

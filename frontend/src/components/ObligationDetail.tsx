@@ -77,10 +77,15 @@ interface Props {
 
 export function ObligationDetail({ obligationId, variant, onClose }: Props) {
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
 
   const { data: obligation, isLoading } = useQuery({
     queryKey: ["obligation", obligationId],
     queryFn: () => api.get<Obligation>(`/api/obligations/${obligationId}`),
+    // Poll while open — so the admin reviewing an item sees the assignee's
+    // status flips (submit-for-review, comments) without manual refresh.
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: users = [] } = useQuery({
@@ -121,6 +126,7 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
         users={users}
         onPatch={(p) => patchMutation.mutate(p)}
         saving={patchMutation.isPending}
+        currentUser={currentUser}
       />
       <Body obligation={obligation} users={users} onPatch={(p) => patchMutation.mutate(p)} variant={variant} />
     </div>
@@ -205,15 +211,22 @@ function ActionBar({
   users,
   onPatch,
   saving,
+  currentUser,
 }: {
   obligation: Obligation;
   users: UserBrief[];
   onPatch: (p: Partial<Obligation>) => void;
   saving: boolean;
+  currentUser: { id: number; role: string } | null;
 }) {
+  const isAdmin = currentUser?.role === "admin";
+  const isAssignee = currentUser?.id === obligation.assignee?.id;
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
       <div className="flex items-center gap-2 px-5 py-2.5 flex-wrap">
+        {/* Anyone can pop the status menu, but for employees it's only
+            useful on items assigned to them. Admins can manipulate any item. */}
+        {(isAdmin || isAssignee) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" disabled={saving}>
@@ -235,7 +248,9 @@ function ActionBar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
 
+        {isAdmin && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" disabled={saving}>
@@ -266,15 +281,87 @@ function ActionBar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
 
-        <Button
-          size="sm"
-          onClick={() => onPatch({ status: "completed" })}
-          disabled={obligation.status === "completed" || saving}
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Mark as filed
-        </Button>
+        {/* Verification workflow buttons — shown based on status + role.
+            Employees submit for review; admins approve or send back. */}
+        {(() => {
+          const status = obligation.status;
+
+          // Done — show a quiet "reopen" affordance for admins only
+          if (status === "completed") {
+            return isAdmin ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPatch({ status: "in_progress" })}
+                disabled={saving}
+                title="Move back to in-progress"
+              >
+                Reopen
+              </Button>
+            ) : null;
+          }
+
+          // Pending admin review — admin gets Approve / Send back
+          if (status === "pending_review") {
+            return isAdmin ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => onPatch({ status: "completed" })}
+                  disabled={saving}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Approve & file
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPatch({ status: "in_progress" })}
+                  disabled={saving}
+                  title="Send back to the assignee"
+                >
+                  Send back
+                </Button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground italic">
+                Awaiting admin review.
+              </span>
+            );
+          }
+
+          // Not started / in progress
+          // - Assignee submits for review when they're done
+          // - Admins can ALSO directly approve & file in one click
+          return (
+            <>
+              {(isAssignee || isAdmin) && (
+                <Button
+                  size="sm"
+                  onClick={() => onPatch({ status: "pending_review" })}
+                  disabled={saving}
+                  title="Mark done — admin will review + approve"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Submit for review
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPatch({ status: "completed" })}
+                  disabled={saving}
+                  title="Skip review and mark as filed directly"
+                >
+                  Mark as filed
+                </Button>
+              )}
+            </>
+          );
+        })()}
 
         <div className="ml-auto flex items-center gap-2">
           {saving && (
@@ -644,6 +731,13 @@ function FilingFields({
             onCommit={(v) => onPatch({ payment_reference: v })}
           />
         </div>
+
+        {/* Explicit compliance → finance hand-off. Shown when the rule has a
+            payment leg AND payment isn't logged yet. Clicking pings the
+            finance team + admins so the hand-off is actively visible. */}
+        {obligation.is_awaiting_payment && (
+          <RequestPaymentRow obligation={obligation} />
+        )}
         <DebouncedTextField
           label="Internal notes"
           placeholder="Anything the next reviewer should know…"
@@ -809,7 +903,10 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
           </ul>
         )}
 
-        <div className="rounded-lg border border-border bg-background overflow-hidden">
+        {/* Note: NO overflow-hidden here — the MentionTextarea's autocomplete
+            dropdown renders absolutely positioned above the textarea and got
+            clipped when the parent hid overflow. */}
+        <div className="rounded-lg border border-border bg-background">
           <MentionTextarea
             rows={2}
             value={draft}
@@ -942,4 +1039,121 @@ function PayloadPills({ payload }: { payload: Record<string, unknown> }) {
     return <Badge variant="neutral">{payload.filename}</Badge>;
   }
   return null;
+}
+
+
+// ---------------------------------------------------------------------------
+// Compliance → finance hand-off button. Renders inside the Filing record card
+// when is_awaiting_payment is true. Compliance person fills in the expected
+// payment amount + optional notes; the backend posts an auto-comment and
+// fanouts notifications to all finance-dept users + admins.
+// ---------------------------------------------------------------------------
+function RequestPaymentRow({ obligation }: { obligation: Obligation }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(obligation.payment_amount ?? "");
+  const [notes, setNotes] = useState("");
+
+  const requestMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/obligations/${obligation.id}/request-payment`, {
+        amount: amount.trim(),
+        notes: notes.trim() || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["obligation", obligation.id] });
+      queryClient.invalidateQueries({
+        queryKey: ["obligation-comments", obligation.id],
+      });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      setOpen(false);
+      setNotes("");
+    },
+  });
+
+  if (!open) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 flex items-start gap-3">
+        <div className="text-amber-700 mt-0.5">
+          <UserCheck className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-amber-900">
+            Payment owed — hand off to finance
+          </div>
+          <div className="text-xs text-amber-800/80 mt-0.5">
+            Filing's done. Click below to request payment from the finance
+            team. They'll get a notification + an auto-comment is posted here.
+          </div>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setOpen(true)}
+          className="bg-amber-600 hover:bg-amber-700 text-white"
+        >
+          Request payment
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+      <div className="text-sm font-medium text-amber-900">
+        Request payment from finance
+      </div>
+      <div>
+        <label className="text-xs font-medium block mb-1">Amount</label>
+        <input
+          type="text"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="e.g. ₹ 1,25,000 or USD 4,800"
+          className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          autoFocus
+        />
+      </div>
+      <div>
+        <label className="text-xs font-medium block mb-1">
+          Notes for finance (optional)
+        </label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="Wire details, bank account, special instructions…"
+          className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+        />
+      </div>
+      {requestMutation.error && (
+        <div className="text-xs text-destructive">
+          {(requestMutation.error as Error).message}
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setOpen(false);
+            setNotes("");
+          }}
+          disabled={requestMutation.isPending}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => requestMutation.mutate()}
+          disabled={!amount.trim() || requestMutation.isPending}
+        >
+          {requestMutation.isPending && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          )}
+          Send to finance
+        </Button>
+      </div>
+    </div>
+  );
 }

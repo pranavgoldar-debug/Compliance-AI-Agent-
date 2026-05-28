@@ -3,13 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   CalendarDays,
-  Building2,
-  ListChecks,
-  Library,
-  BookOpen,
-  Table2,
-  FolderOpen,
+  CheckCircle2,
   FileBadge,
+  FolderOpen,
+  BookOpen,
+  Building2,
+  Library,
   ScrollText,
   Settings,
   Users,
@@ -28,6 +27,7 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
   badge?: "tasks";
+  exact?: boolean;
 }
 
 interface NavGroup {
@@ -36,25 +36,35 @@ interface NavGroup {
   adminOnly?: boolean;
 }
 
+// Flat IA — top-level entries for the daily-use screens. Admin stuff
+// stays in its own collapsible group out of the way.
+//
+// Compliance & Finance is a SINGLE entry (matches the user's reference
+// design): one Tasks page where compliance + finance teams both work,
+// with the Awaiting payment chip distinguishing the two phases.
 const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Compliance OS",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/calendar", label: "Compliance Calendar", icon: CalendarDays },
-      { to: "/catalog", label: "Filings Catalog", icon: Table2 },
-      { to: "/entities", label: "Entities", icon: Building2 },
-      { to: "/tasks", label: "Tasks", icon: ListChecks, badge: "tasks" },
-      { to: "/regulations", label: "Regulation Library", icon: BookOpen },
-      { to: "/documents", label: "Documents", icon: FolderOpen },
+      { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { to: "/licenses", label: "Licenses", icon: FileBadge },
+      { to: "/calendar", label: "Calendar", icon: CalendarDays },
+      {
+        to: "/tasks",
+        label: "Compliance & Finance",
+        icon: CheckCircle2,
+        badge: "tasks",
+      },
     ],
   },
   {
     heading: "Admin",
     adminOnly: true,
     items: [
+      { to: "/entities", label: "Entities", icon: Building2, adminOnly: true },
       { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
+      { to: "/regulations", label: "Regulations", icon: BookOpen, adminOnly: true },
+      { to: "/documents", label: "Documents", icon: FolderOpen, adminOnly: true },
       { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
       { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
     ],
@@ -70,7 +80,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
-  // Live count of obligations assigned to me, surfaced as a badge on Tasks.
+  // Live count of obligations assigned to me — drives the badge on
+  // Compliance & Finance.
   const { data: openCount } = useQuery({
     queryKey: ["sidebar-task-count"],
     queryFn: async () => {
@@ -120,7 +131,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Nav */}
       <nav className="flex-1 px-2 py-2 space-y-3">
         {NAV_GROUPS.map((group, gi) => {
-          // Hide the whole Admin group from non-admins.
           if (group.adminOnly && !isAdmin) return null;
           return (
             <div key={group.heading} className="space-y-1">
@@ -141,10 +151,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 const Icon = item.icon;
                 const isGated = item.adminOnly && !isAdmin;
                 if (isGated && collapsed) return null;
+                const badgeCount =
+                  item.badge === "tasks" ? openCount : undefined;
                 const showBadge =
-                  item.badge === "tasks" &&
-                  typeof openCount === "number" &&
-                  openCount > 0;
+                  typeof badgeCount === "number" && badgeCount > 0;
                 if (isGated) {
                   return (
                     <div
@@ -169,7 +179,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    end={item.to === "/"}
+                    // Top-level items match exact — they're leaf pages now,
+                    // no child routes to keep them highlighted for.
+                    end={item.exact ?? true}
                     className={({ isActive }) =>
                       cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -187,7 +199,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         <span className="truncate flex-1">{item.label}</span>
                         {showBadge && (
                           <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full bg-aspora-600 text-white text-[10px] font-semibold tabular-nums">
-                            {openCount}
+                            {badgeCount}
                           </span>
                         )}
                       </>

@@ -46,6 +46,8 @@ export function EntitiesPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["entities"],
     queryFn: () => api.get<Entity[]>("/api/entities"),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
   const { data: users = [] } = useQuery({
     queryKey: ["users"],

@@ -75,6 +75,19 @@ def is_overdue(due: date, status: ObligationStatus) -> bool:
     )
 
 
+def is_awaiting_payment(obligation: "Obligation") -> bool:
+    """True when a filing is done but its payment leg is still open.
+    Signals the compliance → finance hand-off point: status is completed,
+    the rule has a payment_rule (money changes hands), but no payment
+    reference has been logged yet."""
+    rule = obligation.rule
+    if rule is None or not (rule.payment_rule or "").strip():
+        return False
+    if obligation.status != ObligationStatus.completed:
+        return False
+    return not (obligation.payment_reference or "").strip()
+
+
 def is_in_alert_window(
     due: date,
     status: ObligationStatus,
@@ -116,12 +129,14 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         due_date=o.due_date,
         period_label=o.period_label,
         status=o.status,
+        department=(o.department.value if o.department else "compliance"),
         assignee=serialize_user(o.assignee),
         effort_band=band,
         effort_band_reason=o.effort_band_reason,
         filing_reference=o.filing_reference,
         payment_amount=o.payment_amount,
         payment_reference=o.payment_reference,
+        is_awaiting_payment=is_awaiting_payment(o),
         notes=o.notes,
         days_remaining=days_remaining(o.due_date),
         is_overdue=is_overdue(o.due_date, o.status),

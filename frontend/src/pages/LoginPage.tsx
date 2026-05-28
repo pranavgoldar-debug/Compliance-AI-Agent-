@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ export function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,12 +48,14 @@ export function LoginPage() {
     <div className="min-h-full grid lg:grid-cols-2">
       {/* Left: brand panel */}
       <div className="hidden lg:flex flex-col justify-between p-12 bg-aspora-700 text-white relative overflow-hidden">
-        <div className="relative z-10">
+        <div className="relative z-10 inline-flex items-center gap-2.5">
           <img
-            src="/static/brand/aspora-wordmark.png"
-            alt="Aspora"
-            className="h-9 brightness-0 invert"
+            src="/static/brand/aspora-mark.svg"
+            alt=""
+            aria-hidden="true"
+            className="h-9 w-9"
           />
+          <span className="text-2xl font-semibold tracking-tight">Aspora</span>
         </div>
         <div className="relative z-10 max-w-md space-y-4">
           <h1 className="text-3xl font-semibold leading-tight">
@@ -74,8 +78,9 @@ export function LoginPage() {
       {/* Right: form */}
       <div className="flex items-center justify-center p-6 sm:p-12 bg-background">
         <div className="w-full max-w-sm space-y-8">
-          <div className="lg:hidden flex justify-center">
-            <img src="/static/brand/aspora-wordmark.png" alt="Aspora" className="h-8" />
+          <div className="lg:hidden flex items-center justify-center gap-2">
+            <img src="/static/brand/aspora-mark.svg" alt="" aria-hidden="true" className="h-8 w-8" />
+            <span className="text-xl font-semibold tracking-tight">Aspora</span>
           </div>
           <div className="space-y-2">
             <h2 className="text-2xl font-semibold">Sign in</h2>
@@ -103,15 +108,31 @@ export function LoginPage() {
               <label htmlFor="password" className="text-sm font-medium">
                 Password
               </label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {error && (

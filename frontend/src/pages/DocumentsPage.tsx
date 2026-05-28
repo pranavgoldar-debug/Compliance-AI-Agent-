@@ -37,10 +37,22 @@ type Selection =
   | { kind: "entity-category"; entityId: number; category: DocumentCategory };
 
 
+// Buckets shown as top-of-page chips. Maps to the DocumentCategory enum
+// for the filter; "all" is the unfiltered passthrough.
+const CATEGORY_CHIPS: { key: "all" | DocumentCategory; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "Filings", label: "Filed documents" },
+  { key: "Formation", label: "Formation" },
+  { key: "Contracts", label: "Templates" },
+  { key: "Expert notes", label: "Reference" },
+  { key: "Other", label: "Other" },
+];
+
 export function DocumentsPage() {
   const [selection, setSelection] = useState<Selection>({ kind: "all" });
   const [layout, setLayout] = useState<"rows" | "grid">("rows");
   const [q, setQ] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | DocumentCategory>("all");
 
   // Eager-loaded entity list — fuels the left tree.
   const { data: entities = [] } = useQuery({
@@ -69,10 +81,17 @@ export function DocumentsPage() {
   // through to the same endpoint. For "all" we filter client-side because
   // we already have the list cached.
   const filteredAll = useMemo(() => {
-    if (selection.kind !== "all" || !q.trim()) return allDocs;
-    const n = q.trim().toLowerCase();
-    return allDocs.filter((d) => d.filename.toLowerCase().includes(n));
-  }, [allDocs, q, selection]);
+    if (selection.kind !== "all") return allDocs;
+    let arr = allDocs;
+    if (categoryFilter !== "all") {
+      arr = arr.filter((d) => d.category === categoryFilter);
+    }
+    if (q.trim()) {
+      const n = q.trim().toLowerCase();
+      arr = arr.filter((d) => d.filename.toLowerCase().includes(n));
+    }
+    return arr;
+  }, [allDocs, q, selection, categoryFilter]);
 
   return (
     <div className="space-y-5">
@@ -162,7 +181,25 @@ export function DocumentsPage() {
           {selection.kind === "all" ? (
             // Custom rendering for "all" — uses cached docs + client-side q filter
             // so it doesn't refetch on every keystroke.
-            <AllDocsView documents={filteredAll} layout={layout} />
+            <>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {CATEGORY_CHIPS.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => setCategoryFilter(c.key)}
+                    className={
+                      categoryFilter === c.key
+                        ? "rounded-full border border-aspora-500 bg-aspora-50 px-3 py-1 text-xs text-aspora-700 font-medium"
+                        : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
+                    }
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              <AllDocsView documents={filteredAll} layout={layout} />
+            </>
           ) : selection.kind === "entity" ? (
             <DocumentList
               key={`e-${selection.entityId}`}

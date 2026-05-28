@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
@@ -32,6 +32,9 @@ from compliance_agent.api.schemas import (
 from compliance_agent.auth import get_current_user
 from compliance_agent.db import (
     Comment,
+    Department,
+    Notification,
+    NotificationKind,
     Obligation,
     ObligationStatus,
     User,
@@ -257,6 +260,113 @@ def add_comment(
 # Bulk operations — assign / change status across many obligations at once.
 # ---------------------------------------------------------------------------
 from pydantic import BaseModel as _BaseModel
+
+
+# ---------------------------------------------------------------------------
+# Request payment — explicit compliance → finance hand-off
+# ---------------------------------------------------------------------------
+class RequestPaymentRequest(_BaseModel):
+    amount: str
+    notes: Optional[str] = None
+
+
+@router.post("/{obligation_id}/request-payment", response_model=ObligationOut)
+def request_payment(
+    obligation_id: int,
+    payload: RequestPaymentRequest,
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> ObligationOut:
+    """Compliance side hits this when they're done with the filing and the
+    finance team needs to process the payment.
+
+    Effects:
+      1. Saves the expected payment amount on the obligation.
+      2. Posts an auto-comment so the conversation has a clear "payment
+         requested" marker.
+      3. Sends a notification to every active user whose department is
+         'finance', plus all admins (so the hand-off is always visible
+         to someone who can act on it).
+    """
+    obligation = db.execute(
+        _base_query().where(Obligation.id == obligation_id)
+    ).scalars().unique().one_or_none()
+    if obligation is None:
+        raise HTTPException(status_code=404, detail="Obligation not found.")
+    amount = (payload.amount or "").strip()
+    if not amount:
+        raise HTTPException(status_code=400, detail="Payment amount is required.")
+
+    rule = obligation.rule
+    if rule is None or not (rule.payment_rule or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="This filing doesn't have a payment leg — no payment to request.",
+        )
+
+    # 1. Save the amount so the Awaiting payment surface picks it up + the
+    # finance team knows how much to wire.
+    obligation.payment_amount = amount
+
+    # 2. Auto-comment — the conversation thread on the obligation now has
+    # a clear "payment requested" entry.
+    form = rule.form_name if rule else "Compliance item"
+    entity_name = obligation.entity.name if obligation.entity else "—"
+    extra = f"\n\nNotes: {payload.notes}" if (payload.notes or "").strip() else ""
+    body = (
+        f"Payment requested from finance for **{form}** ({entity_name}).\n"
+        f"Amount: {amount}.\n"
+        f"Payment rule: {rule.payment_rule}.{extra}"
+    )
+    comment = Comment(obligation_id=obligation_id, author_id=user.id, body=body)
+    db.add(comment)
+    db.flush()
+
+    # 3. Fanout notifications. Finance dept + admins, minus the requester.
+    from compliance_agent.db import Role as _Role  # local import to avoid cycle
+
+    recipients = (
+        db.execute(
+            select(User).where(
+                User.is_active.is_(True),
+                or_(
+                    User.department == Department.finance,
+                    User.role == _Role.admin,
+                ),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    sent = 0
+    for r in recipients:
+        if r.id == user.id:
+            continue
+        db.add(
+            Notification(
+                user_id=r.id,
+                kind=NotificationKind.assigned,
+                title=f"Payment requested: {form} ({entity_name})",
+                body=f"{user.full_name or user.email} is asking finance to process {amount}.",
+                link_url=f"/obligations/{obligation_id}",
+                obligation_id=obligation_id,
+                actor_id=user.id,
+            )
+        )
+        sent += 1
+
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="obligation.payment_requested",
+        target_type="obligation",
+        target_id=obligation_id,
+        payload={"amount": amount, "fanout": sent},
+    )
+    db.commit()
+    db.refresh(obligation)
+    return serialize_obligation(obligation)
 
 
 class BulkUpdateRequest(_BaseModel):

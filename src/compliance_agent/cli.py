@@ -294,24 +294,47 @@ def _find_free_port(host: str, start: int, end: int):
 
 
 @main.command()
-def seed() -> None:
-    """Seed the SQLite database with Aspora entities, rules, and users.
+@click.option(
+    "--no-assign",
+    is_flag=True,
+    default=False,
+    help=(
+        "Don't randomly assign obligations to demo employees. Use this for a "
+        "production-like seed where every obligation starts unassigned and "
+        "admins explicitly assign work."
+    ),
+)
+def seed(no_assign: bool) -> None:
+    """Seed the database with Aspora entities, rules, users, and obligations.
 
-    Idempotent — safe to re-run. Creates compliance.db in the working directory
-    if it doesn't exist. Login accounts:
+    Idempotent — safe to re-run. Login accounts:
        pranav.goldar@aspora.com         admin123        (admin)
        pranavgoldar@gmail.com           aspora2026      (employee)
        pranavgoldar.iitb@gmail.com      iitb2026        (employee)
        pranavgoldar.moodi@gmail.com     moodi2026       (employee)
+
+    By default obligations are randomly distributed across the employee
+    accounts to give the demo some activity. Pass --no-assign to leave
+    everything unassigned (closer to what fresh production looks like).
     """
+    import os
+
     from compliance_agent.db.seed import run_seed
 
+    # Disable init_db's auto-seed so the CLI flag actually controls assignment.
+    # Without this, the auto-seed inside init_db would run first with defaults
+    # (auto_assign=True), and the explicit seed call below would be a no-op
+    # because everything's already in the DB.
+    os.environ["COMPLIANCE_AUTO_SEED"] = "0"
+
     click.echo("Seeding database…", err=True)
-    counts = run_seed()
+    counts = run_seed(auto_assign=not no_assign)
     click.echo(f"  users:                {counts['users']}", err=True)
     click.echo(f"  entities:             {counts['entities']}", err=True)
     click.echo(f"  rules:                {counts['rules']}", err=True)
     click.echo(f"  obligations created:  {counts['obligations_created']}", err=True)
+    if no_assign:
+        click.echo("  (everything unassigned — admins must assign work explicitly)", err=True)
     click.echo("Done.", err=True)
 
 
@@ -463,6 +486,52 @@ def send_reminders_cmd(dry_run: bool) -> None:
             err=True,
         )
     click.echo(f"{len(results)} reminder(s) processed.", err=True)
+
+
+@main.command(name="merge-finance-legs")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip the confirmation prompt.",
+)
+def merge_finance_legs(yes: bool) -> None:
+    """Delete the duplicate finance-leg obligations created by the old
+    dept-split approach (PR-B). One filing = one obligation again.
+
+    Idempotent: a no-op if there are no department=finance rows.
+    """
+    from sqlalchemy import select
+
+    from compliance_agent.db import (
+        Department,
+        Obligation,
+        init_db,
+        session_scope,
+    )
+
+    init_db()
+    with session_scope() as db:
+        rows = (
+            db.execute(select(Obligation).where(Obligation.department == Department.finance))
+            .scalars()
+            .all()
+        )
+        if not rows:
+            click.echo("No finance-leg obligations — nothing to merge.", err=True)
+            return
+        click.echo(
+            f"Will delete {len(rows)} finance-leg obligation(s). "
+            "Each had a matching compliance-leg row (same rule + entity + due_date) "
+            "which stays — that's where filing AND payment now live.",
+            err=True,
+        )
+        if not yes and not click.confirm("Proceed?", default=False):
+            click.echo("Aborted.", err=True)
+            return
+        for ob in rows:
+            db.delete(ob)
+        click.echo(f"Deleted {len(rows)} finance-leg rows.", err=True)
 
 
 @main.command(name="prune-entities")

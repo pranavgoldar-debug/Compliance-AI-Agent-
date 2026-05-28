@@ -36,6 +36,7 @@ class UserOut(_Base):
     full_name: str
     role: Role
     is_active: bool
+    department: Optional[str] = None
     created_at: datetime
     last_login_at: Optional[datetime] = None
 
@@ -44,6 +45,7 @@ class UserCreate(BaseModel):
     email: str
     full_name: str
     role: Role = Role.employee
+    department: Optional[str] = None
     password: str
 
 
@@ -51,6 +53,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     role: Optional[Role] = None
     is_active: Optional[bool] = None
+    department: Optional[str] = None
     password: Optional[str] = None  # admin password reset
 
 
@@ -209,12 +212,14 @@ class ObligationOut(_Base):
     due_date: date
     period_label: Optional[str] = None
     status: ObligationStatus
+    department: str = "compliance"
     assignee: Optional[UserBrief] = None
     effort_band: EffortBand = EffortBand.w4
     effort_band_reason: Optional[str] = None
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
+    is_awaiting_payment: bool = False
     notes: Optional[str] = None
     days_remaining: int = 0
     is_overdue: bool = False
@@ -240,6 +245,10 @@ class DashboardStats(_Base):
     due_this_week: int
     due_this_month: int
     unassigned: int
+    entity_count: int = 0
+    license_count: int = 0
+    awaiting_review: int = 0
+    awaiting_payment: int = 0
     open_tasks: list[ObligationOut]
     items_in_alert_window: list[ObligationOut]
     this_week: list[ObligationOut]

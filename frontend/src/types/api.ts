@@ -78,12 +78,14 @@ export interface Obligation {
   due_date: string;
   period_label: string | null;
   status: ObligationStatus;
+  department: "compliance" | "finance" | "legal" | "risk" | "operations";
   assignee: UserBrief | null;
   effort_band: EffortBand;
   effort_band_reason: string | null;
   filing_reference: string | null;
   payment_amount: string | null;
   payment_reference: string | null;
+  is_awaiting_payment: boolean;
   notes: string | null;
   days_remaining: number;
   is_overdue: boolean;
@@ -119,6 +121,10 @@ export interface DashboardStats {
   due_this_week: number;
   due_this_month: number;
   unassigned: number;
+  entity_count: number;
+  license_count: number;
+  awaiting_review: number;
+  awaiting_payment: number;
   open_tasks: Obligation[];
   items_in_alert_window: Obligation[];
   this_week: Obligation[];

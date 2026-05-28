@@ -4,8 +4,11 @@ import {
   ArrowUpRight,
   AlertCircle,
   BellRing,
+  Building2,
   CalendarClock,
   CalendarDays,
+  CheckCircle2,
+  FileBadge,
   UserPlus,
   Sun,
 } from "lucide-react";
@@ -27,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { fmtShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { DashboardStats, Obligation } from "@/types/api";
+import type { DashboardStats, Entity, Obligation } from "@/types/api";
 
 function greetingFor(hour: number): string {
   if (hour < 12) return "Good morning";
@@ -350,6 +353,10 @@ export function DashboardPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api.get<DashboardStats>("/api/dashboard"),
+    // Poll every minute — keeps the Awaiting review / Overdue tiles live
+    // so an admin sees a new "submit for review" without manual refresh.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const firstName = (user?.full_name || user?.email || "there").split(" ")[0];
@@ -374,13 +381,12 @@ export function DashboardPage() {
       {!isLoading && data && <AlertBanners overdue={data.overdue} inAlert={data.in_alert_window} />}
 
       {/* Metric strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {isLoading || !data ? (
           <>
-            <Skeleton className="h-[70px]" />
-            <Skeleton className="h-[70px]" />
-            <Skeleton className="h-[70px]" />
-            <Skeleton className="h-[70px]" />
+            {Array.from({ length: 7 }).map((_, i) => (
+              <Skeleton key={i} className="h-[70px]" />
+            ))}
           </>
         ) : (
           <>
@@ -389,28 +395,49 @@ export function DashboardPage() {
               label="Overdue"
               tone={data.overdue > 0 ? "overdue" : "muted"}
               icon={AlertCircle}
-              href="/calendar"
+              href="/workspace/calendar"
             />
             <MetricCard
               value={data.due_this_week}
               label="Due this week"
               tone={data.due_this_week > 0 ? "alert" : "muted"}
               icon={CalendarClock}
-              href="/tasks"
+              href="/workspace/tasks"
             />
             <MetricCard
-              value={data.due_this_month}
-              label="Due this month"
-              tone="neutral"
-              icon={CalendarDays}
-              href="/calendar"
+              value={data.awaiting_review}
+              label="Awaiting review"
+              tone={data.awaiting_review > 0 ? "alert" : "muted"}
+              icon={CheckCircle2}
+              href="/workspace/tasks"
+            />
+            <MetricCard
+              value={data.awaiting_payment}
+              label="Awaiting payment"
+              tone={data.awaiting_payment > 0 ? "alert" : "muted"}
+              icon={CheckCircle2}
+              href="/workspace/tasks?awaiting_payment=1"
             />
             <MetricCard
               value={data.unassigned}
               label="Unassigned"
               tone={data.unassigned > 0 ? "alert" : "muted"}
               icon={UserPlus}
-              href="/calendar"
+              href="/workspace/tasks"
+            />
+            <MetricCard
+              value={data.entity_count}
+              label="Entities"
+              tone="neutral"
+              icon={Building2}
+              href="/entities"
+            />
+            <MetricCard
+              value={data.license_count}
+              label="Licenses"
+              tone="neutral"
+              icon={FileBadge}
+              href="/workspace/licenses"
             />
           </>
         )}
@@ -512,3 +539,5 @@ export function DashboardPage() {
     </div>
   );
 }
+
+

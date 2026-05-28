@@ -24,6 +24,18 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 @router.get("", response_model=list[ObligationOut])
 def list_my_tasks(
     scope: str = Query("assigned", pattern=r"^(assigned|watching|completed|all)$"),
+    department: Optional[str] = Query(
+        None,
+        pattern=r"^(compliance|finance|legal|risk|operations)$",
+        description="If set, only return obligations owned by this department.",
+    ),
+    awaiting_payment: bool = Query(
+        False,
+        description=(
+            "If true, only return items in the compliance→finance hand-off "
+            "state: status=completed, rule has a payment_rule, no payment_reference yet."
+        ),
+    ),
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> list[ObligationOut]:
@@ -49,6 +61,13 @@ def list_my_tasks(
         stmt = base.where(Obligation.id.in_(commented_ids))
     else:  # all
         stmt = base
+
+    if department:
+        stmt = stmt.where(Obligation.department == department)
+
     stmt = stmt.order_by(Obligation.due_date.asc())
     items = db.execute(stmt).scalars().unique().all()
-    return [serialize_obligation(o) for o in items]
+    out = [serialize_obligation(o) for o in items]
+    if awaiting_payment:
+        out = [o for o in out if o.is_awaiting_payment]
+    return out

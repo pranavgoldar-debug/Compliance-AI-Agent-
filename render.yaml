@@ -1,17 +1,58 @@
+databases:
+  # Free Postgres add-on. Render expires free databases after 90 days —
+  # upgrade or take a manual backup before then via the Render dashboard.
+  - name: compliance-agent-db
+    plan: free
+    region: oregon
+
 services:
   - type: web
     name: compliance-ai-agent
     runtime: python
     plan: free
     region: oregon
-    branch: claude/brave-shannon-JdSDE
-    buildCommand: pip install -e . && cd frontend && npm ci && npm run build
+    # Active feature branch. Switch to `main` once PR #6 (and successors)
+    # are merged into main.
+    branch: claude/optimistic-bell-LPA6N
+    buildCommand: pip install -e ".[postgres]" && cd frontend && npm ci && npm run build
     startCommand: uvicorn compliance_agent.web:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/fintech/countries
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      # COMPLIANCE_AGENT_LIVE / ANTHROPIC_API_KEY are intentionally NOT
-      # declared here. Mock mode is the default. To enable live Claude
-      # extraction in production, add both as environment variables in
-      # the Render dashboard (so they stay out of git).
+      # Wires the FastAPI app to the Postgres add-on declared above.
+      - key: COMPLIANCE_DB_URL
+        fromDatabase:
+          name: compliance-agent-db
+          property: connectionString
+      # APP_SECRET is auto-generated on first deploy and kept stable across
+      # redeploys — needed to sign session JWTs.
+      - key: APP_SECRET
+        generateValue: true
+      # COMPLIANCE_AGENT_LIVE / ANTHROPIC_API_KEY / SMTP_* / Slack are
+      # intentionally NOT declared here. Add them as environment variables
+      # in the Render dashboard so they stay out of git.
+      #
+      # After the FIRST successful deploy, open Render → service → Shell
+      # and run `python -m compliance_agent.cli seed` once to populate
+      # entities + rules. The seed is idempotent.
+
+  # Daily reminder cron — runs `compliance-agent send-reminders` at 09:00
+  # UTC. Sends email + Slack pings for obligations entering their offset
+  # window. Idempotent across runs.
+  - type: cron
+    name: compliance-agent-reminders
+    runtime: python
+    plan: free
+    region: oregon
+    branch: claude/optimistic-bell-LPA6N
+    schedule: "0 9 * * *"
+    buildCommand: pip install -e ".[postgres]"
+    startCommand: python -m compliance_agent.cli send-reminders
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: COMPLIANCE_DB_URL
+        fromDatabase:
+          name: compliance-agent-db
+          property: connectionString

@@ -161,13 +161,52 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 60_000,
   });
 
+  // Optimistically flip read=true in the cache the moment the user clicks
+  // a notification, so the unread dot disappears immediately. The server
+  // refetch backfills any drift. Rolls back if the API call fails.
   const markReadMutation = useMutation({
     mutationFn: (ids: number[]) => api.post("/api/notifications/read", { ids }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      const previous = queryClient.getQueryData<NotificationOut[]>(["notifications"]);
+      if (previous) {
+        queryClient.setQueryData<NotificationOut[]>(
+          ["notifications"],
+          previous.map((n) =>
+            n.id != null && ids.includes(n.id) ? { ...n, read: true } : n,
+          ),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(["notifications"], ctx.previous);
+      }
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
   });
   const markAllReadMutation = useMutation({
     mutationFn: () => api.post("/api/notifications/read-all"),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      const previous = queryClient.getQueryData<NotificationOut[]>(["notifications"]);
+      if (previous) {
+        queryClient.setQueryData<NotificationOut[]>(
+          ["notifications"],
+          previous.map((n) => (n.id != null ? { ...n, read: true } : n)),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _v, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(["notifications"], ctx.previous);
+      }
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
   });
 
   const visible = notifications.filter((n) => {
@@ -176,7 +215,10 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
     return n.kind === "overdue" || n.kind === "alert_window" || n.kind === "status_change";
   });
 
-  const unread = notifications.filter((n) => !n.read);
+  // Derived notifications (no DB id) self-clear when the underlying obligation
+  // is resolved, so they can never be "marked read" via API. Treat them as
+  // always-read for the unread dot + count so we don't lie to the user.
+  const unread = notifications.filter((n) => !n.read && n.id != null);
 
   return (
     <div className="w-[400px] -m-2">
@@ -225,10 +267,11 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
                     type="button"
                     className={cn(
                       "w-full text-left px-4 py-3 hover:bg-secondary/50 flex items-start gap-3",
-                      !n.read && "bg-aspora-50/30",
+                      !n.read && n.id != null && "bg-aspora-50/30",
                     )}
                     onClick={() => {
-                      if (n.id) markReadMutation.mutate([n.id]);
+                      if (n.id != null && !n.read)
+                        markReadMutation.mutate([n.id]);
                       if (n.obligation_id) {
                         openObligation(n.obligation_id);
                         onClose();
@@ -252,7 +295,7 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
                         {fmtRelative(n.created_at)}
                       </div>
                     </div>
-                    {!n.read && (
+                    {!n.read && n.id != null && (
                       <span className="mt-2 h-2 w-2 rounded-full bg-aspora-600 shrink-0" />
                     )}
                   </button>

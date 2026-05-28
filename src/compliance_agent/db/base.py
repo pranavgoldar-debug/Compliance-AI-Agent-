@@ -65,13 +65,108 @@ def init_db() -> None:
     """Create all tables. Idempotent. Safe to call on every boot.
 
     Also runs a tiny ad-hoc migration for SQLite to add columns we add
-    after the initial release — full Alembic comes later.
+    after the initial release — full Alembic comes later. On Render's
+    free tier where the Shell isn't available, also auto-seeds the
+    database the very first time it boots empty.
     """
     # Import here so the model module is registered before create_all.
     from compliance_agent.db import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
+    _migrate_obligation_unique()
+    _auto_seed_if_empty()
+
+
+def _migrate_obligation_unique() -> None:
+    """Replace the pre-PR-B `(rule_id, entity_id, due_date)` unique constraint
+    with the post-PR-B `(rule_id, entity_id, due_date, department)` version.
+
+    `Base.metadata.create_all` only creates tables that don't exist — it
+    won't ALTER existing constraints. SQLite and Postgres both handle
+    `DROP INDEX IF EXISTS` + `CREATE UNIQUE INDEX` cleanly, so we do the
+    swap here. Idempotent: skips both steps when the new index is already
+    present.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "obligations" not in inspector.get_table_names():
+        return
+
+    cols = {c["name"] for c in inspector.get_columns("obligations")}
+    if "department" not in cols:
+        # Column hasn't been added yet (will run again on next boot).
+        return
+
+    indexes = inspector.get_indexes("obligations")
+    have_old = any(i["name"] == "uq_obligation_rule_entity_date" for i in indexes)
+    have_new = any(i["name"] == "uq_obligation_rule_entity_date_dept" for i in indexes)
+    if have_new and not have_old:
+        return
+
+    with engine.begin() as conn:
+        if have_old:
+            conn.execute(text("DROP INDEX IF EXISTS uq_obligation_rule_entity_date"))
+        if not have_new:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "uq_obligation_rule_entity_date_dept "
+                    "ON obligations (rule_id, entity_id, due_date, department)"
+                )
+            )
+
+
+# Re-entry guard. run_seed() itself calls init_db(), so without this the
+# auto-seed would call run_seed which would call init_db which would call
+# auto-seed which would call run_seed ... → RecursionError.
+_AUTO_SEED_RUNNING = False
+
+
+def _auto_seed_if_empty() -> None:
+    """First-boot bootstrap. If the users table is empty, run the demo seed
+    so logins work without anyone having to SSH in. After that, this is a
+    one-query no-op on every restart.
+
+    Can be disabled by setting COMPLIANCE_AUTO_SEED=0 in the environment —
+    useful if you're about to import production data and don't want demo
+    rows in the way.
+    """
+    global _AUTO_SEED_RUNNING
+    if _AUTO_SEED_RUNNING:
+        return
+    if os.environ.get("COMPLIANCE_AUTO_SEED") == "0":
+        return
+    from sqlalchemy import func, select
+
+    from compliance_agent.db.models import User
+
+    with SessionLocal() as session:
+        try:
+            n = session.execute(select(func.count(User.id))).scalar_one()
+        except Exception:  # noqa: BLE001
+            # Tables not ready yet (rare race) — skip; next boot will catch it.
+            return
+        if n and n > 0:
+            return
+
+    _AUTO_SEED_RUNNING = True
+    try:
+        # Lazy import — the seed-only modules aren't needed in steady state.
+        from compliance_agent.db.seed import run_seed
+
+        run_seed()
+    except Exception as e:  # noqa: BLE001
+        # Never block boot on seed failure. Surface in logs so an admin
+        # can re-run seed manually if they need to.
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Auto-seed skipped due to error: %s", e
+        )
+    finally:
+        _AUTO_SEED_RUNNING = False
 
 
 def _add_missing_columns() -> None:
@@ -95,10 +190,12 @@ def _add_missing_columns() -> None:
     bool_default_true = "BOOLEAN NOT NULL DEFAULT 1" if not is_pg else "BOOLEAN NOT NULL DEFAULT TRUE"
 
     table_additions: dict[str, list[tuple[str, str]]] = {
-        # Phase 5: effort bands on obligations
+        # Phase 5: effort bands on obligations.
+        # PR-B (department split): every obligation owns by a department.
         "obligations": [
             ("effort_band", f"{varchar(8)} NOT NULL DEFAULT 'w4'"),
             ("effort_band_reason", text_type),
+            ("department", f"{varchar(16)} NOT NULL DEFAULT 'compliance'"),
         ],
         # Phase 7: source provenance on rules
         "rules": [
@@ -106,11 +203,13 @@ def _add_missing_columns() -> None:
             ("source_text", text_type),
             ("source_changed_at", datetime_type),
         ],
-        # Phase 9: per-user notification prefs + Slack member id
+        # Phase 9: per-user notification prefs + Slack member id +
+        # functional department (drives finance / compliance routing).
         "users": [
             ("notify_email", bool_default_true),
             ("notify_slack", bool_default_true),
             ("slack_user_id", varchar(64)),
+            ("department", varchar(16)),
         ],
         # Tracker sync: short codes for each entity (VINC, RTUK, ...)
         "entities": [

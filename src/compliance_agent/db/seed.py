@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from compliance_agent.auth.passwords import hash_password
 from compliance_agent.db import (
     Applicability,
+    Department,
     EffortBand,
     Entity,
     Obligation,
@@ -326,79 +327,125 @@ def _offsets_for_frequency(frequency: str) -> list[int]:
     return [20, 60]  # safe default
 
 
-def _ensure_obligations(db: Session, rules: list[Rule], users: dict[str, User]) -> int:
+def _needs_payment_split(rule: Rule) -> bool:
+    """Deprecated. The original dept-split approach created two obligations
+    per filing (one compliance, one finance) which confused users — the
+    real workflow is one filing, compliance hands off to finance via
+    @-mention / comment. Always returns False; payment tracking now lives
+    on the existing single obligation's payment_amount / payment_reference
+    fields. Kept as a function so callers don't break.
+    """
+    _ = rule  # silence linter
+    return False
+
+
+def _ensure_obligations(
+    db: Session,
+    rules: list[Rule],
+    users: dict[str, User],
+    *,
+    auto_assign: bool = True,
+) -> int:
     """Generate obligations for every (rule, entity) combination using the
-    frequency to spread due dates across a sensible window."""
+    frequency to spread due dates across a sensible window.
+
+    auto_assign — when True, distribute obligations randomly across employee
+    users. When False, every obligation is created unassigned (admin will
+    assign explicitly later).
+    """
     base = date.today()
     rng = random.Random(20260525)
-    assignable = [u for u in users.values() if u.role == Role.employee]
+    assignable: list[User] = (
+        [u for u in users.values() if u.role == Role.employee] if auto_assign else []
+    )
 
     created_count = 0
     for rule in rules:
         offsets = _offsets_for_frequency(rule.frequency)
+        split = _needs_payment_split(rule)
+        # Each period spawns N legs: always 1 filing; +1 payment if split.
+        legs: list[Department] = [Department.compliance]
+        if split:
+            legs.append(Department.finance)
+
         for entity in rule.entities:
             for offset in offsets:
                 due = base + timedelta(days=offset)
-                existing = db.execute(
-                    select(Obligation).where(
-                        Obligation.rule_id == rule.id,
-                        Obligation.entity_id == entity.id,
-                        Obligation.due_date == due,
+
+                for dept in legs:
+                    existing = db.execute(
+                        select(Obligation).where(
+                            Obligation.rule_id == rule.id,
+                            Obligation.entity_id == entity.id,
+                            Obligation.due_date == due,
+                            Obligation.department == dept,
+                        )
+                    ).scalar_one_or_none()
+                    if existing:
+                        continue
+
+                    # Status spread — same logic as before, derived per leg
+                    # so the two legs of one filing aren't always in lockstep.
+                    if offset < -30:
+                        status = ObligationStatus.completed
+                    elif offset < -5:
+                        status = rng.choice(
+                            [
+                                ObligationStatus.completed,
+                                ObligationStatus.in_progress,
+                                ObligationStatus.not_started,
+                            ]
+                        )
+                    elif offset < 0:
+                        status = rng.choice(
+                            [ObligationStatus.not_started, ObligationStatus.in_progress]
+                        )
+                    elif offset < 14:
+                        status = rng.choice(
+                            [
+                                ObligationStatus.not_started,
+                                ObligationStatus.in_progress,
+                                ObligationStatus.pending_review,
+                            ]
+                        )
+                    else:
+                        status = ObligationStatus.not_started
+
+                    assignee = rng.choice(assignable) if assignable else None
+
+                    completed_at = None
+                    completed_by_id = None
+                    if status == ObligationStatus.completed:
+                        from datetime import datetime, timezone
+
+                        completed_at = datetime(
+                            due.year, due.month, due.day, tzinfo=timezone.utc
+                        )
+                        completed_by_id = assignee.id if assignee else None
+
+                    notes = None
+                    if dept == Department.finance:
+                        notes = (
+                            f"Pay leg of {rule.form_name}. "
+                            f"Verify amount + payment reference; mark complete "
+                            f"once funds clear."
+                        )
+
+                    obligation = Obligation(
+                        rule_id=rule.id,
+                        entity_id=entity.id,
+                        due_date=due,
+                        period_label=_period_label_for_frequency(rule.frequency, due),
+                        status=status,
+                        department=dept,
+                        effort_band=_effort_band_for_frequency(rule.frequency),
+                        assignee_id=assignee.id if assignee else None,
+                        completed_at=completed_at,
+                        completed_by_id=completed_by_id,
+                        notes=notes,
                     )
-                ).scalar_one_or_none()
-                if existing:
-                    continue
-
-                # Status — historic ones mostly completed; near-due partially in
-                # progress; the rest not started.
-                if offset < -30:
-                    status = ObligationStatus.completed
-                elif offset < -5:
-                    status = rng.choice(
-                        [
-                            ObligationStatus.completed,
-                            ObligationStatus.in_progress,
-                            ObligationStatus.not_started,
-                        ]
-                    )
-                elif offset < 0:
-                    status = rng.choice(
-                        [ObligationStatus.not_started, ObligationStatus.in_progress]
-                    )
-                elif offset < 14:
-                    status = rng.choice(
-                        [
-                            ObligationStatus.not_started,
-                            ObligationStatus.in_progress,
-                            ObligationStatus.pending_review,
-                        ]
-                    )
-                else:
-                    status = ObligationStatus.not_started
-
-                assignee = rng.choice(assignable) if assignable else None
-
-                completed_at = None
-                completed_by_id = None
-                if status == ObligationStatus.completed:
-                    from datetime import datetime, timezone
-
-                    completed_at = datetime(due.year, due.month, due.day, tzinfo=timezone.utc)
-                    completed_by_id = assignee.id if assignee else None
-
-                obligation = Obligation(
-                    rule_id=rule.id,
-                    entity_id=entity.id,
-                    due_date=due,
-                    period_label=_period_label_for_frequency(rule.frequency, due),
-                    status=status,
-                    effort_band=_effort_band_for_frequency(rule.frequency),
-                    assignee_id=assignee.id if assignee else None,
-                    completed_at=completed_at,
-                    completed_by_id=completed_by_id,
-                )
-                db.add(obligation)
-                created_count += 1
+                    db.add(obligation)
+                    created_count += 1
         # Periodic flush keeps the SQLite transaction reasonably sized.
         if created_count and created_count % 200 == 0:
             db.flush()
@@ -440,8 +487,13 @@ def _backfill_effort_bands(db: Session) -> int:
     return touched
 
 
-def run_seed() -> dict[str, int]:
-    """Idempotent seed. Returns counts of created objects."""
+def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
+    """Idempotent seed. Returns counts of created objects.
+
+    auto_assign — when True (default), randomly distribute obligations
+    across the demo employee users so the dashboard / queue look populated.
+    Set False for a production-like seed where everything starts unassigned.
+    """
     from compliance_agent.db import init_db
 
     init_db()
@@ -449,7 +501,7 @@ def run_seed() -> dict[str, int]:
         users = _ensure_users(db)
         entities_map = _ensure_entities(db, users)
         rules = _ensure_rules(db, list(entities_map.values()))
-        ob_count = _ensure_obligations(db, rules, users)
+        ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
         backfilled = _backfill_effort_bands(db)
     return {
         "users": len(users),
