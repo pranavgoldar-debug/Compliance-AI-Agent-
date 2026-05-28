@@ -304,7 +304,17 @@ def _find_free_port(host: str, start: int, end: int):
         "admins explicitly assign work."
     ),
 )
-def seed(no_assign: bool) -> None:
+@click.option(
+    "--no-obligations",
+    is_flag=True,
+    default=False,
+    help=(
+        "Seed only users / entities / rules — skip obligation generation "
+        "entirely. Use this for a clean production-like state where admins "
+        "create obligations off the back of licenses they upload."
+    ),
+)
+def seed(no_assign: bool, no_obligations: bool) -> None:
     """Seed the database with Aspora entities, rules, users, and obligations.
 
     Idempotent — safe to re-run. Login accounts:
@@ -315,27 +325,73 @@ def seed(no_assign: bool) -> None:
 
     By default obligations are randomly distributed across the employee
     accounts to give the demo some activity. Pass --no-assign to leave
-    everything unassigned (closer to what fresh production looks like).
+    everything unassigned (closer to what fresh production looks like), or
+    --no-obligations to skip them entirely.
     """
     import os
 
     from compliance_agent.db.seed import run_seed
 
-    # Disable init_db's auto-seed so the CLI flag actually controls assignment.
+    # Disable init_db's auto-seed so the CLI flags actually control behaviour.
     # Without this, the auto-seed inside init_db would run first with defaults
     # (auto_assign=True), and the explicit seed call below would be a no-op
     # because everything's already in the DB.
     os.environ["COMPLIANCE_AUTO_SEED"] = "0"
 
     click.echo("Seeding database…", err=True)
-    counts = run_seed(auto_assign=not no_assign)
+    counts = run_seed(
+        auto_assign=not no_assign,
+        create_obligations=not no_obligations,
+    )
     click.echo(f"  users:                {counts['users']}", err=True)
     click.echo(f"  entities:             {counts['entities']}", err=True)
     click.echo(f"  rules:                {counts['rules']}", err=True)
     click.echo(f"  obligations created:  {counts['obligations_created']}", err=True)
-    if no_assign:
+    if no_obligations:
+        click.echo(
+            "  (no obligations — admins will create them per-license)", err=True
+        )
+    elif no_assign:
         click.echo("  (everything unassigned — admins must assign work explicitly)", err=True)
     click.echo("Done.", err=True)
+
+
+@main.command(name="purge-obligations")
+@click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt.")
+def purge_obligations_cmd(yes: bool) -> None:
+    """Delete every obligation in the database (and dependent comments,
+    notifications, activity rows). Keeps users / entities / rules /
+    licenses intact.
+
+    Use this when the auto-seed has dumped hundreds of obligations into your
+    DB and you want to start from a clean slate — admin creates obligations
+    explicitly off the back of each uploaded license.
+    """
+    import os
+
+    if not yes:
+        click.confirm(
+            "This deletes EVERY obligation and the comments / notifications "
+            "attached to them. Rules, entities, licenses, and users stay. "
+            "Continue?",
+            abort=True,
+        )
+    # Prevent the next init_db on serve from quietly re-seeding obligations.
+    os.environ["COMPLIANCE_AUTO_SEED"] = "0"
+
+    from compliance_agent.db.seed import purge_obligations
+
+    counts = purge_obligations()
+    click.echo("Purged.", err=True)
+    click.echo(f"  obligations:    {counts['obligations']}", err=True)
+    click.echo(f"  comments:       {counts['comments']}", err=True)
+    click.echo(f"  notifications:  {counts['notifications']}", err=True)
+    click.echo(f"  activities:     {counts['activities']}", err=True)
+    click.echo(
+        "\nNext: log in as admin, open a license, and use 'Extract with AI' "
+        "to create rules + obligations only for what actually applies.",
+        err=True,
+    )
 
 
 @main.command(name="setup-email")

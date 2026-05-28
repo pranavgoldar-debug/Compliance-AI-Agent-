@@ -132,6 +132,13 @@ def _auto_seed_if_empty() -> None:
     Can be disabled by setting COMPLIANCE_AUTO_SEED=0 in the environment —
     useful if you're about to import production data and don't want demo
     rows in the way.
+
+    Env vars:
+      COMPLIANCE_AUTO_SEED=0          → skip entirely
+      COMPLIANCE_AUTO_SEED_NO_ASSIGN=1 → seed users/entities/rules but leave
+                                        obligations unassigned
+      COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS=1 → seed users/entities/rules only;
+                                        skip obligation generation
     """
     global _AUTO_SEED_RUNNING
     if _AUTO_SEED_RUNNING:
@@ -156,7 +163,12 @@ def _auto_seed_if_empty() -> None:
         # Lazy import — the seed-only modules aren't needed in steady state.
         from compliance_agent.db.seed import run_seed
 
-        run_seed()
+        no_obligations = os.environ.get("COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS") == "1"
+        no_assign = os.environ.get("COMPLIANCE_AUTO_SEED_NO_ASSIGN") == "1"
+        run_seed(
+            auto_assign=not (no_assign or no_obligations),
+            create_obligations=not no_obligations,
+        )
     except Exception as e:  # noqa: BLE001
         # Never block boot on seed failure. Surface in logs so an admin
         # can re-run seed manually if they need to.

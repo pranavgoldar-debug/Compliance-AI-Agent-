@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
     ALERT_WINDOW_DAYS,
+    is_awaiting_payment,
     log_activity,
     serialize_calendar_obligation,
     serialize_obligation,
@@ -19,6 +20,7 @@ from compliance_agent.api._helpers import (
 from compliance_agent.api.notifications import (
     emit_assignment,
     emit_mentions,
+    emit_payment_request,
     emit_status_change,
     extract_mentions,
 )
@@ -34,6 +36,7 @@ from compliance_agent.db import (
     Comment,
     Obligation,
     ObligationStatus,
+    Role,
     User,
     get_session,
 )
@@ -114,6 +117,18 @@ def update_obligation(
         raise HTTPException(status_code=404, detail="Obligation not found.")
 
     data = payload.model_dump(exclude_unset=True)
+
+    # Reassigning work is an admin-only action. Employees can self-update
+    # status / filing fields on items they own, but they can't push work to
+    # other people.
+    if "assignee_id" in data and user.role != Role.admin:
+        new_assignee = data.get("assignee_id")
+        if new_assignee != obligation.assignee_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can change assignees.",
+            )
+
     completed_now = (
         data.get("status") == ObligationStatus.completed
         and obligation.status != ObligationStatus.completed
@@ -156,6 +171,11 @@ def update_obligation(
             new_status=obligation.status,
             actor=user,
         )
+        # Filing was just approved AND the rule has a payment leg → fire an
+        # explicit "payment requested" notification so finance doesn't have
+        # to come check the Awaiting payment chip.
+        if completed_now and is_awaiting_payment(obligation):
+            emit_payment_request(db, obligation=obligation, actor=user)
 
     log_activity(
         db,
@@ -284,6 +304,12 @@ def bulk_update(
         raise HTTPException(
             status_code=400, detail="Provide at least one of status, assignee_id, clear_assignee."
         )
+    # Admin-only: bulk reassignment moves work between people.
+    if (payload.assignee_id is not None or payload.clear_assignee) and user.role != Role.admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can change assignees.",
+        )
 
     obligations = db.execute(
         _base_query().where(Obligation.id.in_(payload.obligation_ids))
@@ -333,6 +359,12 @@ def bulk_update(
             emit_status_change(
                 db, assignee=assignee, obligation=o, new_status=o.status, actor=user
             )
+            if (
+                o.status == ObligationStatus.completed
+                and prev_status != ObligationStatus.completed
+                and is_awaiting_payment(o)
+            ):
+                emit_payment_request(db, obligation=o, actor=user)
 
         log_activity(
             db,

@@ -200,7 +200,8 @@ export type NotificationKind =
   | "assigned"
   | "overdue"
   | "alert_window"
-  | "status_change";
+  | "status_change"
+  | "payment_request";
 
 export interface NotificationOut {
   id: number | null;

@@ -11,6 +11,7 @@ import {
   FileBadge,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Trash2,
@@ -82,10 +83,13 @@ export function LicensesPage() {
       if (jurisdiction) params.set("jurisdiction_code", jurisdiction);
       return api.get<License[]>(`/api/licenses?${params.toString()}`);
     },
-    // Poll every 60s + on window focus so a license an admin uploaded
-    // in one tab shows up in an employee's tab without manual refresh.
-    refetchInterval: 60_000,
+    // Poll every 20s + on window focus + on every mount so a license an admin
+    // uploaded in one tab shows up in an employee's tab quickly. staleTime: 0
+    // forces a fresh fetch when the page is revisited.
+    refetchInterval: 20_000,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const filtered = useMemo(() => {
@@ -143,6 +147,20 @@ export function LicensesPage() {
             </option>
           ))}
         </select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => licensesQuery.refetch()}
+          disabled={licensesQuery.isFetching}
+          title="Fetch the latest licenses from the server"
+        >
+          {licensesQuery.isFetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Refresh
+        </Button>
       </div>
 
       {licensesQuery.isLoading ? (
@@ -952,6 +970,9 @@ function LicenseDetailDialog({
                               subtitle="You MUST file these — non-compliance is a regulatory breach."
                               items={mandatory}
                               tone="mandatory"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
                             />
                           )}
                           {optional.length > 0 && (
@@ -960,6 +981,9 @@ function LicenseDetailDialog({
                               subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
                               items={optional}
                               tone="conditional"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
                             />
                           )}
                         </>
@@ -970,6 +994,9 @@ function LicenseDetailDialog({
                         title="Other obligations for this entity"
                         subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
                         items={rulesQuery.data.entity_other}
+                        licenseId={license.id}
+                        isAdmin={isAdmin}
+                        onScheduled={() => rulesQuery.refetch()}
                       />
                     )}
                   </div>
@@ -1024,6 +1051,50 @@ function LicenseDetailDialog({
     </Dialog>
   );
 }
+
+function ScheduleRuleButton({
+  licenseId,
+  ruleId,
+  onScheduled,
+}: {
+  licenseId: number;
+  ruleId: number;
+  onScheduled: () => void;
+}) {
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post<{ obligation_id: number; due_date: string }>(
+        `/api/licenses/${licenseId}/schedule-rule`,
+        { rule_id: ruleId },
+      ),
+    onSuccess: (result) => {
+      onScheduled();
+      // Drop the user straight into the new obligation — they wanted to
+      // schedule it because they're about to assign / work on it.
+      window.location.href = `/obligations/${result.obligation_id}`;
+    },
+  });
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        mutation.mutate();
+      }}
+      disabled={mutation.isPending}
+      className="inline-flex items-center gap-1 rounded-md border border-aspora-300 bg-aspora-50 px-2 py-1 text-[11px] font-medium text-aspora-800 hover:bg-aspora-100 disabled:opacity-50"
+      title="Create a single obligation for this rule + entity. Default due date is based on the rule's frequency; you can change it after."
+    >
+      {mutation.isPending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <Plus className="h-3 w-3" />
+      )}
+      Schedule
+    </button>
+  );
+}
+
 
 function Stat({
   label,
@@ -1090,11 +1161,17 @@ function RuleGroup({
   subtitle,
   items,
   tone,
+  licenseId,
+  isAdmin,
+  onScheduled,
 }: {
   title: string;
   subtitle: string;
   items: LicenseRuleHit[];
   tone?: "mandatory" | "conditional";
+  licenseId: number;
+  isAdmin: boolean;
+  onScheduled: () => void;
 }) {
   const headingClass =
     tone === "mandatory"
@@ -1187,9 +1264,15 @@ function RuleGroup({
                     )}
                   </td>
                   <td className="px-3 py-2 align-top text-right">
-                    {r.next_obligation_id && (
+                    {r.next_obligation_id ? (
                       <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
-                    )}
+                    ) : isAdmin ? (
+                      <ScheduleRuleButton
+                        licenseId={licenseId}
+                        ruleId={r.id}
+                        onScheduled={onScheduled}
+                      />
+                    ) : null}
                   </td>
                 </tr>
               );

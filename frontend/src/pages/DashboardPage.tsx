@@ -54,12 +54,14 @@ function formatToday(): string {
 function MetricCard({
   value,
   label,
+  sublabel,
   tone,
   icon: Icon,
   href,
 }: {
   value: number;
   label: string;
+  sublabel?: string;
   tone: "overdue" | "alert" | "neutral" | "muted";
   icon: React.ComponentType<{ className?: string }>;
   href: string;
@@ -90,6 +92,11 @@ function MetricCard({
         <span className="text-xs uppercase tracking-wide text-muted-foreground truncate">
           {label}
         </span>
+        {sublabel && (
+          <span className="text-[10px] text-muted-foreground/80 truncate">
+            {sublabel}
+          </span>
+        )}
       </div>
       <ArrowUpRight className="ml-auto h-4 w-4 text-muted-foreground/50 shrink-0" />
     </Link>
@@ -395,35 +402,37 @@ export function DashboardPage() {
               label="Overdue"
               tone={data.overdue > 0 ? "overdue" : "muted"}
               icon={AlertCircle}
-              href="/workspace/calendar"
+              href="/calendar"
             />
             <MetricCard
               value={data.due_this_week}
               label="Due this week"
               tone={data.due_this_week > 0 ? "alert" : "muted"}
               icon={CalendarClock}
-              href="/workspace/tasks"
+              href="/tasks"
             />
             <MetricCard
               value={data.awaiting_review}
-              label="Awaiting review"
+              label="Pending verification"
+              sublabel="Compliance — admin approval"
               tone={data.awaiting_review > 0 ? "alert" : "muted"}
               icon={CheckCircle2}
-              href="/workspace/tasks"
+              href="/tasks?status=pending_review"
             />
             <MetricCard
               value={data.awaiting_payment}
               label="Awaiting payment"
+              sublabel="Finance — pay & log UTR"
               tone={data.awaiting_payment > 0 ? "alert" : "muted"}
               icon={CheckCircle2}
-              href="/workspace/tasks?awaiting_payment=1"
+              href="/tasks?awaiting_payment=1"
             />
             <MetricCard
               value={data.unassigned}
               label="Unassigned"
               tone={data.unassigned > 0 ? "alert" : "muted"}
               icon={UserPlus}
-              href="/workspace/tasks"
+              href="/tasks"
             />
             <MetricCard
               value={data.entity_count}
@@ -437,7 +446,7 @@ export function DashboardPage() {
               label="Licenses"
               tone="neutral"
               icon={FileBadge}
-              href="/workspace/licenses"
+              href="/licenses"
             />
           </>
         )}

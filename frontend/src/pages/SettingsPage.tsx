@@ -62,7 +62,9 @@ const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.Compo
   { key: "jurisdictions", label: "Jurisdictions", adminOnly: true, icon: Globe },
   { key: "alerts", label: "Alert policies", adminOnly: true, icon: ListChecks },
   { key: "retention", label: "Audit retention", adminOnly: true, icon: Trash2 },
-  { key: "api", label: "API & Webhooks", adminOnly: true, icon: Key },
+  // "api" / "API & Webhooks" tab is hidden until the endpoints exist.
+  // Re-add the entry above with the same shape once tokens + webhook
+  // delivery ship for real.
 ];
 
 
@@ -122,7 +124,6 @@ export function SettingsPage() {
           {tab === "jurisdictions" && isAdmin && <JurisdictionsTab />}
           {tab === "alerts" && isAdmin && <AlertPoliciesTab />}
           {tab === "retention" && isAdmin && <RetentionTab />}
-          {tab === "api" && isAdmin && <ApiTab />}
         </div>
       </div>
     </div>
@@ -204,21 +205,21 @@ function ProfileTab({ user }: { user: UserBrief }) {
           <ToggleRow
             icon={<Slack className="h-4 w-4" />}
             label="Slack alerts"
-            description="Channel-wide pings on overdue / assignment / mention. Requires workspace Slack to be connected."
+            description="Pings the workspace channel on assignment / submit-for-review / overdue. Needs an admin to paste a webhook URL under Settings → Integrations."
             checked={prefs?.notify_slack ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_slack: v })}
           />
           <ToggleRow
             icon={<Mail className="h-4 w-4" />}
             label="Email"
-            description="Password resets + (when configured) overdue + assignment emails to your inbox."
+            description="Password resets + reminder pings to your inbox. Needs SMTP_HOST / SMTP_USER / SMTP_PASSWORD env vars on the server."
             checked={prefs?.notify_email ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_email: v })}
           />
           <ToggleRow
             icon={<CalendarIcon className="h-4 w-4" />}
             label="Google Calendar events"
-            description="Adds an all-day event on each due date. Coming next round."
+            description="Not yet wired. Use the Calendar tab in-app to see every due date for now."
             checked={calOn}
             onChange={setCalOn}
           />
@@ -1109,10 +1110,33 @@ function SlackCard() {
                 placeholder="https://hooks.slack.com/services/T…/B…/…"
                 className="font-mono text-xs mt-1"
               />
+              {webhook.trim() &&
+                !webhook.trim().startsWith("https://hooks.slack.com/") && (
+                  <div className="mt-1 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                    That doesn't look like a webhook URL. A webhook starts with{" "}
+                    <span className="font-mono">https://hooks.slack.com/services/</span> —
+                    a channel link like <span className="font-mono">slack.com/archives/…</span>{" "}
+                    won't work.
+                  </div>
+                )}
               <p className="text-[11px] text-muted-foreground mt-1">
-                Slack → your workspace → Apps → search "Incoming Webhooks" → Add Configuration →
-                pick a channel → copy the Webhook URL.
+                Get one at{" "}
+                <a
+                  href="https://api.slack.com/apps"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-aspora-700 hover:underline"
+                >
+                  api.slack.com/apps
+                </a>{" "}
+                → Create New App → From scratch → enable "Incoming Webhooks"
+                → "Add New Webhook to Workspace" → pick a channel → copy URL.
               </p>
+              {saveMutation.error && (
+                <div className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                  {(saveMutation.error as Error).message}
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">
@@ -1138,7 +1162,12 @@ function SlackCard() {
                     enabled: true,
                   })
                 }
-                disabled={saveMutation.isPending || (!webhook.trim() && !cfg.configured)}
+                disabled={
+                  saveMutation.isPending ||
+                  (!webhook.trim() && !cfg.configured) ||
+                  (webhook.trim().length > 0 &&
+                    !webhook.trim().startsWith("https://hooks.slack.com/"))
+                }
               >
                 {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Save
@@ -1249,11 +1278,6 @@ SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
 
 function ComingSoonGrid() {
   const items: { name: string; description: string; icon: React.ReactNode }[] = [
-    {
-      name: "ClickUp",
-      description: "Push obligations as tasks for execution by the ops team",
-      icon: <ListChecks className="h-5 w-5" />,
-    },
     {
       name: "Google Calendar",
       description: "Per-user OAuth — drops events on each due date",
@@ -1420,47 +1444,6 @@ function AlertPoliciesTab() {
 // ---------------------------------------------------------------------------
 // API & Webhooks
 // ---------------------------------------------------------------------------
-function ApiTab() {
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-semibold">API keys</h3>
-          <p className="text-xs text-muted-foreground">
-            Personal access tokens for programmatic access to the Compliance OS API.
-          </p>
-          <div className="flex items-center gap-2">
-            <Input value="aspora_pk_•••••••••••••••••••" readOnly className="font-mono text-xs" />
-            <Button variant="outline" disabled>
-              Reveal
-            </Button>
-            <Button variant="outline" disabled>
-              Rotate
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-semibold">Webhook endpoints</h3>
-          <EmptyState
-            icon={<Key className="h-5 w-5" />}
-            title="No webhooks configured"
-            description="Add a webhook URL to get a POST whenever an obligation changes status or a rule is promoted."
-            action={
-              <Button variant="outline" disabled>
-                <Plus className="h-3.5 w-3.5" />
-                Add webhook
-              </Button>
-            }
-          />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-
 // ---------------------------------------------------------------------------
 // Audit retention
 // ---------------------------------------------------------------------------

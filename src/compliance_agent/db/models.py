@@ -330,6 +330,7 @@ class NotificationKind(str, enum.Enum):
     overdue = "overdue"           # derived on read; not persisted
     alert_window = "alert_window" # derived on read; not persisted
     status_change = "status_change"
+    payment_request = "payment_request"  # filing approved → finance asked to pay
 
 
 class Document(Base):
