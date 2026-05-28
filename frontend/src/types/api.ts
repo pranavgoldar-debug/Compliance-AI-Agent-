@@ -228,6 +228,7 @@ export interface NotificationOut {
 export interface SystemInfo {
   mode: "live" | "mock";
   ai_available: boolean;
+  backend: "anthropic" | "openrouter" | "mock";
   version: string;
 }
 

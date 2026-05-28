@@ -446,7 +446,7 @@ def ai_extract_obligations(
 
     Falls back gracefully when:
       - no file is attached → returns available=False with a hint
-      - AI is off (no ANTHROPIC_API_KEY / COMPLIANCE_AGENT_LIVE) → available=False
+      - AI is off (no ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) / COMPLIANCE_AGENT_LIVE) → available=False
       - the PDF has no extractable text → notes explain
     """
     from compliance_agent.rule_extractor import (
@@ -478,7 +478,7 @@ def ai_extract_obligations(
             jurisdiction_hint=lic.jurisdiction_code,
             notes=(
                 "AI extraction is off in this deployment. Set "
-                "COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY in the server "
+                "COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) in the server "
                 "environment, then retry."
             ),
         )
