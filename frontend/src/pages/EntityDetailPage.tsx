@@ -1,33 +1,35 @@
 // Entity Detail — one specific legal entity with tabs: Overview, Registrations,
 // Compliance Items, Documents, Key Persons, Activity / Audit Log. Most tabs
 // are filled with realistic demo content; real CRUD lands in Phase 5+.
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Archive,
   Edit,
+  Loader2,
   Lock,
-  MoreHorizontal,
   History,
   UserCheck,
   KeyRound,
   Plus,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EffortBandBadge } from "@/components/EffortBandBadge";
@@ -172,7 +174,27 @@ export function EntityDetailPage() {
 // Hero
 // ---------------------------------------------------------------------------
 function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [editOpen, setEditOpen] = useState(false);
+
+  const archiveMutation = useMutation({
+    mutationFn: () => api.post<Entity>(`/api/entities/${entity.id}/archive`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      queryClient.invalidateQueries({ queryKey: ["entity", entity.id] });
+      // Entity is now hidden from the list — bounce back to /entities.
+      navigate("/entities");
+    },
+    onError: (e) => {
+      window.alert(
+        `Couldn't archive:\n\n${e instanceof Error ? e.message : String(e)}`,
+      );
+    },
+  });
+
   return (
+    <>
     <Card>
       <CardContent className="p-6">
         <div className="flex items-start justify-between gap-6">
@@ -198,25 +220,39 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={!isAdmin} title={isAdmin ? undefined : "Admin only"}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!isAdmin}
+              title={isAdmin ? undefined : "Admin only"}
+              onClick={() => isAdmin && setEditOpen(true)}
+            >
               {isAdmin ? <Edit className="h-4 w-4" /> : <Lock className="h-3.5 w-3.5" />}
               Edit
             </Button>
-            <Button variant="outline" size="sm" disabled={!isAdmin} title={isAdmin ? undefined : "Admin only"}>
-              <Archive className="h-4 w-4" />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!isAdmin || archiveMutation.isPending}
+              title={isAdmin ? undefined : "Admin only"}
+              onClick={() => {
+                if (!isAdmin) return;
+                if (
+                  window.confirm(
+                    `Archive "${entity.name}"? It'll be hidden from the entities list. Existing obligations and licenses stay intact.`,
+                  )
+                ) {
+                  archiveMutation.mutate();
+                }
+              }}
+            >
+              {archiveMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Archive className="h-4 w-4" />
+              )}
               Archive
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem disabled>Export entity report</DropdownMenuItem>
-                <DropdownMenuItem disabled>Duplicate as template</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
 
@@ -232,6 +268,143 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
         </div>
       </CardContent>
     </Card>
+    <EditEntityDialog
+      open={editOpen}
+      onOpenChange={setEditOpen}
+      entity={entity}
+    />
+    </>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Edit entity dialog
+// ---------------------------------------------------------------------------
+function EditEntityDialog({
+  open,
+  onOpenChange,
+  entity,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  entity: Entity;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(entity.name);
+  const [legalType, setLegalType] = useState(entity.legal_type);
+  const [regNumber, setRegNumber] = useState(entity.registration_number ?? "");
+  const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
+  const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
+  const [shortCode, setShortCode] = useState(entity.short_code ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  // Re-sync the form when the entity object changes (e.g. polling refresh).
+  useEffect(() => {
+    if (open) {
+      setName(entity.name);
+      setLegalType(entity.legal_type);
+      setRegNumber(entity.registration_number ?? "");
+      setFye(entity.fiscal_year_end ?? "");
+      setIncDate(entity.incorporation_date ?? "");
+      setShortCode(entity.short_code ?? "");
+      setError(null);
+    }
+  }, [open, entity]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, {
+        name: name.trim(),
+        legal_type: legalType.trim(),
+        registration_number: regNumber.trim() || null,
+        fiscal_year_end: fye.trim() || null,
+        incorporation_date: incDate || null,
+        short_code: shortCode.trim() || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity", entity.id] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>Edit entity</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Legal name</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Legal type</label>
+              <Input
+                value={legalType}
+                placeholder="Private Limited / LLC / FZE…"
+                onChange={(e) => setLegalType(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Short code</label>
+              <Input
+                value={shortCode}
+                placeholder="VINC, NESS…"
+                onChange={(e) => setShortCode(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Registration number</label>
+            <Input
+              value={regNumber}
+              onChange={(e) => setRegNumber(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Incorporation date</label>
+              <Input
+                type="date"
+                value={incDate}
+                onChange={(e) => setIncDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Fiscal year end</label>
+              <Input
+                value={fye}
+                placeholder="31-Mar"
+                onChange={(e) => setFye(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !name.trim()}
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
