@@ -57,6 +57,159 @@ import type {
 } from "@/types/api";
 
 
+// ---------------------------------------------------------------------------
+// HandoffToFinanceButton — admin approves filing + reassigns to a finance
+// team member in one move. Replaces "Approve & file" when the rule has a
+// payment leg, because the obligation isn't actually done until finance pays.
+// ---------------------------------------------------------------------------
+function HandoffToFinanceButton({
+  obligationId,
+  users,
+  disabled,
+}: {
+  obligationId: number;
+  users: UserBrief[];
+  disabled: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [pickedId, setPickedId] = useState<number | "">("");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const financeUsers = users.filter(
+    (u) => (u.department ?? "") === "finance",
+  );
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/obligations/${obligationId}/handoff-to-finance`, {
+        finance_user_id: pickedId,
+        notes: note.trim() || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["obligation", obligationId] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-task-count"] });
+      setOpen(false);
+      setPickedId("");
+      setNote("");
+      setError(null);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  return (
+    <>
+      <Button
+        size="sm"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        title="Approve the filing + assign payment to a finance team member"
+      >
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Approve & hand off to finance
+      </Button>
+      {open && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-center"
+          onClick={() => !mutation.isPending && setOpen(false)}
+        >
+          <div
+            className="bg-background rounded-2xl shadow-2xl border border-border w-[480px] max-w-[95vw] p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="font-semibold text-lg">
+                Approve & hand off to finance
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Filing is verified. Pick a finance team member to log the
+                payment and UTR. They'll get a notification + Slack ping
+                immediately.
+              </p>
+            </div>
+
+            {financeUsers.length === 0 ? (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+                No users tagged with the <strong>finance</strong> team yet.
+                Set someone's team in Settings → Users & Roles → Edit user →
+                Team.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-xs font-medium">
+                  Finance team member
+                </label>
+                <select
+                  value={pickedId}
+                  onChange={(e) =>
+                    setPickedId(e.target.value ? Number(e.target.value) : "")
+                  }
+                  className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">Pick someone…</option>
+                  {financeUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name || u.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium">
+                Note for finance (optional)
+              </label>
+              <textarea
+                rows={3}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Anything finance needs to know — payment amount, beneficiary, deadline…"
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOpen(false)}
+                disabled={mutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => mutation.mutate()}
+                disabled={
+                  mutation.isPending ||
+                  !pickedId ||
+                  financeUsers.length === 0
+                }
+              >
+                {mutation.isPending && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                )}
+                Hand off
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
 const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
   { value: "not_started", label: "Not started" },
   { value: "in_progress", label: "In progress" },
@@ -218,35 +371,56 @@ function Header({
 // without reading the status enum.
 // ---------------------------------------------------------------------------
 function WorkflowBanner({ obligation }: { obligation: Obligation }) {
-  const hasPayment =
-    obligation.is_awaiting_payment ||
-    (obligation.status === "completed" && obligation.payment_reference);
+  const hasPaymentLeg = Boolean(obligation.rule_payment_rule);
+  const hasPaymentLogged = Boolean(obligation.payment_reference?.trim());
+  const isFinanceAssignee =
+    (obligation.assignee?.department ?? "") === "finance";
 
   let tone: "info" | "amber" | "emerald" = "info";
   let title = "";
   let body = "";
 
-  if (obligation.status === "not_started" || obligation.status === "in_progress") {
+  if (obligation.status === "not_started") {
     tone = "info";
     title = "Step 1 — Compliance prepares the filing";
-    body =
-      "Assignee works on the filing. When ready, hit Submit for review and an admin will verify it.";
+    body = "Assignee works on the filing. When ready, hit Submit for review and an admin will verify it.";
+  } else if (obligation.status === "in_progress") {
+    if (isFinanceAssignee || (hasPaymentLeg && !hasPaymentLogged && obligation.department === "finance")) {
+      // Admin handed off to finance — Step 3
+      tone = "amber";
+      title = "Step 3 — Finance logs the payment";
+      body = "Filing was verified by the admin. Enter the payment amount + UTR below, then hit Submit for review for the final sign-off.";
+    } else {
+      tone = "info";
+      title = "Step 1 — Compliance prepares the filing";
+      body = "Assignee works on the filing. When ready, hit Submit for review and an admin will verify it.";
+    }
   } else if (obligation.status === "pending_review") {
-    tone = "amber";
-    title = "Step 2 — Admin verification";
-    body =
-      "Waiting on an admin to verify and approve. They'll either approve & file, or send it back.";
+    if (hasPaymentLogged) {
+      // Finance submitted payment — admin's final review
+      tone = "amber";
+      title = "Step 4 — Admin final sign-off";
+      body = "Finance has logged the payment. Admin: review the UTR + amount and click Approve & close to finish.";
+    } else {
+      tone = "amber";
+      title = "Step 2 — Admin verifies the filing";
+      body = hasPaymentLeg
+        ? "Compliance submitted. Admin will verify, then hand off to finance for payment."
+        : "Compliance submitted. Admin will verify and approve.";
+    }
   } else if (obligation.status === "completed" && obligation.is_awaiting_payment) {
+    // Legacy state — pre-handoff completion. Shouldn't reach here in the new flow.
     tone = "amber";
     title = "Step 3 — Finance pays";
-    body =
-      "Filing is verified. Finance has been pinged (notification + Slack). Log the payment amount + UTR below to close it out.";
+    body = "Filing approved. Log the payment amount + UTR below to close it out.";
   } else if (obligation.status === "completed") {
     tone = "emerald";
     title = "Done";
-    body = hasPayment
+    body = hasPaymentLogged
       ? "Filed and paid. Sitting in the audit trail."
-      : "Filed. No payment leg on this rule.";
+      : hasPaymentLeg
+        ? "Marked completed without a payment record. Verify in Filing Record below."
+        : "Filed. No payment leg on this rule.";
   } else {
     return null;
   }
@@ -366,18 +540,35 @@ function ActionBar({
             ) : null;
           }
 
-          // Pending admin review — admin gets Approve / Send back
+          // Pending admin review — admin gets Approve / Send back.
+          // Two flavours: filing review (compliance just finished prepping)
+          // vs payment review (finance just logged the UTR). We pick which
+          // by checking payment_reference: empty = filing phase, filled =
+          // payment phase. Filing phase + payment_rule → Hand off button.
           if (status === "pending_review") {
+            const hasPaymentLeg = Boolean(obligation.rule_payment_rule);
+            const isPaymentReview =
+              hasPaymentLeg && Boolean(obligation.payment_reference?.trim());
             return isAdmin ? (
               <>
-                <Button
-                  size="sm"
-                  onClick={() => onPatch({ status: "completed" })}
-                  disabled={saving}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Approve & file
-                </Button>
+                {hasPaymentLeg && !isPaymentReview ? (
+                  // Filing-review phase + payment leg exists → admin hands
+                  // off to finance instead of completing directly.
+                  <HandoffToFinanceButton
+                    obligationId={obligation.id}
+                    users={users}
+                    disabled={saving}
+                  />
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => onPatch({ status: "completed" })}
+                    disabled={saving}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {isPaymentReview ? "Approve & close" : "Approve & file"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -885,6 +1076,11 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
   const { data: comments = [], isLoading } = useQuery({
     queryKey: ["obligation-comments", obligationId],
     queryFn: () => api.get<ApiComment[]>(`/api/obligations/${obligationId}/comments`),
+    // Refetch every 20s while the drawer/page is open so a comment posted
+    // in another browser tab shows up without manual refresh — matches the
+    // obligation detail's own polling cadence.
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 
   const postMutation = useMutation({
@@ -893,6 +1089,7 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
     onSuccess: () => {
       setDraft("");
       queryClient.invalidateQueries({ queryKey: ["obligation-comments", obligationId] });
+      queryClient.invalidateQueries({ queryKey: ["activities", "obligation", obligationId] });
     },
   });
 
@@ -947,6 +1144,12 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
               </li>
             ))}
           </ul>
+        )}
+
+        {postMutation.error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            Couldn't post: {(postMutation.error as Error).message}
+          </div>
         )}
 
         {/* Note: NO overflow-hidden here — the MentionTextarea's autocomplete

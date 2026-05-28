@@ -100,6 +100,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     role: Mapped[Role] = mapped_column(SAEnum(Role), nullable=False, default=Role.employee)
+    # Which team this user belongs to. Drives the assign-to-team flow:
+    # admin assigns compliance work to compliance-tagged users; once the
+    # filing is approved, admin hands off the payment leg to finance-tagged
+    # users. Nullable — legacy users + admins can be untagged.
+    department: Mapped[Optional[Department]] = mapped_column(
+        SAEnum(Department), nullable=True, index=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

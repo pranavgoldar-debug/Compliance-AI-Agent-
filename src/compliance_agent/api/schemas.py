@@ -28,6 +28,7 @@ class UserBrief(_Base):
     email: str
     full_name: str
     role: Role
+    department: Optional[str] = None
 
 
 class UserOut(_Base):
@@ -35,6 +36,7 @@ class UserOut(_Base):
     email: str
     full_name: str
     role: Role
+    department: Optional[str] = None
     is_active: bool
     created_at: datetime
     last_login_at: Optional[datetime] = None
@@ -44,12 +46,14 @@ class UserCreate(BaseModel):
     email: str
     full_name: str
     role: Role = Role.employee
+    department: Optional[str] = None
     password: str
 
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     role: Optional[Role] = None
+    department: Optional[str] = None  # set to "" or omit to clear
     is_active: Optional[bool] = None
     password: Optional[str] = None  # admin password reset
 
@@ -204,6 +208,7 @@ class ObligationOut(_Base):
     rule_frequency: str
     rule_due_date_rule: Optional[str] = None
     rule_source_url: Optional[str] = None
+    rule_payment_rule: Optional[str] = None
     entity_name: str
     entity_jurisdiction_code: str
     due_date: date

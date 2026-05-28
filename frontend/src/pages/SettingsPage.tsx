@@ -486,6 +486,7 @@ function UsersTab() {
                 <th className="px-5 py-2.5 text-left font-medium">Name</th>
                 <th className="px-5 py-2.5 text-left font-medium">Email</th>
                 <th className="px-5 py-2.5 text-left font-medium">Role</th>
+                <th className="px-5 py-2.5 text-left font-medium">Team</th>
                 <th className="px-5 py-2.5 text-left font-medium">Last active</th>
                 <th className="px-5 py-2.5 text-left font-medium">Status</th>
                 <th className="px-5 py-2.5 text-right font-medium">Actions</th>
@@ -514,6 +515,15 @@ function UsersTab() {
                     <Badge variant={u.role === "admin" ? "default" : "neutral"} className="capitalize">
                       {u.role}
                     </Badge>
+                  </td>
+                  <td className="px-5 py-3">
+                    {u.department ? (
+                      <Badge variant="neutral" className="capitalize">
+                        {u.department}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">
                     {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
@@ -770,6 +780,7 @@ function EditUserDialog({
   const queryClient = useQueryClient();
   const [fullName, setFullName] = useState(user?.full_name ?? "");
   const [role, setRole] = useState<Role>(user?.role ?? "employee");
+  const [department, setDepartment] = useState<string>(user?.department ?? "");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
@@ -779,6 +790,7 @@ function EditUserDialog({
     if (user) {
       setFullName(user.full_name);
       setRole(user.role);
+      setDepartment(user.department ?? "");
       setNewPassword("");
       setError(null);
       setConfirmDeactivate(false);
@@ -791,6 +803,9 @@ function EditUserDialog({
       const body: Record<string, unknown> = {};
       if (fullName !== user.full_name) body.full_name = fullName;
       if (role !== user.role) body.role = role;
+      if ((department || null) !== (user.department || null)) {
+        body.department = department; // "" clears it server-side
+      }
       if (newPassword) body.password = newPassword;
       return api.patch<UserOut>(`/api/users/admin/${user.id}`, body);
     },
@@ -853,6 +868,25 @@ function EditUserDialog({
                 You can't demote your own account.
               </p>
             )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Team</label>
+            <select
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">— None —</option>
+              <option value="compliance">Compliance</option>
+              <option value="finance">Finance</option>
+              <option value="legal">Legal</option>
+              <option value="risk">Risk</option>
+              <option value="operations">Operations</option>
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Drives the team-based hand-off: compliance prepares filings,
+              finance logs payments.
+            </p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Reset password</label>

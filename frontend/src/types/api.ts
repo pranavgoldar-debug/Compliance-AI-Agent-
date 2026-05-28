@@ -15,11 +15,19 @@ export type Applicability = "Mandatory" | "Conditional" | "Sector-specific";
 
 export type EffortBand = "1w" | "2w" | "4w" | "8w" | "12w";
 
+export type Department =
+  | "compliance"
+  | "finance"
+  | "legal"
+  | "risk"
+  | "operations";
+
 export interface UserBrief {
   id: number;
   email: string;
   full_name: string;
   role: Role;
+  department?: Department | null;
 }
 
 export interface Entity {
@@ -73,6 +81,7 @@ export interface Obligation {
   rule_frequency: string;
   rule_due_date_rule: string | null;
   rule_source_url: string | null;
+  rule_payment_rule: string | null;
   entity_name: string;
   entity_jurisdiction_code: string;
   due_date: string;
@@ -187,6 +196,7 @@ export interface UserOut {
   email: string;
   full_name: string;
   role: Role;
+  department: Department | null;
   is_active: boolean;
   created_at: string;
   last_login_at: string | null;

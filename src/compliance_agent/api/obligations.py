@@ -34,12 +34,16 @@ from compliance_agent.api.schemas import (
 from compliance_agent.auth import get_current_user
 from compliance_agent.db import (
     Comment,
+    Department,
+    Notification,
+    NotificationKind,
     Obligation,
     ObligationStatus,
     Role,
     User,
     get_session,
 )
+from compliance_agent import slack_service
 
 
 router = APIRouter(prefix="/api/obligations", tags=["obligations"])
@@ -277,6 +281,113 @@ def add_comment(
 # Bulk operations — assign / change status across many obligations at once.
 # ---------------------------------------------------------------------------
 from pydantic import BaseModel as _BaseModel
+
+
+class HandoffPayload(_BaseModel):
+    finance_user_id: int
+    notes: Optional[str] = None
+
+
+class HandoffResponse(_BaseModel):
+    obligation_id: int
+    new_assignee_id: int
+    new_status: ObligationStatus
+
+
+@router.post(
+    "/{obligation_id}/handoff-to-finance",
+    response_model=HandoffResponse,
+)
+def handoff_to_finance(
+    obligation_id: int,
+    payload: HandoffPayload,
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> HandoffResponse:
+    """Admin marks the filing leg approved and reassigns the obligation to
+    a finance team member, who'll now log the payment + UTR. Status flips
+    from pending_review back to in_progress (work continues, just by a
+    different team).
+    """
+    if user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Only admins can hand off filings.")
+
+    obligation = db.execute(
+        _base_query().where(Obligation.id == obligation_id)
+    ).scalars().unique().one_or_none()
+    if obligation is None:
+        raise HTTPException(status_code=404, detail="Obligation not found.")
+
+    if obligation.status != ObligationStatus.pending_review:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Hand-off only applies when the filing is awaiting your review. "
+                "Current status: " + obligation.status.value + "."
+            ),
+        )
+
+    finance_user = db.get(User, payload.finance_user_id)
+    if finance_user is None or not finance_user.is_active:
+        raise HTTPException(status_code=400, detail="Finance team member not found.")
+
+    prev_assignee_id = obligation.assignee_id
+    obligation.assignee_id = finance_user.id
+    obligation.status = ObligationStatus.in_progress
+    obligation.department = Department.finance
+    if payload.notes:
+        # Append to existing notes rather than overwriting compliance's notes.
+        prefix = (obligation.notes + "\n\n") if obligation.notes else ""
+        obligation.notes = (
+            prefix
+            + f"[Admin → Finance handoff by {user.full_name or user.email}]: "
+            + payload.notes
+        )
+
+    # Notification + Slack ping so finance knows they own this now.
+    rule = obligation.rule
+    entity = obligation.entity
+    form = rule.form_name if rule else "Compliance item"
+    entity_name = entity.name if entity else "—"
+    db.add(
+        Notification(
+            user_id=finance_user.id,
+            kind=NotificationKind.payment_request,
+            title=f"Filing approved — log payment for {form}",
+            body=(
+                f"{entity_name} · {user.full_name or user.email} verified the "
+                f"filing. Enter the payment amount + UTR, then submit for "
+                f"final review."
+            ),
+            link_url=f"/obligations/{obligation.id}",
+            obligation_id=obligation.id,
+            actor_id=user.id,
+        )
+    )
+    if slack_service.is_configured(db):
+        slack_service.post(
+            f":money_with_wings: *Payment requested* — *{form}* ({entity_name}). "
+            f"Filing approved by {user.full_name or user.email}. "
+            f"Assigned to {finance_user.full_name or finance_user.email} to pay."
+        )
+
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="obligation.handoff_to_finance",
+        target_type="obligation",
+        target_id=obligation.id,
+        payload={
+            "prev_assignee_id": prev_assignee_id,
+            "finance_user_id": finance_user.id,
+        },
+    )
+    db.commit()
+    return HandoffResponse(
+        obligation_id=obligation.id,
+        new_assignee_id=finance_user.id,
+        new_status=obligation.status,
+    )
 
 
 class BulkUpdateRequest(_BaseModel):
