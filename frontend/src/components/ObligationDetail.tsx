@@ -233,9 +233,10 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
   const { data: obligation, isLoading } = useQuery({
     queryKey: ["obligation", obligationId],
     queryFn: () => api.get<Obligation>(`/api/obligations/${obligationId}`),
-    // Poll while open — so the admin reviewing an item sees the assignee's
-    // status flips (submit-for-review, comments) without manual refresh.
-    refetchInterval: 20_000,
+    // Poll while open so other users' changes (status flips, assignee
+    // moves, payment fields) propagate without manual refresh. 10s feels
+    // close to real-time without hammering the server.
+    refetchInterval: 10_000,
     refetchOnWindowFocus: true,
   });
 
@@ -654,9 +655,12 @@ function Body({
       <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
         <MainContent obligation={obligation} />
         {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
-        <Sidebar obligation={obligation} users={users} onPatch={onPatch} isAdmin={isAdmin} />
         <FilingFields obligation={obligation} onPatch={onPatch} />
+        {/* Comments live HIGH in the drawer scroll so they're discoverable.
+            Sidebar (assignee + effort + alert) is below since those are
+            already in the action bar at the top. */}
         <CommentsSection obligationId={obligation.id} />
+        <Sidebar obligation={obligation} users={users} onPatch={onPatch} isAdmin={isAdmin} />
         <ActivityFeed obligationId={obligation.id} />
       </div>
     );
@@ -768,33 +772,16 @@ function Sidebar({
     <div className="space-y-4">
       <Card>
         <CardContent className="p-4 space-y-4">
-          <FieldRow label="Assignee">
-            <div className="flex items-center gap-2">
-              <AssigneeChip user={obligation.assignee} size="sm" />
-              {isAdmin ? (
-                <select
-                  value={obligation.assignee?.id ?? ""}
-                  onChange={(e) =>
-                    onPatch({
-                      assignee_id: e.target.value ? Number(e.target.value) : null,
-                    } as Partial<Obligation>)
-                  }
-                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">Unassigned</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.full_name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="text-xs text-muted-foreground italic">
-                  Admins manage assignment.
-                </span>
-              )}
-            </div>
-          </FieldRow>
+          <AssigneeRow
+            obligation={obligation}
+            users={users}
+            onSave={(newId) =>
+              onPatch({
+                assignee_id: newId,
+              } as Partial<Obligation>)
+            }
+            isAdmin={isAdmin}
+          />
 
           <EffortBandRow
             current={obligation.effort_band}
@@ -822,6 +809,109 @@ function Sidebar({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+
+function AssigneeRow({
+  obligation,
+  users,
+  onSave,
+  isAdmin,
+}: {
+  obligation: Obligation;
+  users: UserBrief[];
+  onSave: (newId: number | null) => void;
+  isAdmin: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  // Staged value while editing — only commits on Save. Cancel discards.
+  const [draftId, setDraftId] = useState<number | "">(
+    obligation.assignee?.id ?? "",
+  );
+  useEffect(() => {
+    setDraftId(obligation.assignee?.id ?? "");
+  }, [obligation.assignee?.id]);
+
+  if (!isAdmin) {
+    return (
+      <FieldRow label="Assignee">
+        <div className="flex items-center gap-2">
+          <AssigneeChip user={obligation.assignee} size="sm" />
+          <span className="text-xs text-muted-foreground italic">
+            Admins manage assignment.
+          </span>
+        </div>
+      </FieldRow>
+    );
+  }
+
+  if (!editing) {
+    return (
+      <FieldRow label="Assignee">
+        <div className="flex items-center gap-2">
+          <AssigneeChip user={obligation.assignee} size="sm" />
+          <span className="text-sm truncate flex-1">
+            {obligation.assignee?.full_name || (
+              <span className="italic text-muted-foreground">Unassigned</span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-aspora-700 hover:underline"
+          >
+            Edit
+          </button>
+        </div>
+      </FieldRow>
+    );
+  }
+
+  const changed = (draftId || null) !== (obligation.assignee?.id ?? null);
+  return (
+    <FieldRow label="Assignee">
+      <div className="space-y-2">
+        <select
+          autoFocus
+          value={draftId}
+          onChange={(e) =>
+            setDraftId(e.target.value ? Number(e.target.value) : "")
+          }
+          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">Unassigned</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.full_name || u.email}
+              {u.department ? ` — ${u.department}` : ""}
+            </option>
+          ))}
+        </select>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setDraftId(obligation.assignee?.id ?? "");
+              setEditing(false);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={!changed}
+            onClick={() => {
+              onSave(draftId ? Number(draftId) : null);
+              setEditing(false);
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+    </FieldRow>
   );
 }
 
@@ -1099,6 +1189,17 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
     postMutation.mutate(cleaned);
   }
 
+  // Cmd/Ctrl + Enter submits — common in chat UIs. Plain Enter inserts a
+  // newline (still useful for multi-line comments).
+  function handleTextareaKeyDown(
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  }
+
   return (
     <Card>
       <CardContent className="p-5 space-y-4">
@@ -1157,17 +1258,31 @@ function CommentsSection({ obligationId }: { obligationId: number }) {
             clipped when the parent hid overflow. */}
         <div className="rounded-lg border border-border bg-background">
           <MentionTextarea
-            rows={2}
+            rows={3}
             value={draft}
             onChange={setDraft}
             placeholder="Add a comment… type @ to mention a teammate"
             className="border-0"
+            onKeyDown={handleTextareaKeyDown}
           />
           <div className="flex justify-between items-center px-2 py-2 border-t border-border bg-secondary/30">
             <span className="text-[11px] text-muted-foreground pl-2">
-              Mention with <kbd className="px-1 bg-background border border-border rounded">@</kbd>
+              <kbd className="px-1 bg-background border border-border rounded">@</kbd>{" "}
+              to mention ·{" "}
+              <kbd className="px-1 bg-background border border-border rounded">⌘ Enter</kbd>{" "}
+              to post
             </span>
-            <Button size="sm" onClick={submit} disabled={!draft.trim() || postMutation.isPending}>
+            <Button
+              size="sm"
+              // mousedown fires before the textarea loses focus, so the
+              // click is registered even if the user clicked from inside
+              // the textarea (where focus-loss could otherwise cancel it).
+              onMouseDown={(e) => {
+                e.preventDefault();
+                submit();
+              }}
+              disabled={!draft.trim() || postMutation.isPending}
+            >
               {postMutation.isPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
