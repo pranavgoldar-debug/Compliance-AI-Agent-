@@ -97,7 +97,7 @@ export function DocumentsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Documents"
-        description="Filings, certificates, and audit artifacts across every entity."
+        description="Filings, certificates, and audit artifacts. Pick an entity in the sidebar to upload — files always live under one entity."
         actions={
           <div className="inline-flex rounded-lg border border-input overflow-hidden">
             <button
@@ -198,7 +198,14 @@ export function DocumentsPage() {
                   </button>
                 ))}
               </div>
-              <AllDocsView documents={filteredAll} layout={layout} />
+              <AllDocsView
+                documents={filteredAll}
+                layout={layout}
+                entities={entities}
+                onPickEntity={(id) =>
+                  setSelection({ kind: "entity", entityId: id })
+                }
+              />
             </>
           ) : selection.kind === "entity" ? (
             <DocumentList
@@ -352,20 +359,44 @@ function SelectionCrumbs({
 function AllDocsView({
   documents,
   layout,
+  entities,
+  onPickEntity,
 }: {
   documents: DocumentOut[];
   layout: "rows" | "grid";
+  entities: Entity[];
+  onPickEntity: (entityId: number) => void;
 }) {
   if (documents.length === 0) {
     return (
       <Card>
-        <div className="p-10 text-center text-sm text-muted-foreground">
-          No documents uploaded yet across the whole workspace.
-          <div className="mt-2">
-            <Button variant="outline" size="sm" disabled>
-              Pick an entity to upload
-            </Button>
+        <div className="p-10 text-center text-sm space-y-3">
+          <div className="text-muted-foreground">
+            No documents uploaded yet across the whole workspace.
           </div>
+          <div className="text-xs text-muted-foreground">
+            Documents always belong to one entity. Pick the entity below and
+            you'll get a drag-and-drop zone to upload PDFs, receipts, and
+            anything else (max 25 MB per file).
+          </div>
+          {entities.length > 0 && (
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) onPickEntity(Number(e.target.value));
+                }}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm max-w-xs"
+              >
+                <option value="">Pick an entity…</option>
+                {entities.map((ent) => (
+                  <option key={ent.id} value={ent.id}>
+                    {ent.name} ({ent.jurisdiction_code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </Card>
     );
