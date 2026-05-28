@@ -839,7 +839,7 @@ function EditUserDialog({
 
   return (
     <Dialog open={!!user} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent size="sm">
+      <DialogContent size="md" className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit user — {user.email}</DialogTitle>
         </DialogHeader>
@@ -879,13 +879,10 @@ function EditUserDialog({
               <option value="">— None —</option>
               <option value="compliance">Compliance</option>
               <option value="finance">Finance</option>
-              <option value="legal">Legal</option>
-              <option value="risk">Risk</option>
-              <option value="operations">Operations</option>
             </select>
             <p className="text-[11px] text-muted-foreground">
-              Drives the team-based hand-off: compliance prepares filings,
-              finance logs payments.
+              Compliance prepares filings, finance logs payments. Pick
+              "None" for admins or non-team accounts.
             </p>
           </div>
           <div className="space-y-1">
