@@ -101,6 +101,11 @@ def list_notifications(
         .options(joinedload(Obligation.rule), joinedload(Obligation.entity))
     ).scalars().unique().all()
 
+    # Derived notifications use "now" as created_at — using the obligation's
+    # due_date (which can be 40+ days in the future) pushed them above real
+    # persisted notifications and made the inbox look like nothing was
+    # happening when there was actually fresh activity to read.
+    now = datetime.now(tz=timezone.utc)
     for ob in my_open:
         band = ob.effort_band or EffortBand.w4
         if is_overdue(ob.due_date, ob.status):
@@ -113,7 +118,7 @@ def list_notifications(
                     link_url=f"/obligations/{ob.id}",
                     obligation_id=ob.id,
                     read=False,
-                    created_at=datetime.combine(ob.due_date, datetime.min.time(), tzinfo=timezone.utc),
+                    created_at=now,
                 )
             )
         elif is_in_alert_window(ob.due_date, ob.status, band):
@@ -126,11 +131,23 @@ def list_notifications(
                     link_url=f"/obligations/{ob.id}",
                     obligation_id=ob.id,
                     read=False,
-                    created_at=datetime.combine(ob.due_date, datetime.min.time(), tzinfo=timezone.utc),
+                    created_at=now,
                 )
             )
 
-    out.sort(key=lambda n: (n.read, -n.created_at.timestamp(), -(n.id or 0)))
+    # Sort: unread persisted first (real news), then everything else newest-first.
+    # Derived items go behind real notifications within the same "unread" bucket
+    # by giving them a synthetic id of -1 so they tiebreak last.
+    def _sort_key(n: NotificationOut) -> tuple:
+        is_derived = n.id is None
+        return (
+            n.read,                      # unread first
+            is_derived,                  # persisted before derived
+            -n.created_at.timestamp(),   # newest first
+            -(n.id or 0),
+        )
+
+    out.sort(key=_sort_key)
     return out[:60]
 
 

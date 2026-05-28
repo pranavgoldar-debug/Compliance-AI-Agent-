@@ -527,7 +527,12 @@ export function Topbar() {
 
   if (!user) return null;
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Only persisted notifications (with a DB id) count toward the bell's
+  // unread badge — derived alerts (overdue / alert-window) re-spawn on every
+  // poll and can't be "marked read," so including them would leave the user
+  // with a number they can never drive to zero. Matches NotificationPanel's
+  // own definition of unread.
+  const unreadCount = notifications.filter((n) => !n.read && n.id != null).length;
 
   return (
     <header className="h-14 border-b border-border bg-white flex items-center gap-4 px-6 sticky top-0 z-30">
