@@ -62,7 +62,9 @@ const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.Compo
   { key: "jurisdictions", label: "Jurisdictions", adminOnly: true, icon: Globe },
   { key: "alerts", label: "Alert policies", adminOnly: true, icon: ListChecks },
   { key: "retention", label: "Audit retention", adminOnly: true, icon: Trash2 },
-  { key: "api", label: "API & Webhooks", adminOnly: true, icon: Key },
+  // "api" / "API & Webhooks" tab is hidden until the endpoints exist.
+  // Re-add the entry above with the same shape once tokens + webhook
+  // delivery ship for real.
 ];
 
 
@@ -122,7 +124,6 @@ export function SettingsPage() {
           {tab === "jurisdictions" && isAdmin && <JurisdictionsTab />}
           {tab === "alerts" && isAdmin && <AlertPoliciesTab />}
           {tab === "retention" && isAdmin && <RetentionTab />}
-          {tab === "api" && isAdmin && <ApiTab />}
         </div>
       </div>
     </div>
@@ -1443,47 +1444,6 @@ function AlertPoliciesTab() {
 // ---------------------------------------------------------------------------
 // API & Webhooks
 // ---------------------------------------------------------------------------
-function ApiTab() {
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-semibold">API keys</h3>
-          <p className="text-xs text-muted-foreground">
-            Personal access tokens for programmatic access to the Compliance OS API.
-          </p>
-          <div className="flex items-center gap-2">
-            <Input value="aspora_pk_•••••••••••••••••••" readOnly className="font-mono text-xs" />
-            <Button variant="outline" disabled>
-              Reveal
-            </Button>
-            <Button variant="outline" disabled>
-              Rotate
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-semibold">Webhook endpoints</h3>
-          <EmptyState
-            icon={<Key className="h-5 w-5" />}
-            title="No webhooks configured"
-            description="Add a webhook URL to get a POST whenever an obligation changes status or a rule is promoted."
-            action={
-              <Button variant="outline" disabled>
-                <Plus className="h-3.5 w-3.5" />
-                Add webhook
-              </Button>
-            }
-          />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-
 // ---------------------------------------------------------------------------
 // Audit retention
 // ---------------------------------------------------------------------------
