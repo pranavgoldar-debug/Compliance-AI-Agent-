@@ -1073,12 +1073,22 @@ function ScheduleRuleButton({
       // schedule it because they're about to assign / work on it.
       window.location.href = `/obligations/${result.obligation_id}`;
     },
+    onError: (e) => {
+      // Without this, a 404 (server not restarted with the new endpoint) or
+      // 409 (duplicate) silently fails and the button just stops spinning.
+      const msg = e instanceof Error ? e.message : String(e);
+      window.alert(
+        `Couldn't schedule this rule:\n\n${msg}\n\n` +
+          `If you see "Not Found", restart the backend so the new endpoint is loaded.`,
+      );
+    },
   });
   return (
     <button
       type="button"
       onClick={(e) => {
         e.stopPropagation();
+        e.preventDefault();
         mutation.mutate();
       }}
       disabled={mutation.isPending}
