@@ -167,3 +167,144 @@ def list_rule_snapshots(
         )
         for s in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# AI page summary — fetch the rule's source_url, ask Claude to extract
+# the form name, where to download the template, and key filing rules.
+# Read-only, no DB writes. Used by the "Ask Claude about this page" button
+# on the obligation drawer + the rules table.
+# ---------------------------------------------------------------------------
+class PageSummary(BaseModel):
+    available: bool
+    rule_id: int
+    url: Optional[str] = None
+    form_name: Optional[str] = None
+    template_url: Optional[str] = None
+    key_requirements: list[str] = []
+    summary: Optional[str] = None
+    error: Optional[str] = None
+
+
+from pydantic import BaseModel  # noqa: E402
+
+
+@router.post("/{rule_id}/read-source", response_model=PageSummary)
+def read_source_with_claude(
+    rule_id: int,
+    db: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+) -> PageSummary:
+    """Have Claude read the rule's regulator page and surface the form
+    template name, where to download it, and the key requirements.
+    Compliance + finance both call this — anyone with a login can read
+    the regulation summary."""
+    from compliance_agent.ai import ai_available
+    from compliance_agent.ai.llm_client import make_client
+    from compliance_agent.ai.regulation_watcher import _fetch
+
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+
+    url = (rule.source_url or "").strip()
+    if not url:
+        return PageSummary(
+            available=False,
+            rule_id=rule_id,
+            error="No source URL set for this rule. Admin can add one on Compliance Rules → click the source cell.",
+        )
+
+    if not ai_available():
+        return PageSummary(
+            available=False,
+            rule_id=rule_id,
+            url=url,
+            error="AI is off. Set COMPLIANCE_AGENT_LIVE=1 + an API key on the server.",
+        )
+
+    status, text, err = _fetch(url)
+    if err or not text:
+        return PageSummary(
+            available=False,
+            rule_id=rule_id,
+            url=url,
+            error=err or "Empty page body — regulator may have blocked the fetch.",
+        )
+
+    text = text[:20000]  # cap input
+
+    system = (
+        "You read regulator portal pages and extract three things that a "
+        "compliance team needs before filing:\n"
+        "  1. form_name   — the official name/code of the form (e.g. "
+        "     'GSTR-3B', 'Form 16A', 'STR via FINCAR'). null if not "
+        "     explicit on the page.\n"
+        "  2. template_url — an absolute URL on the same domain that links "
+        "     directly to the form template / PDF / instructions. null if "
+        "     not found.\n"
+        "  3. key_requirements — 3-6 bullets of must-do items the filer "
+        "     needs to remember (deadlines, attachments, fees, where to "
+        "     submit). One sentence each, plain English.\n"
+        "Also write a 2-sentence summary of what this filing is for.\n"
+        "If the page is irrelevant or a generic homepage, set form_name and "
+        "template_url to null and explain in summary."
+    )
+
+    tool = {
+        "name": "record_summary",
+        "description": "Record the extracted page summary.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "form_name": {"type": ["string", "null"]},
+                "template_url": {"type": ["string", "null"]},
+                "key_requirements": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "summary": {"type": "string"},
+            },
+            "required": ["summary", "key_requirements"],
+        },
+    }
+
+    try:
+        client = make_client()
+        response = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=1500,
+            system=system,
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "record_summary"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Rule context: form_name={rule.form_name!r}, "
+                        f"authority={rule.authority!r}, "
+                        f"frequency={rule.frequency!r}.\n\n"
+                        f"Page text from {url}:\n\n~~~\n{text}\n~~~"
+                    ),
+                }
+            ],
+        )
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and block.name == "record_summary":
+                raw = block.input or {}
+                return PageSummary(
+                    available=True,
+                    rule_id=rule_id,
+                    url=url,
+                    form_name=raw.get("form_name"),
+                    template_url=raw.get("template_url"),
+                    key_requirements=raw.get("key_requirements") or [],
+                    summary=raw.get("summary"),
+                )
+    except Exception as e:  # noqa: BLE001
+        return PageSummary(
+            available=False, rule_id=rule_id, url=url, error=f"Claude call failed: {e}"
+        )
+    return PageSummary(
+        available=False, rule_id=rule_id, url=url, error="No structured response from Claude."
+    )

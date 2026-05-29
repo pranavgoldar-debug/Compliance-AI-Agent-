@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Slack,
   Mail,
+  Sparkles,
   Tag,
   FileText,
 } from "lucide-react";
@@ -875,12 +876,42 @@ function RegulationChangeBanner({ changedAt }: { changedAt: string }) {
 // admin entry point for picking an entity + rule and jumping to its
 // submission portal.
 // ---------------------------------------------------------------------------
+interface PageSummaryResponse {
+  available: boolean;
+  rule_id: number;
+  url: string | null;
+  form_name: string | null;
+  template_url: string | null;
+  key_requirements: string[];
+  summary: string | null;
+  error: string | null;
+}
+
 function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const source = obligation.rule_source_url?.trim();
   const submission = obligation.rule_submission_url?.trim();
   const sameUrl = source && submission && source === submission;
+  const [aiSummary, setAiSummary] = useState<PageSummaryResponse | null>(null);
+  const aiSummaryMutation = useMutation({
+    mutationFn: () =>
+      api.post<PageSummaryResponse>(
+        `/api/rules/${obligation.rule_id}/read-source`,
+      ),
+    onSuccess: (result) => setAiSummary(result),
+    onError: (e) =>
+      setAiSummary({
+        available: false,
+        rule_id: obligation.rule_id,
+        url: source ?? null,
+        form_name: null,
+        template_url: null,
+        key_requirements: [],
+        summary: null,
+        error: e instanceof Error ? e.message : String(e),
+      }),
+  });
 
   if (!source && !submission) {
     return (
@@ -939,6 +970,76 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
           ? "Everyone can see the regulation page. Only admins see the submission link."
           : "Read the regulation and grab the template. Admin handles the actual submission."}
       </div>
+
+      {source && (
+        <div className="mt-3 pt-3 border-t border-border space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-xs font-medium text-foreground">
+              <Sparkles className="inline h-3 w-3 mr-1 text-aspora-600" />
+              Ask Claude what this page says
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={aiSummaryMutation.isPending}
+              onClick={() => aiSummaryMutation.mutate()}
+              title="Fetches the regulator page and asks Claude to extract form name, template link, and key requirements"
+            >
+              {aiSummaryMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {aiSummary ? "Re-read" : "Read with Claude"}
+            </Button>
+          </div>
+          {aiSummary && !aiSummary.available && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {aiSummary.error || "Couldn't extract anything useful."}
+            </div>
+          )}
+          {aiSummary && aiSummary.available && (
+            <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2.5 text-xs space-y-2">
+              {aiSummary.summary && (
+                <p className="text-foreground leading-relaxed">
+                  {aiSummary.summary}
+                </p>
+              )}
+              {aiSummary.form_name && (
+                <div>
+                  <span className="text-muted-foreground">Form:</span>{" "}
+                  <span className="font-medium">{aiSummary.form_name}</span>
+                </div>
+              )}
+              {aiSummary.template_url && (
+                <div>
+                  <a
+                    href={aiSummary.template_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-aspora-700 hover:underline inline-flex items-center gap-1 font-medium"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Download the template
+                  </a>
+                </div>
+              )}
+              {aiSummary.key_requirements.length > 0 && (
+                <div>
+                  <div className="text-muted-foreground mb-1">
+                    Key requirements:
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {aiSummary.key_requirements.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

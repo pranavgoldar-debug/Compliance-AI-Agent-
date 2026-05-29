@@ -167,6 +167,35 @@ def update_obligation(
                     detail="You can only change the status of items assigned to you.",
                 )
 
+    # Field-level team lock: compliance team can edit filing-side fields,
+    # finance team can edit payment-side fields. Admin can edit anything.
+    # Skipped if the user isn't touching any team-specific field — the
+    # generic "notes" + status + due_date pass through for both teams.
+    if user.role != Role.admin:
+        from compliance_agent.db import Department as _Dept
+
+        user_team = user.department.value if user.department else None
+        compliance_fields = {"filing_reference"}
+        finance_fields = {"payment_amount", "payment_reference", "beneficiary_details"}
+        touched_compliance = compliance_fields & set(data.keys())
+        touched_finance = finance_fields & set(data.keys())
+        if touched_compliance and user_team == "finance":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Finance team can't edit the compliance filing reference. "
+                    "Ask the compliance assignee to update it, or escalate to admin."
+                ),
+            )
+        if touched_finance and user_team == "compliance":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Compliance team can't edit payment amount / UTR / "
+                    "beneficiary details. Hand the obligation to finance first."
+                ),
+            )
+
     completed_now = (
         data.get("status") == ObligationStatus.completed
         and obligation.status != ObligationStatus.completed
