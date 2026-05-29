@@ -119,6 +119,7 @@ export interface CalendarObligation {
   rule_form_name: string;
   rule_authority: string;
   rule_category: string;
+  rule_applicability: string;
   effort_band: EffortBand;
   assignee: UserBrief | null;
   is_overdue: boolean;

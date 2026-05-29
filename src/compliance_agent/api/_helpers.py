@@ -164,6 +164,9 @@ def serialize_calendar_obligation(o: Obligation) -> CalendarObligation:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
+        rule_applicability=(
+            o.rule.applicability.value if o.rule.applicability else "Mandatory"
+        ),
         effort_band=band,
         assignee=serialize_user(o.assignee),
         is_overdue=is_overdue(o.due_date, o.status),

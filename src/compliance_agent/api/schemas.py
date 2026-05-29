@@ -311,6 +311,10 @@ class CalendarObligation(_Base):
     rule_form_name: str
     rule_authority: str
     rule_category: str
+    # "Mandatory" / "Conditional" / "Sector-specific" — lets the calendar
+    # surface a Mandatory-only filter + colour the mandatory items with
+    # a different border so they stand out at a glance.
+    rule_applicability: str = "Mandatory"
     effort_band: EffortBand = EffortBand.w4
     assignee: Optional[UserBrief] = None
     is_overdue: bool
