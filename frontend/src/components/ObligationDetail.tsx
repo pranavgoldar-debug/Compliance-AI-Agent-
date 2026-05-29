@@ -529,37 +529,64 @@ function ActionBar({
 }) {
   const isAdmin = currentUser?.role === "admin";
   const isAssignee = currentUser?.id === obligation.assignee?.id;
+  const isFinanceLeg = obligation.department === "finance";
+
+  // Stage-aware status options. Each role only sees the transitions that
+  // apply to THEIR leg of the pipeline:
+  //   - Employee (assignee): can toggle within their own leg's working
+  //     states. Pushing it to "done" (pending_review) still requires the
+  //     primary workflow button below so they don't accidentally submit.
+  //   - Admin: sees the employee options PLUS the closing transitions
+  //     (Mark N/A is the only one that bypasses the pipeline).
+  const statusOptionsForEmployee: { value: ObligationStatus; label: string }[] = [
+    { value: "not_started", label: isFinanceLeg ? "Haven't started payment" : "Haven't started filing" },
+    { value: "in_progress", label: isFinanceLeg ? "Working on payment" : "Working on filing" },
+  ];
+  const statusOptionsForAdmin: { value: ObligationStatus; label: string }[] = [
+    ...statusOptionsForEmployee,
+    { value: "not_applicable", label: "Mark not applicable" },
+  ];
+  const statusOptions = isAdmin ? statusOptionsForAdmin : statusOptionsForEmployee;
+  const canUseDropdown =
+    (isAssignee || isAdmin) &&
+    obligation.status !== "completed";
+
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
       <div className="flex items-center gap-2 px-5 py-2.5 flex-wrap">
-        {/* No generic "Update status" dropdown — it let any team jump
-            an obligation to any status and skip the whole verification
-            pipeline. Status changes now flow ONLY through the role-aware
-            buttons rendered below (Submit for review / Approve & hand off
-            to finance / Approve & close / Send back). Admin still gets a
-            "Mark not applicable" escape hatch for items that genuinely
-            don't apply. */}
-        {isAdmin &&
-          obligation.status !== "not_applicable" &&
-          obligation.status !== "completed" && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={saving}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Mark this obligation as Not Applicable? It will be removed from active queues but kept in the audit trail.",
-                  )
-                ) {
-                  onPatch({ status: "not_applicable" });
-                }
-              }}
-              title="For items that genuinely don't apply (entity exited the jurisdiction, rule repealed, etc)"
-            >
-              Mark N/A
+        {/* Update status dropdown — stage-aware. Employees only see
+            transitions for their OWN leg (haven't started / working on
+            it). The final "done" transition is the primary green button
+            below ("Mark filing complete" / "Mark payment complete") so
+            an employee can't accidentally submit by picking the wrong
+            menu item. Admins additionally get "Mark not applicable" as
+            an escape hatch. Nobody — not even admin — can pick
+            "Completed" from the menu; that only happens via the
+            workflow buttons (Approve & close). */}
+        {canUseDropdown && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" disabled={saving}>
+              Update status
             </Button>
-          )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuLabel>
+              {isFinanceLeg ? "Payment leg" : "Filing leg"} — pick where you are
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {statusOptions.map((o) => (
+              <DropdownMenuItem
+                key={o.value}
+                onClick={() => onPatch({ status: o.value })}
+                disabled={o.value === obligation.status}
+              >
+                {o.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        )}
 
         {isAdmin && (
         <DropdownMenu>
@@ -735,13 +762,16 @@ function Body({
   variant: "drawer" | "page";
   currentUser: { id: number; role: string } | null;
 }) {
-  const showSecondOpinion = obligation.status === "pending_review";
   const isAdmin = currentUser?.role === "admin";
+  // Second opinion is now always available — it used to only show on
+  // pending_review which meant compliance/finance people couldn't get
+  // an AI sanity-check on the work they were drafting. Now anyone can
+  // click "Run review" at any stage; the panel just defaults collapsed.
   if (variant === "drawer") {
     return (
       <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
         <MainContent obligation={obligation} />
-        {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
+        <SecondOpinionPanel obligationId={obligation.id} />
         <FilingFields
           obligation={obligation}
           onPatch={onPatch}
@@ -760,7 +790,7 @@ function Body({
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 p-6">
       <div className="space-y-6 min-w-0">
         <MainContent obligation={obligation} />
-        {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
+        <SecondOpinionPanel obligationId={obligation.id} />
         <FilingFields
           obligation={obligation}
           onPatch={onPatch}
@@ -833,15 +863,6 @@ function MainContent({ obligation }: { obligation: Obligation }) {
             hint="Attach proof-of-filing, receipts, or supporting docs. Max 25 MB per file."
             layout="rows"
           />
-        </section>
-
-        <section>
-          <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Notes from country expert
-          </h3>
-          <div className="rounded-lg border border-border bg-secondary/20 px-4 py-3 text-sm text-muted-foreground italic">
-            {obligation.notes || "No expert notes attached. Use the Notes field below to add internal context."}
-          </div>
         </section>
       </CardContent>
     </Card>
