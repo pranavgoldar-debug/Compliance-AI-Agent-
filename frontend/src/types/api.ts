@@ -81,6 +81,7 @@ export interface Obligation {
   rule_frequency: string;
   rule_due_date_rule: string | null;
   rule_source_url: string | null;
+  rule_source_changed_at: string | null;
   rule_payment_rule: string | null;
   entity_name: string;
   entity_jurisdiction_code: string;

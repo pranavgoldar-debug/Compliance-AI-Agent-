@@ -209,6 +209,7 @@ class ObligationOut(_Base):
     rule_frequency: str
     rule_due_date_rule: Optional[str] = None
     rule_source_url: Optional[str] = None
+    rule_source_changed_at: Optional[datetime] = None
     rule_payment_rule: Optional[str] = None
     entity_name: str
     entity_jurisdiction_code: str

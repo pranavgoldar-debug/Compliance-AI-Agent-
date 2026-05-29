@@ -823,6 +823,45 @@ function Body({
 // Main content (left/top): description, source, form template, prior filings,
 // expert notes.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// RegulationChangeBanner — shown when source_changed_at is set on the
+// rule. Tells the user how recently the regulator updated the source
+// page so they can check whether the template / requirements moved
+// before starting work.
+// ---------------------------------------------------------------------------
+function RegulationChangeBanner({ changedAt }: { changedAt: string }) {
+  const rel = fmtRelative(changedAt);
+  // Parse as UTC (server is UTC; backend strips tz markers — see fmtRelative)
+  const ts = changedAt.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(changedAt)
+    ? changedAt
+    : changedAt + "Z";
+  const daysAgo = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(ts).getTime()) / (1000 * 60 * 60 * 24)),
+  );
+  const isFresh = daysAgo <= 30;
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2 text-xs flex items-start gap-2",
+        isFresh
+          ? "border-amber-300 bg-amber-50 text-amber-900"
+          : "border-border bg-secondary/40 text-muted-foreground",
+      )}
+    >
+      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+      <div>
+        <strong>Regulation updated {rel}</strong> ({daysAgo} day
+        {daysAgo === 1 ? "" : "s"} ago).
+        {isFresh
+          ? " The regulator changed the source page recently — open it before filing and check the template hasn't moved. Admin: use 'Check for changes' on the rule to see a diff."
+          : " No recent changes detected."}
+      </div>
+    </div>
+  );
+}
+
+
 function MainContent({ obligation }: { obligation: Obligation }) {
   return (
     <Card>
@@ -842,21 +881,35 @@ function MainContent({ obligation }: { obligation: Obligation }) {
 
         <section>
           <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Source
+            Regulator portal
           </h3>
           {obligation.rule_source_url ? (
-            <a
-              href={obligation.rule_source_url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-aspora-700 hover:underline"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Regulator page
-            </a>
+            <div className="space-y-2">
+              <a
+                href={obligation.rule_source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg border border-aspora-300 bg-aspora-50 hover:bg-aspora-100 px-3 py-2 text-sm font-medium text-aspora-800"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Submit on regulator's portal →
+              </a>
+              <div className="text-[11px] text-muted-foreground">
+                Opens the source page where the actual filing is made
+                and the form template lives. Download the template from
+                there before starting work.
+              </div>
+              {obligation.rule_source_changed_at && (
+                <RegulationChangeBanner
+                  changedAt={obligation.rule_source_changed_at}
+                />
+              )}
+            </div>
           ) : (
             <div className="text-sm text-muted-foreground italic">
-              No source URL captured yet — add one in the rule template.
+              No regulator URL captured for this rule yet. Admin can add
+              one on the Compliance Rules page so the team can jump
+              straight to the submission portal from here.
             </div>
           )}
         </section>

@@ -222,11 +222,10 @@ def emit_assignment(
     )
     # Side-channel fan-out (best-effort, never raises).
     if assignee.notify_slack and slack_service.is_configured(db):
-        slack_service.post(
-            slack_service.assignment_message(
-                obligation=obligation, assignee=assignee, actor=actor
-            )
+        msg = slack_service.assignment_blocks(
+            obligation=obligation, assignee=assignee, actor=actor
         )
+        slack_service.post(msg["text"], blocks=msg["blocks"])
 
 
 # Match @<identifier>. We resolve against active users by:
@@ -287,11 +286,10 @@ def emit_mentions(
             )
         )
         if u.notify_slack and slack_on:
-            slack_service.post(
-                slack_service.mention_message(
-                    obligation=obligation, mentioned=u, actor=actor, body=body
-                )
+            msg = slack_service.mention_blocks(
+                obligation=obligation, mentioned=u, actor=actor, body=body
             )
+            slack_service.post(msg["text"], blocks=msg["blocks"])
 
 
 def emit_payment_request(
@@ -348,11 +346,8 @@ def emit_payment_request(
         )
 
     if slack_service.is_configured(db):
-        slack_service.post(
-            f":money_with_wings: *Payment requested* — *{form}* ({entity_name}). "
-            f"Filing approved by {actor.full_name or actor.email}. "
-            f"Finance, please log the payment + UTR."
-        )
+        msg = slack_service.payment_request_blocks(obligation=obligation, actor=actor)
+        slack_service.post(msg["text"], blocks=msg["blocks"])
 
 
 def emit_status_change(
@@ -457,12 +452,10 @@ def emit_status_change(
             new_status == ObligationStatus.pending_review
             and slack_service.is_configured(db)
         ):
-            form = obligation.rule.form_name if obligation.rule else "Compliance item"
-            entity = obligation.entity.name if obligation.entity else "—"
-            slack_service.post(
-                f":eyes: *{form}* ({entity}) submitted for review by "
-                f"{actor.full_name or actor.email} — admins, please verify."
+            msg = slack_service.submit_for_review_blocks(
+                obligation=obligation, actor=actor
             )
+            slack_service.post(msg["text"], blocks=msg["blocks"])
 
     # Slack: channel-wide "marked filed" for completed transitions.
     if (
@@ -471,6 +464,5 @@ def emit_status_change(
         and assignee.notify_slack
         and slack_service.is_configured(db)
     ):
-        slack_service.post(
-            slack_service.filed_message(obligation=obligation, actor=actor)
-        )
+        msg = slack_service.filed_blocks(obligation=obligation, actor=actor)
+        slack_service.post(msg["text"], blocks=msg["blocks"])
