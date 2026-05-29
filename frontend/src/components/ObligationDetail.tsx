@@ -1272,11 +1272,19 @@ function FilingFields({
               onCommit={(v) => onPatch({ filing_reference: v })}
               readOnly={!canEditCompliance}
             />
-            <div className="rounded-lg border border-dashed border-aspora-200 bg-aspora-50/40 px-3 py-2.5 text-xs text-aspora-900">
-              <strong>📎 Attach proof.</strong> Upload the filed PDF /
-              screenshot / acknowledgement under{" "}
-              <em>Filing documents</em> at the top of this drawer. Required
-              before submitting for review.
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1.5">
+                Proof of filing
+              </div>
+              <DocumentList
+                scope={{
+                  kind: "obligation",
+                  obligationId: obligation.id,
+                  entityId: obligation.entity_id,
+                }}
+                hint="Drag PDFs / screenshots here. Required before submitting for review."
+                layout="rows"
+              />
             </div>
           </CardContent>
         </Card>

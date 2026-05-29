@@ -297,7 +297,20 @@ function EditEntityDialog({
   const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
   const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
   const [shortCode, setShortCode] = useState(entity.short_code ?? "");
+  const [countryLeadId, setCountryLeadId] = useState<number | "">(
+    entity.country_lead?.id ?? "",
+  );
   const [error, setError] = useState<string | null>(null);
+
+  // Users list for the country-lead picker. Admin-only endpoint covers
+  // every user incl. inactive ones; if non-admin somehow opens this
+  // dialog the call returns 403 and the dropdown stays empty (which is
+  // fine — only admins can hit the Edit button anyway).
+  const { data: users = [] } = useQuery({
+    queryKey: ["users", "admin"],
+    queryFn: () => api.get<{ id: number; full_name: string; email: string }[]>("/api/users/admin"),
+    enabled: open,
+  });
 
   // Re-sync the form when the entity object changes (e.g. polling refresh).
   useEffect(() => {
@@ -308,6 +321,7 @@ function EditEntityDialog({
       setFye(entity.fiscal_year_end ?? "");
       setIncDate(entity.incorporation_date ?? "");
       setShortCode(entity.short_code ?? "");
+      setCountryLeadId(entity.country_lead?.id ?? "");
       setError(null);
     }
   }, [open, entity]);
@@ -321,6 +335,7 @@ function EditEntityDialog({
         fiscal_year_end: fye.trim() || null,
         incorporation_date: incDate || null,
         short_code: shortCode.trim() || null,
+        country_lead_id: countryLeadId === "" ? null : Number(countryLeadId),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entity", entity.id] });
@@ -383,6 +398,28 @@ function EditEntityDialog({
                 onChange={(e) => setFye(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Country lead</label>
+            <select
+              value={countryLeadId}
+              onChange={(e) =>
+                setCountryLeadId(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">— None —</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Single owner for this entity — they get pinged first on
+              regulator changes + escalations.
+            </p>
           </div>
 
           {error && (
