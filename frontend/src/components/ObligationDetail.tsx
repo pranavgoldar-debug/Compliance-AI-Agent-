@@ -12,7 +12,6 @@ import {
   ExternalLink,
   Loader2,
   MessageCircle,
-  Pencil,
   Send,
   UserCheck,
   Calendar as CalendarIcon,
@@ -208,15 +207,6 @@ function HandoffToFinanceButton({
     </>
   );
 }
-
-
-const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "pending_review", label: "Pending review" },
-  { value: "completed", label: "Completed" },
-  { value: "not_applicable", label: "Not applicable" },
-];
 
 
 interface Props {
@@ -542,31 +532,34 @@ function ActionBar({
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
       <div className="flex items-center gap-2 px-5 py-2.5 flex-wrap">
-        {/* Anyone can pop the status menu, but for employees it's only
-            useful on items assigned to them. Admins can manipulate any item. */}
-        {(isAdmin || isAssignee) && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={saving}>
-              <Pencil className="h-3.5 w-3.5" />
-              Update status
+        {/* No generic "Update status" dropdown — it let any team jump
+            an obligation to any status and skip the whole verification
+            pipeline. Status changes now flow ONLY through the role-aware
+            buttons rendered below (Submit for review / Approve & hand off
+            to finance / Approve & close / Send back). Admin still gets a
+            "Mark not applicable" escape hatch for items that genuinely
+            don't apply. */}
+        {isAdmin &&
+          obligation.status !== "not_applicable" &&
+          obligation.status !== "completed" && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Mark this obligation as Not Applicable? It will be removed from active queues but kept in the audit trail.",
+                  )
+                ) {
+                  onPatch({ status: "not_applicable" });
+                }
+              }}
+              title="For items that genuinely don't apply (entity exited the jurisdiction, rule repealed, etc)"
+            >
+              Mark N/A
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuLabel>Change status to…</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {STATUS_OPTIONS.map((o) => (
-              <DropdownMenuItem
-                key={o.value}
-                onClick={() => onPatch({ status: o.value })}
-                disabled={o.value === obligation.status}
-              >
-                {o.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        )}
+          )}
 
         {isAdmin && (
         <DropdownMenu>
@@ -680,11 +673,21 @@ function ActionBar({
           }
 
           // Not started / in progress — assignee submits for review when
-          // they're done. The "Mark as filed" admin shortcut is gone: it
-          // bypassed verification + the finance hand-off and made the new
-          // 4-step flow toothless. Admins go through review like everyone
-          // else; their "Approve without payment" is the fast-path for
-          // no-money filings.
+          // they're done with THEIR leg. Button label changes based on
+          // whose leg this currently is: compliance side = "Mark filing
+          // complete", finance side = "Mark payment complete". Clicking
+          // either pushes status to pending_review and notifies admin;
+          // admin then either approves & hands off (compliance → finance)
+          // or approves & closes (finance → done). Nobody can jump
+          // straight to "completed" — each team only closes their own
+          // leg.
+          const isFinanceLeg = obligation.department === "finance";
+          const submitLabel = isFinanceLeg
+            ? "Mark payment complete"
+            : "Mark filing complete";
+          const submitTitle = isFinanceLeg
+            ? "Payment + UTR logged — send to admin for final sign-off"
+            : "Filing prepared — send to admin for verification";
           return (
             <>
               {(isAssignee || isAdmin) && (
@@ -692,10 +695,10 @@ function ActionBar({
                   size="sm"
                   onClick={() => onPatch({ status: "pending_review" })}
                   disabled={saving}
-                  title="Mark done — admin will review + approve"
+                  title={submitTitle}
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  Submit for review
+                  {submitLabel}
                 </Button>
               )}
             </>

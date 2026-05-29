@@ -133,6 +133,40 @@ def update_obligation(
                 detail="Only admins can change assignees.",
             )
 
+    # Workflow gate: each role can only drive their own stage. Without
+    # this, an employee could curl the API and push their item straight
+    # to "completed", bypassing admin verification and the finance
+    # hand-off. UI hides the buttons; this enforces it server-side.
+    if "status" in data and data["status"] is not None:
+        new_status = data["status"]
+        old_status = obligation.status
+        if new_status != old_status and user.role != Role.admin:
+            # Employees may only move their own item to:
+            #   - in_progress  (start working)
+            #   - pending_review  (their leg is done → admin review)
+            #   - not_started  (revert before submitting)
+            # Anything else (completed / not_applicable) is admin-only.
+            allowed_employee_targets = {
+                ObligationStatus.not_started,
+                ObligationStatus.in_progress,
+                ObligationStatus.pending_review,
+            }
+            if new_status not in allowed_employee_targets:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Only admins can mark an obligation Completed or Not "
+                        "Applicable. Use 'Mark filing complete' / 'Mark "
+                        "payment complete' to submit your leg for admin review."
+                    ),
+                )
+            # Also block touching items they aren't assigned to.
+            if obligation.assignee_id != user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only change the status of items assigned to you.",
+                )
+
     completed_now = (
         data.get("status") == ObligationStatus.completed
         and obligation.status != ObligationStatus.completed
