@@ -385,7 +385,12 @@ function Header({
 // obligation regardless of whether the rule has a payment_rule tagged.
 // ---------------------------------------------------------------------------
 function WorkflowBanner({ obligation }: { obligation: Obligation }) {
-  const hasPaymentLogged = Boolean(obligation.payment_reference?.trim());
+  // The obligation's `department` is the authoritative signal of which
+  // leg currently owns the work. It's set to "finance" by the admin's
+  // hand-off action and stays that way until admin closes the item.
+  // payment_reference filled-or-not is NOT a reliable proxy — finance
+  // sometimes submits an item for admin sign-off without a UTR (refund
+  // case, internal transfer, etc).
   const isFinanceLeg =
     obligation.department === "finance" ||
     (obligation.assignee?.department ?? "") === "finance";
@@ -395,7 +400,12 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
   if (obligation.status === "completed") {
     activeStep = 5;
   } else if (obligation.status === "pending_review") {
-    activeStep = hasPaymentLogged ? 4 : 2;
+    // Pick which admin step we're at based on whose leg just submitted.
+    // Finance just submitted → final sign-off (step 4). Compliance just
+    // submitted → verify filing (step 2). Without this, the stepper
+    // appeared to "go backwards to step 2" right after finance hit
+    // Submit, which made the user think their work was lost.
+    activeStep = isFinanceLeg ? 4 : 2;
   } else if (isFinanceLeg) {
     activeStep = 3;
   } else {
@@ -494,7 +504,7 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
             </span>
             <span className="font-medium text-emerald-800">Done</span>
             <span className="text-muted-foreground">
-              · Filed{hasPaymentLogged ? " and paid" : ""}. Sitting in the audit trail.
+              · Filed{obligation.payment_reference?.trim() ? " and paid" : ""}. Sitting in the audit trail.
             </span>
           </div>
         ) : active ? (
@@ -642,19 +652,21 @@ function ActionBar({
           }
 
           // Pending admin review — split into:
-          //   A) "Payment review" (finance has logged a UTR; admin signs off → Done)
+          //   A) "Final sign-off" (finance just submitted → admin closes → Done)
           //   B) "Filing review" (compliance just finished; admin verifies, then
           //       EITHER hands off to finance (if payment is needed) OR closes
           //       it directly (no payment leg). Both buttons are always shown
-          //       so the admin picks per-obligation, not based on whether the
-          //       rule template happened to be tagged with payment_rule.)
+          //       so the admin picks per-obligation.
+          //
+          // We pick A vs B from obligation.department (the leg that just
+          // submitted), NOT payment_reference. Finance might submit
+          // without a UTR (refund, internal transfer) and still expect
+          // final sign-off, not a return to filing-verify.
           if (status === "pending_review") {
-            const isPaymentReview = Boolean(
-              obligation.payment_reference?.trim(),
-            );
+            const isFinalReview = obligation.department === "finance";
             return isAdmin ? (
               <>
-                {isPaymentReview ? (
+                {isFinalReview ? (
                   <Button
                     size="sm"
                     onClick={() => onPatch({ status: "completed" })}
