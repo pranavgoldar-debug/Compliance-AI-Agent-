@@ -584,6 +584,14 @@ def populate_source_urls(*, overwrite: bool = False) -> dict[str, int]:
     Returns counts.
     """
     from compliance_agent.data.authority_urls import lookup
+    from compliance_agent.db import init_db
+
+    # Critical: ensure the submission_url column exists on the live DB
+    # before we try to read/write it. init_db is idempotent — it's a
+    # cheap no-op when the column is already there. Without this call,
+    # users running populate-source-urls before ever starting the
+    # server hit "no such column: rules.submission_url".
+    init_db()
 
     counts = {
         "checked": 0,
