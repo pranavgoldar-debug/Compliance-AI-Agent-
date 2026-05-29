@@ -208,6 +208,8 @@ def _add_missing_columns() -> None:
             ("effort_band", f"{varchar(8)} NOT NULL DEFAULT 'w4'"),
             ("effort_band_reason", text_type),
             ("department", f"{varchar(16)} NOT NULL DEFAULT 'compliance'"),
+            # Finance-side beneficiary / bank account free text.
+            ("beneficiary_details", text_type),
         ],
         # Phase 7: source provenance on rules
         "rules": [

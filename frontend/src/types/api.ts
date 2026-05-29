@@ -94,6 +94,7 @@ export interface Obligation {
   filing_reference: string | null;
   payment_amount: string | null;
   payment_reference: string | null;
+  beneficiary_details: string | null;
   is_awaiting_payment: boolean;
   notes: string | null;
   days_remaining: number;

@@ -739,7 +739,11 @@ function Body({
       <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
         <MainContent obligation={obligation} />
         {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
-        <FilingFields obligation={obligation} onPatch={onPatch} />
+        <FilingFields
+          obligation={obligation}
+          onPatch={onPatch}
+          currentUser={currentUser}
+        />
         {/* Comments live HIGH in the drawer scroll so they're discoverable.
             Sidebar (assignee + effort + alert) is below since those are
             already in the action bar at the top. */}
@@ -754,7 +758,11 @@ function Body({
       <div className="space-y-6 min-w-0">
         <MainContent obligation={obligation} />
         {showSecondOpinion && <SecondOpinionPanel obligationId={obligation.id} />}
-        <FilingFields obligation={obligation} onPatch={onPatch} />
+        <FilingFields
+          obligation={obligation}
+          onPatch={onPatch}
+          currentUser={currentUser}
+        />
         <CommentsSection obligationId={obligation.id} />
         <ActivityFeed obligationId={obligation.id} />
       </div>
@@ -1114,50 +1122,135 @@ function AlertScheduleCard({ obligation }: { obligation: Obligation }) {
 
 
 // ---------------------------------------------------------------------------
-// Filing fields — filing reference / payment / notes (debounced text inputs)
+// Filing fields — split into Compliance-side and Finance-side cards.
+// Compliance team sees the filing reference + supporting-doc reminder;
+// Finance team sees payment amount/UTR/beneficiary bank details.
+// Admin sees both (they manage the whole pipeline). Pick which to show
+// based on the user's team membership + the obligation's current
+// department (so a finance person who picks up a comp-stage item still
+// sees the finance card).
 // ---------------------------------------------------------------------------
 function FilingFields({
   obligation,
   onPatch,
+  currentUser,
 }: {
   obligation: Obligation;
   onPatch: (p: Partial<Obligation>) => void;
+  currentUser: { id: number; role: string; department?: string | null } | null;
 }) {
+  const isAdmin = currentUser?.role === "admin";
+  const userTeam = (currentUser as { department?: string | null } | null)?.department;
+  const obDept = obligation.department;
+
+  // Determine visibility of each card.
+  //   - Admin always sees both.
+  //   - Otherwise, show Compliance card when user is on the compliance
+  //     team OR the obligation is currently compliance-owned.
+  //   - Show Finance card when user is finance OR ob is finance-owned OR
+  //     the rule has a payment leg (so compliance people get a peek at
+  //     payment status without editing).
+  const showCompliance = isAdmin || userTeam === "compliance" || obDept === "compliance";
+  const showFinance =
+    isAdmin ||
+    userTeam === "finance" ||
+    obDept === "finance" ||
+    Boolean(obligation.rule_payment_rule);
+
+  // Edit gating: only the team that "owns" the leg can edit. Compliance
+  // edits filing reference; finance edits payment + beneficiary. Admin
+  // can edit both. Non-owners see read-only.
+  const canEditCompliance = isAdmin || userTeam === "compliance" || obDept === "compliance";
+  const canEditFinance = isAdmin || userTeam === "finance" || obDept === "finance";
+
   return (
-    <Card>
-      <CardContent className="p-5 space-y-4">
-        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
-          Filing record
-        </h3>
-        <DebouncedTextField
-          label="Filing reference"
-          placeholder="ACK # / receipt no. / portal reference"
-          value={obligation.filing_reference}
-          onCommit={(v) => onPatch({ filing_reference: v })}
-        />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="space-y-4">
+      {showCompliance && (
+        <Card>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+                Compliance — Filing record
+              </h3>
+              <Badge variant="neutral" className="text-[10px]">
+                {canEditCompliance ? "Compliance team owns this" : "Read-only"}
+              </Badge>
+            </div>
+            <DebouncedTextField
+              label="Filing reference (ACK # / receipt no. / portal reference)"
+              placeholder="e.g. ITR-V ACK 567823412, Form 16A ACK # ABCD1234"
+              value={obligation.filing_reference}
+              onCommit={(v) => onPatch({ filing_reference: v })}
+              readOnly={!canEditCompliance}
+            />
+            <div className="rounded-lg border border-dashed border-aspora-200 bg-aspora-50/40 px-3 py-2.5 text-xs text-aspora-900">
+              <strong>📎 Attach proof.</strong> Upload the filed PDF /
+              screenshot / acknowledgement under{" "}
+              <em>Filing documents</em> at the top of this drawer. Required
+              before submitting for review.
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showFinance && (
+        <Card>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+                Finance — Payment record
+              </h3>
+              <Badge variant="neutral" className="text-[10px]">
+                {canEditFinance ? "Finance team owns this" : "Read-only"}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <DebouncedTextField
+                label="Amount paid"
+                placeholder="₹ 1,25,000 / $ 5,000 / £ 800"
+                value={obligation.payment_amount}
+                onCommit={(v) => onPatch({ payment_amount: v })}
+                readOnly={!canEditFinance}
+              />
+              <DebouncedTextField
+                label="UTR / transaction id"
+                placeholder="HDFCN52026052812345678"
+                value={obligation.payment_reference}
+                onCommit={(v) => onPatch({ payment_reference: v })}
+                readOnly={!canEditFinance}
+              />
+            </div>
+            <DebouncedTextField
+              label="Beneficiary bank details"
+              placeholder={
+                "Beneficiary: Income Tax Department\n" +
+                "Bank: SBI · Branch: New Delhi\n" +
+                "Account: 00000012345678 · IFSC: SBIN0000001"
+              }
+              value={obligation.beneficiary_details}
+              onCommit={(v) => onPatch({ beneficiary_details: v })}
+              multiline
+              readOnly={!canEditFinance}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+            Internal notes
+          </h3>
           <DebouncedTextField
-            label="Payment amount"
-            placeholder="₹, $, £…"
-            value={obligation.payment_amount}
-            onCommit={(v) => onPatch({ payment_amount: v })}
+            label=""
+            placeholder="Anything the next reviewer should know…"
+            value={obligation.notes}
+            onCommit={(v) => onPatch({ notes: v })}
+            multiline
           />
-          <DebouncedTextField
-            label="Payment reference"
-            placeholder="UTR / transaction id"
-            value={obligation.payment_reference}
-            onCommit={(v) => onPatch({ payment_reference: v })}
-          />
-        </div>
-        <DebouncedTextField
-          label="Internal notes"
-          placeholder="Anything the next reviewer should know…"
-          value={obligation.notes}
-          onCommit={(v) => onPatch({ notes: v })}
-          multiline
-        />
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -1165,7 +1258,11 @@ function FilingFields({
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+      {label && (
+        <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+          {label}
+        </label>
+      )}
       {children}
     </div>
   );
@@ -1178,12 +1275,14 @@ function DebouncedTextField({
   value,
   onCommit,
   multiline = false,
+  readOnly = false,
 }: {
   label: string;
   placeholder?: string;
   value: string | null;
   onCommit: (next: string | null) => void;
   multiline?: boolean;
+  readOnly?: boolean;
 }) {
   const [local, setLocal] = useState(value ?? "");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1192,6 +1291,7 @@ function DebouncedTextField({
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const scheduleCommit = (next: string) => {
+    if (readOnly) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const cleaned = next.trim();
@@ -1201,11 +1301,17 @@ function DebouncedTextField({
   };
 
   const flushCommit = () => {
+    if (readOnly) return;
     if (timer.current) clearTimeout(timer.current);
     const cleaned = local.trim();
     if (cleaned === (value ?? "")) return;
     onCommit(cleaned || null);
   };
+
+  const baseClass = cn(
+    "w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    readOnly && "bg-secondary/40 cursor-not-allowed text-muted-foreground",
+  );
 
   return (
     <FieldRow label={label}>
@@ -1214,24 +1320,28 @@ function DebouncedTextField({
           rows={3}
           value={local}
           placeholder={placeholder}
+          readOnly={readOnly}
           onChange={(e) => {
+            if (readOnly) return;
             setLocal(e.target.value);
             scheduleCommit(e.target.value);
           }}
           onBlur={flushCommit}
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(baseClass, "py-2")}
         />
       ) : (
         <input
           type="text"
           value={local}
           placeholder={placeholder}
+          readOnly={readOnly}
           onChange={(e) => {
+            if (readOnly) return;
             setLocal(e.target.value);
             scheduleCommit(e.target.value);
           }}
           onBlur={flushCommit}
-          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(baseClass, "h-9")}
         />
       )}
     </FieldRow>

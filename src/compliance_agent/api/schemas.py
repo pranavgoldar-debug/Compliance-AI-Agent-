@@ -183,6 +183,7 @@ class ObligationUpdate(BaseModel):
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
+    beneficiary_details: Optional[str] = None
     notes: Optional[str] = None
     due_date: Optional[date] = None
     effort_band: Optional[EffortBand] = None
@@ -221,6 +222,7 @@ class ObligationOut(_Base):
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
+    beneficiary_details: Optional[str] = None
     is_awaiting_payment: bool = False
     notes: Optional[str] = None
     days_remaining: int = 0

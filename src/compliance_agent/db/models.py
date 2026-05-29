@@ -268,6 +268,11 @@ class Obligation(Base):
     filing_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     payment_amount: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     payment_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Bank account / beneficiary info finance uses to actually move the
+    # money — kept as free text so we don't have to model every payment
+    # rail's quirks. Visible only on the finance side of the obligation
+    # detail.
+    beneficiary_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
