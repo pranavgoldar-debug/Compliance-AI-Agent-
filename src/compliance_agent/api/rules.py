@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -184,9 +185,6 @@ class PageSummary(BaseModel):
     key_requirements: list[str] = []
     summary: Optional[str] = None
     error: Optional[str] = None
-
-
-from pydantic import BaseModel  # noqa: E402
 
 
 @router.post("/{rule_id}/read-source", response_model=PageSummary)
