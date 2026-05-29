@@ -39,6 +39,7 @@ def _serialize_rule(rule: Rule) -> RuleOut:
         applicability_note=rule.applicability_note,
         status=rule.status,
         source_url=rule.source_url,
+        submission_url=rule.submission_url,
         source_text=rule.source_text,
         source_changed_at=rule.source_changed_at,
         entity_ids=[e.id for e in rule.entities],

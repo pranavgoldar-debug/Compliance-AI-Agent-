@@ -862,6 +862,88 @@ function RegulationChangeBanner({ changedAt }: { changedAt: string }) {
 }
 
 
+// ---------------------------------------------------------------------------
+// RegulatorPortalSection — two distinct URLs:
+//   - source_url      = info / regulation text / form template page.
+//                       Visible to everyone in the team.
+//   - submission_url  = e-filing portal where the admin actually submits.
+//                       Visible to admin only (gating is UX-only — the
+//                       backend doesn't restrict the field, but employees
+//                       shouldn't be encouraged to file directly).
+// Both default to the same lookup result; admins can split via the
+// Compliance Rules edit dialog. The dedicated /submissions page is the
+// admin entry point for picking an entity + rule and jumping to its
+// submission portal.
+// ---------------------------------------------------------------------------
+function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const source = obligation.rule_source_url?.trim();
+  const submission = obligation.rule_submission_url?.trim();
+  const sameUrl = source && submission && source === submission;
+
+  if (!source && !submission) {
+    return (
+      <section>
+        <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+          Regulator portal
+        </h3>
+        <div className="text-sm text-muted-foreground italic">
+          No regulator URL captured for this rule yet. Admin can add one
+          on the Compliance Rules page (click the source cell on the
+          rule's row) so the team can see the regulation + template
+          straight from here.
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+        Regulator portal
+      </h3>
+      <div className="flex flex-wrap gap-2">
+        {source && (
+          <a
+            href={source}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border border-aspora-300 bg-aspora-50 hover:bg-aspora-100 px-3 py-2 text-sm font-medium text-aspora-800"
+            title="Read the regulation + download the filing template"
+          >
+            <ExternalLink className="h-4 w-4" />
+            View regulation & template
+          </a>
+        )}
+        {isAdmin && submission && !sameUrl && (
+          <a
+            href={submission}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 text-sm font-medium text-emerald-800"
+            title="Admin-only: the e-filing portal where you actually submit"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Submit on regulator's portal →
+          </a>
+        )}
+        {isAdmin && submission && sameUrl && (
+          <span className="text-[11px] text-muted-foreground self-center italic">
+            Submission portal = same URL. Admin can split them on Compliance Rules → edit row.
+          </span>
+        )}
+      </div>
+      <div className="text-[11px] text-muted-foreground mt-1.5">
+        {isAdmin
+          ? "Everyone can see the regulation page. Only admins see the submission link."
+          : "Read the regulation and grab the template. Admin handles the actual submission."}
+      </div>
+    </section>
+  );
+}
+
+
 function MainContent({ obligation }: { obligation: Obligation }) {
   return (
     <Card>
@@ -879,40 +961,10 @@ function MainContent({ obligation }: { obligation: Obligation }) {
           </p>
         </section>
 
-        <section>
-          <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Regulator portal
-          </h3>
-          {obligation.rule_source_url ? (
-            <div className="space-y-2">
-              <a
-                href={obligation.rule_source_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-lg border border-aspora-300 bg-aspora-50 hover:bg-aspora-100 px-3 py-2 text-sm font-medium text-aspora-800"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Submit on regulator's portal →
-              </a>
-              <div className="text-[11px] text-muted-foreground">
-                Opens the source page where the actual filing is made
-                and the form template lives. Download the template from
-                there before starting work.
-              </div>
-              {obligation.rule_source_changed_at && (
-                <RegulationChangeBanner
-                  changedAt={obligation.rule_source_changed_at}
-                />
-              )}
-            </div>
-          ) : (
-            <div className="text-sm text-muted-foreground italic">
-              No regulator URL captured for this rule yet. Admin can add
-              one on the Compliance Rules page so the team can jump
-              straight to the submission portal from here.
-            </div>
-          )}
-        </section>
+        <RegulatorPortalSection obligation={obligation} />
+        {obligation.rule_source_changed_at && (
+          <RegulationChangeBanner changedAt={obligation.rule_source_changed_at} />
+        )}
 
         <section>
           <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">

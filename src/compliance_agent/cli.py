@@ -696,6 +696,34 @@ def create_user(email: str, password: str, full_name: str, role: str) -> None:
     click.echo(f"Created user {email} ({role}).", err=True)
 
 
+@main.command(name="populate-source-urls")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help=(
+        "Replace EVERY rule's source_url with the lookup result, even if "
+        "an admin already set one manually. Use sparingly."
+    ),
+)
+def populate_source_urls_cmd(overwrite: bool) -> None:
+    """Backfill Rule.source_url on existing rules.
+
+    Walks every rule, matches its `authority` against the
+    compliance_agent.data.authority_urls table, and fills the URL.
+    Admin-set URLs are kept by default (pass --overwrite to replace).
+
+    Use this once after pulling new code so existing rules get their
+    "Submit on regulator's portal →" links populated. Idempotent.
+    """
+    from compliance_agent.db.seed import populate_source_urls
+
+    counts = populate_source_urls(overwrite=overwrite)
+    click.echo("Source URL backfill:", err=True)
+    for k, v in counts.items():
+        click.echo(f"  {k}: {v}", err=True)
+
+
 @main.command(name="send-digest")
 @click.option(
     "--kind",

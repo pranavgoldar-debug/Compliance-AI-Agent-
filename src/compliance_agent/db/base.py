@@ -214,6 +214,7 @@ def _add_missing_columns() -> None:
         # Phase 7: source provenance on rules
         "rules": [
             ("source_url", varchar(1024)),
+            ("submission_url", varchar(1024)),
             ("source_text", text_type),
             ("source_changed_at", datetime_type),
         ],

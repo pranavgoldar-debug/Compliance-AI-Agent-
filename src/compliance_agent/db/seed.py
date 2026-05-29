@@ -250,6 +250,12 @@ def _ensure_entities(db: Session, users: dict[str, User]) -> dict[str, Entity]:
     return entities
 
 
+def _authority_url(authority: str) -> Optional[str]:
+    """Lookup helper — kept tiny so the seed import stays cheap."""
+    from compliance_agent.data.authority_urls import lookup
+    return lookup(authority or "")
+
+
 def _applicability_from_str(s: str) -> Applicability:
     s = (s or "").strip().lower()
     if s.startswith("mandatory"):
@@ -296,6 +302,14 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
                 payment_rule=filing.payment_due,
                 applicability=_applicability_from_str(filing.applicability),
                 applicability_note=filing.applicability_note,
+                # Pre-populate both URLs from the authority lookup. They
+                # default to the same value (most regulators have one
+                # primary portal); admins can split them per-rule via
+                # the UI — source_url = info/template page (visible to
+                # all), submission_url = the actual e-filing portal
+                # (admin only on the obligation drawer).
+                source_url=_authority_url(filing.authority),
+                submission_url=_authority_url(filing.authority),
                 status=RuleStatus.production,
             )
             rule.entities = list(jurisdiction_entities)
@@ -553,6 +567,44 @@ def purge_obligations() -> dict[str, int]:
             delete(Activity).where(Activity.target_type == "obligation")
         ).rowcount or 0
         counts["obligations"] = db.execute(delete(Obligation)).rowcount or 0
+    return counts
+
+
+def populate_source_urls(*, overwrite: bool = False) -> dict[str, int]:
+    """Backfill Rule.source_url AND Rule.submission_url for existing
+    rules by matching authority against the authority_urls table.
+
+    Two URLs are seeded with the same lookup result by default; admins
+    can split them per-rule in the UI later.
+
+    overwrite=False (default): only fill empty URLs. Admin-set values
+    survive.
+    overwrite=True: replace EVERY rule's URLs with the lookup result.
+
+    Returns counts.
+    """
+    from compliance_agent.data.authority_urls import lookup
+
+    counts = {
+        "checked": 0,
+        "source_filled": 0,
+        "submission_filled": 0,
+        "skipped_no_match": 0,
+    }
+    with session_scope() as db:
+        rules = db.execute(select(Rule)).scalars().all()
+        for rule in rules:
+            counts["checked"] += 1
+            url = lookup(rule.authority or "")
+            if not url:
+                counts["skipped_no_match"] += 1
+                continue
+            if not (rule.source_url or "").strip() or overwrite:
+                rule.source_url = url
+                counts["source_filled"] += 1
+            if not (rule.submission_url or "").strip() or overwrite:
+                rule.submission_url = url
+                counts["submission_filled"] += 1
     return counts
 
 

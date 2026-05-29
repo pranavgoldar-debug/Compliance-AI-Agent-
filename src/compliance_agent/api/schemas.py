@@ -118,6 +118,7 @@ class RuleCreate(BaseModel):
     applicability_note: Optional[str] = None
     status: RuleStatus = RuleStatus.production
     source_url: Optional[str] = None
+    submission_url: Optional[str] = None
     source_text: Optional[str] = None
     entity_ids: list[int] = []
 
@@ -135,6 +136,7 @@ class RuleUpdate(BaseModel):
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
     source_url: Optional[str] = None
+    submission_url: Optional[str] = None
     source_text: Optional[str] = None
     status: Optional[RuleStatus] = None
     entity_ids: Optional[list[int]] = None
@@ -155,6 +157,7 @@ class RuleOut(_Base):
     applicability_note: Optional[str] = None
     status: RuleStatus
     source_url: Optional[str] = None
+    submission_url: Optional[str] = None
     source_text: Optional[str] = None
     source_changed_at: Optional[datetime] = None
     entity_ids: list[int] = []
@@ -209,6 +212,7 @@ class ObligationOut(_Base):
     rule_frequency: str
     rule_due_date_rule: Optional[str] = None
     rule_source_url: Optional[str] = None
+    rule_submission_url: Optional[str] = None
     rule_source_changed_at: Optional[datetime] = None
     rule_payment_rule: Optional[str] = None
     entity_name: str

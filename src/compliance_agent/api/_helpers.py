@@ -124,6 +124,7 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_frequency=o.rule.frequency,
         rule_due_date_rule=o.rule.due_date_rule,
         rule_source_url=o.rule.source_url,
+        rule_submission_url=o.rule.submission_url,
         rule_source_changed_at=o.rule.source_changed_at,
         rule_payment_rule=o.rule.payment_rule,
         entity_name=o.entity.name,

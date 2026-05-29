@@ -198,7 +198,14 @@ class Rule(Base):
     )
 
     # Source provenance — used by the regulation change watcher (Phase 7).
+    # source_url   = informational page (regulation text + form template).
+    #                Visible to everyone in the team.
+    # submission_url = portal where the filing is actually submitted.
+    #                  Admin-only. Often the same host as source_url but a
+    #                  different path (e.g. an e-filing portal vs. the
+    #                  rule's circular page).
     source_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    submission_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
