@@ -32,6 +32,7 @@ from compliance_agent.db import (
     Role,
     Rule,
     RuleStatus,
+    TaxType,
     User,
     session_scope,
 )
@@ -259,6 +260,26 @@ def _applicability_from_str(s: str) -> Applicability:
     return Applicability.sector_specific
 
 
+def _tax_type_from_category(category: str, area: str = "") -> TaxType:
+    """Conservative category-based tax classification for seeded catalog rows.
+
+    Indirect = consumption / transaction taxes (GST, VAT, sales, excise,
+    customs). Direct = taxes on income / profits / gains. Everything else
+    (AML, data protection, regulatory returns, payroll filings, etc.) is
+    treated as Not a Tax. The AI extractor classifies per-rule for uploaded
+    licenses; this just gives the pre-loaded catalog sensible defaults."""
+    hay = f"{category} {area}".lower()
+    indirect_markers = ("gst", "vat", "sales/use", "sales tax", "use tax",
+                        "excise", "customs", "import duty", "indirect")
+    direct_markers = ("corporate tax", "income tax", "capital gains",
+                      "corporate income", "direct tax")
+    if any(m in hay for m in indirect_markers):
+        return TaxType.indirect
+    if any(m in hay for m in direct_markers):
+        return TaxType.direct
+    return TaxType.not_tax
+
+
 def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
     """One Rule per fintech-catalog filing, attached to all entities in that
     jurisdiction. Idempotent on (jurisdiction_code, form_name)."""
@@ -296,6 +317,7 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
                 payment_rule=filing.payment_due,
                 applicability=_applicability_from_str(filing.applicability),
                 applicability_note=filing.applicability_note,
+                tax_type=_tax_type_from_category(filing.category, filing.area),
                 status=RuleStatus.production,
             )
             rule.entities = list(jurisdiction_entities)

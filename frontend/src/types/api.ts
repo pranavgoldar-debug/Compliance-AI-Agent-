@@ -13,6 +13,8 @@ export type RuleStatus = "production" | "staging" | "archived";
 
 export type Applicability = "Mandatory" | "Conditional" | "Sector-specific";
 
+export type TaxType = "Direct Tax" | "Indirect Tax" | "Not a Tax";
+
 export type EffortBand = "1w" | "2w" | "4w" | "8w" | "12w";
 
 export interface UserBrief {
@@ -53,6 +55,7 @@ export interface Rule {
   payment_rule: string | null;
   applicability: Applicability;
   applicability_note: string | null;
+  tax_type: TaxType;
   status: RuleStatus;
   source_url: string | null;
   source_text: string | null;

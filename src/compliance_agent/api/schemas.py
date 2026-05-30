@@ -13,6 +13,7 @@ from compliance_agent.db import (
     ObligationStatus,
     Role,
     RuleStatus,
+    TaxType,
 )
 
 
@@ -115,6 +116,7 @@ class RuleCreate(BaseModel):
     payment_rule: Optional[str] = None
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
+    tax_type: TaxType = TaxType.not_tax
     status: RuleStatus = RuleStatus.production
     source_url: Optional[str] = None
     source_text: Optional[str] = None
@@ -133,6 +135,7 @@ class RuleUpdate(BaseModel):
     payment_rule: Optional[str] = None
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
+    tax_type: Optional[TaxType] = None
     source_url: Optional[str] = None
     source_text: Optional[str] = None
     status: Optional[RuleStatus] = None
@@ -152,6 +155,7 @@ class RuleOut(_Base):
     payment_rule: Optional[str] = None
     applicability: Applicability
     applicability_note: Optional[str] = None
+    tax_type: TaxType = TaxType.not_tax
     status: RuleStatus
     source_url: Optional[str] = None
     source_text: Optional[str] = None

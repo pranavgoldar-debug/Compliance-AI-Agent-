@@ -69,6 +69,22 @@ class Applicability(str, enum.Enum):
     sector_specific = "Sector-specific"
 
 
+class TaxType(str, enum.Enum):
+    """Whether an obligation is a tax filing and, if so, which kind.
+
+    Direct tax  = levied on income/profits/wealth (Corporate/Income Tax, TDS,
+                  capital gains, advance tax, withholding on income, etc.).
+    Indirect tax = levied on goods/services/transactions and collected on
+                  behalf of the authority (GST/HST, VAT, Sales/Use Tax,
+                  Excise, Customs/Duty).
+    Not a tax   = everything else (AML/CFT, data protection, statutory filings,
+                  licensing renewals, regulatory returns, etc.).
+    """
+    direct = "Direct Tax"
+    indirect = "Indirect Tax"
+    not_tax = "Not a Tax"
+
+
 class EffortBand(str, enum.Enum):
     """Lead-time band for an obligation. Alerts fire at ~2× this window
     before the due date (e.g. a 4-week band → alert 8 weeks out)."""
@@ -192,6 +208,11 @@ class Rule(Base):
         SAEnum(Applicability), nullable=False, default=Applicability.mandatory
     )
     applicability_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Direct / Indirect / Not-a-Tax classification — set by the AI extractor
+    # and editable by admins on the Rules page.
+    tax_type: Mapped[TaxType] = mapped_column(
+        SAEnum(TaxType), nullable=False, default=TaxType.not_tax, index=True
+    )
     status: Mapped[RuleStatus] = mapped_column(
         SAEnum(RuleStatus), nullable=False, default=RuleStatus.production, index=True
     )

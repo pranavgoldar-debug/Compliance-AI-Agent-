@@ -143,6 +143,7 @@ def bulk_create_rules(
             payment_rule=cand.payment_rule,
             applicability=cand.applicability,
             applicability_note=cand.applicability_note,
+            tax_type=cand.tax_type,
             status=payload.status,
             created_by_id=user.id,
         )

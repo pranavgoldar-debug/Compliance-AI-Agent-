@@ -253,6 +253,69 @@ def _add_missing_columns() -> None:
                     {"good": good, "bad": bad},
                 )
 
+        # tax_type on rules (Direct / Indirect / Not-a-Tax). SAEnum stores the
+        # enum NAME, so the DB values are direct / indirect / not_tax. On
+        # Postgres the `taxtype` enum type isn't auto-created by create_all when
+        # the rules table already exists, so we create it explicitly (idempotent
+        # via the duplicate_object guard) before adding the column.
+        if "rules" in tables:
+            rules_cols = {col["name"] for col in inspector.get_columns("rules")}
+            if "tax_type" not in rules_cols:
+                if is_pg:
+                    conn.execute(
+                        text(
+                            "DO $$ BEGIN "
+                            "CREATE TYPE taxtype AS ENUM "
+                            "('direct', 'indirect', 'not_tax'); "
+                            "EXCEPTION WHEN duplicate_object THEN null; "
+                            "END $$;"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "ALTER TABLE rules ADD COLUMN IF NOT EXISTS tax_type "
+                            "taxtype NOT NULL DEFAULT 'not_tax'"
+                        )
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE rules ADD COLUMN tax_type "
+                            f"{varchar(16)} NOT NULL DEFAULT 'not_tax'"
+                        )
+                    )
+
+                # One-shot backfill so the pre-loaded catalog (which was
+                # seeded before this column existed) gets sensible defaults
+                # without a re-seed. Conservative category match; only touches
+                # rows still at the not_tax default, so it never overwrites an
+                # admin's manual choice. Stored values are enum NAMES.
+                conn.execute(
+                    text(
+                        "UPDATE rules SET tax_type = 'indirect' "
+                        "WHERE tax_type = 'not_tax' AND ("
+                        "lower(category) LIKE '%gst%' OR "
+                        "lower(category) LIKE '%vat%' OR "
+                        "lower(category) LIKE '%sales%tax%' OR "
+                        "lower(category) LIKE '%use tax%' OR "
+                        "lower(category) LIKE '%excise%' OR "
+                        "lower(category) LIKE '%customs%' OR "
+                        "lower(category) LIKE '%import duty%' OR "
+                        "lower(category) LIKE '%indirect%')"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "UPDATE rules SET tax_type = 'direct' "
+                        "WHERE tax_type = 'not_tax' AND ("
+                        "lower(category) LIKE '%corporate tax%' OR "
+                        "lower(category) LIKE '%income tax%' OR "
+                        "lower(category) LIKE '%corporate income%' OR "
+                        "lower(category) LIKE '%capital gains%' OR "
+                        "lower(category) LIKE '%direct tax%')"
+                    )
+                )
+
 
 def get_session() -> Iterator[Session]:
     """FastAPI dependency — yields a session that auto-closes after the request."""

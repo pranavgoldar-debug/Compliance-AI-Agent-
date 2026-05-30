@@ -386,6 +386,7 @@ function StagingCard({ rule }: { rule: Rule }) {
                 label="Applicability"
                 value={`${rule.applicability}${rule.applicability_note ? " — " + rule.applicability_note : ""}`}
               />
+              <ExtractedField label="Tax type" value={rule.tax_type} />
             </div>
 
             {/* Right — original source text proxy */}
