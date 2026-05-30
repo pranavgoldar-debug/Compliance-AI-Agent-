@@ -252,6 +252,14 @@ def _add_missing_columns() -> None:
         # (the enum VALUE), but SAEnum reads the NAME. Migrate legacy rows
         # so SAEnum stops choking with `'4w' is not among the defined enum
         # values`. Idempotent — re-runs are no-ops.
+        #
+        # Postgres-specific gotcha: when effort_band is a real ENUM type,
+        # Postgres rejects the literal '1w' in the WHERE clause because
+        # '1w' isn't a valid enum value (the enum only contains the names
+        # w1/w2/.../w12). SQLite is loose and just compares strings.
+        # CAST(... AS TEXT) sidesteps the enum validation on both engines.
+        # The migration is essentially a no-op on Postgres (which never
+        # had the bad data) but the cast keeps Postgres from erroring out.
         if "obligations" in tables:
             band_value_to_name = {
                 "1w": "w1",
@@ -264,7 +272,7 @@ def _add_missing_columns() -> None:
                 conn.execute(
                     text(
                         "UPDATE obligations SET effort_band = :good "
-                        "WHERE effort_band = :bad"
+                        "WHERE CAST(effort_band AS TEXT) = :bad"
                     ),
                     {"good": good, "bad": bad},
                 )
