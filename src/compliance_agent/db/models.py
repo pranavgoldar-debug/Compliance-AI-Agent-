@@ -155,7 +155,7 @@ class Entity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     legal_type: Mapped[str] = mapped_column(String(120), nullable=False, default="")  # e.g. Private Limited
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)  # india / uk / us / uae / sg / lt / ca / eu
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # india / uk / us / uae / singapore / lithuania / canada / eu
     # Short internal code from the tracker (VINC, RTUK, NESS, ...) — used
     # for cross-referencing rows in the Aspora Global Compliance Tracker.
     short_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
@@ -196,7 +196,7 @@ class Rule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     area: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     form_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -540,7 +540,7 @@ class License(Base):
     # "CBUAE SVF licence", "Lithuania EMI". Used for matching + display.
     license_type: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     authority: Mapped[str] = mapped_column(String(255), nullable=False)
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     license_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
