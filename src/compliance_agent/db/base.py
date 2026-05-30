@@ -277,6 +277,28 @@ def _add_missing_columns() -> None:
                     {"good": good, "bad": bad},
                 )
 
+        # Expand jurisdiction_code from VARCHAR(8) to VARCHAR(16). The
+        # seed has codes like "singapore" / "lithuania" (9 chars) which
+        # fit in the model (now String(16)) but the live Postgres
+        # database may have been created with the old VARCHAR(8) so
+        # INSERTs blow up with "value too long for type character
+        # varying(8)". Postgres-only — SQLite ignores VARCHAR length.
+        # Idempotent — ALTER TYPE on the same width is a no-op.
+        if is_pg:
+            for table in ("entities", "rules", "licenses"):
+                if table not in tables:
+                    continue
+                try:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {table} "
+                            "ALTER COLUMN jurisdiction_code TYPE VARCHAR(16)"
+                        )
+                    )
+                except Exception:  # noqa: BLE001
+                    # Already widened or column missing — fine.
+                    pass
+
 
 def get_session() -> Iterator[Session]:
     """FastAPI dependency — yields a session that auto-closes after the request."""
