@@ -84,6 +84,7 @@ export function FilingsCatalogPage() {
       "Standard Due Date Rule (CY)",
       "Payment",
       "Applicability",
+      "Tax Type",
       "Reason if N/A",
     ];
     const rows = sorted.map((r, i) => [
@@ -98,6 +99,7 @@ export function FilingsCatalogPage() {
       r.due_date_rule,
       r.payment_rule ?? "",
       r.applicability,
+      r.tax_type,
       r.applicability_note ?? "",
     ]);
     const escape = (cell: string) => {
@@ -126,6 +128,17 @@ export function FilingsCatalogPage() {
         return "text-amber-700 border-amber-200 bg-amber-50";
       case "Sector-specific":
         return "text-slate-700 border-slate-200 bg-slate-50";
+      default:
+        return "text-muted-foreground border-border bg-secondary";
+    }
+  }
+
+  function taxTypeClass(value: string): string {
+    switch (value) {
+      case "Direct Tax":
+        return "text-blue-700 border-blue-200 bg-blue-50";
+      case "Indirect Tax":
+        return "text-purple-700 border-purple-200 bg-purple-50";
       default:
         return "text-muted-foreground border-border bg-secondary";
     }
@@ -200,6 +213,7 @@ export function FilingsCatalogPage() {
                 <Th className="min-w-[280px]">Standard Due Date Rule (CY)</Th>
                 <Th className="min-w-[200px]">Payment</Th>
                 <Th className="w-[120px]">Applicability</Th>
+                <Th className="w-[120px]">Tax type</Th>
                 <Th className="min-w-[220px]">Reason if N/A</Th>
               </tr>
             </thead>
@@ -207,7 +221,7 @@ export function FilingsCatalogPage() {
               {isLoading ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i}>
-                    <td colSpan={11} className="px-3 py-2">
+                    <td colSpan={12} className="px-3 py-2">
                       <Skeleton className="h-8" />
                     </td>
                   </tr>
@@ -215,7 +229,7 @@ export function FilingsCatalogPage() {
               ) : sorted.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={12}
                     className="px-3 py-10 text-center text-muted-foreground"
                   >
                     No filings matched your filters.
@@ -261,6 +275,16 @@ export function FilingsCatalogPage() {
                           )}
                         >
                           {r.applicability}
+                        </span>
+                      </Td>
+                      <Td>
+                        <span
+                          className={cn(
+                            "inline-block rounded-full border px-2 py-0.5 text-xs font-medium",
+                            taxTypeClass(r.tax_type),
+                          )}
+                        >
+                          {r.tax_type}
                         </span>
                       </Td>
                       <Td className="text-muted-foreground">

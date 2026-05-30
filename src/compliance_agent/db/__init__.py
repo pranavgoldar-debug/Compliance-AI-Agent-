@@ -20,6 +20,7 @@ from compliance_agent.db.models import (
     RuleEntity,
     RuleSnapshot,
     RuleStatus,
+    TaxType,
     User,
     WorkspaceSetting,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "ObligationStatus",
     "RuleStatus",
     "Applicability",
+    "TaxType",
     "EffortBand",
     "EFFORT_BAND_DAYS",
     "WorkspaceSetting",

@@ -27,6 +27,7 @@ interface CandidateRule {
   payment_rule: string | null;
   applicability: "Mandatory" | "Conditional" | "Sector-specific";
   applicability_note: string | null;
+  tax_type: "Direct Tax" | "Indirect Tax" | "Not a Tax";
 }
 
 interface ExtractResponse {
@@ -243,6 +244,25 @@ export function AddRuleFromTextDialog({ open, onOpenChange }: Props) {
                           <div className="text-xs text-muted-foreground mt-0.5">
                             <strong>Payment:</strong> {r.payment_rule}
                           </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <Badge
+                          variant={
+                            r.applicability === "Mandatory" ? "alert" : "neutral"
+                          }
+                        >
+                          {r.applicability}
+                        </Badge>
+                        {(r.tax_type === "Direct Tax" ||
+                          r.tax_type === "Indirect Tax") && (
+                          <Badge
+                            variant={
+                              r.tax_type === "Direct Tax" ? "progress" : "review"
+                            }
+                          >
+                            {r.tax_type}
+                          </Badge>
                         )}
                       </div>
                     </label>

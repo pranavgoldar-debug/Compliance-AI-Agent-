@@ -13,7 +13,7 @@ from typing import Optional
 import anthropic
 from pydantic import BaseModel, Field
 
-from compliance_agent.db import Applicability
+from compliance_agent.db import Applicability, TaxType
 
 
 SYSTEM_PROMPT = """You convert raw regulatory text into a list of recurring or event-based filing obligations.
@@ -26,6 +26,11 @@ For each obligation you extract:
 - `payment_rule` (optional) — fee amounts, payable taxes, percentages, late-fee structure where the source mentions them. Leave null when there's no payment.
 - `applicability` — Mandatory by default; Conditional or Sector-specific only when the source signals a trigger.
 - `applicability_note` — when Conditional/Sector-specific, write a short note explaining what triggers it.
+- `tax_type` — classify the obligation:
+    - "Direct Tax" when it is a tax levied on income, profits, gains or wealth (Corporate/Income Tax returns, TDS/withholding on income, advance tax, capital gains, dividend distribution tax, etc.).
+    - "Indirect Tax" when it is a tax on goods, services or transactions that is collected and remitted on the authority's behalf (GST/HST, VAT, Sales/Use Tax, Excise, Customs/Import Duty).
+    - "Not a Tax" for everything else — AML/CFT reports, data-protection filings, statutory/corporate returns, licensing renewals, regulatory confirmations, fees that are not taxes, etc.
+  When unsure whether something is a tax at all, choose "Not a Tax".
 
 Rules:
 - Do not invent obligations that aren't supported by the source text.
@@ -49,6 +54,10 @@ class CandidateRule(BaseModel):
     payment_rule: Optional[str] = None
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
+    tax_type: TaxType = Field(
+        default=TaxType.not_tax,
+        description="Direct Tax / Indirect Tax / Not a Tax classification.",
+    )
 
 
 class RuleExtractionResult(BaseModel):

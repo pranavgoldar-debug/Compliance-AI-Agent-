@@ -217,6 +217,30 @@ def _add_missing_columns() -> None:
         ],
     }
 
+    # Widen jurisdiction_code VARCHAR(8) → VARCHAR(16) on existing Postgres
+    # DBs. The catalog ships codes like "singapore"/"lithuania" (9 chars)
+    # which Postgres rejects against the original VARCHAR(8). SQLite doesn't
+    # enforce VARCHAR length, so this is Postgres-only. Idempotent: only runs
+    # where the column is still narrower than 16.
+    if is_pg:
+        with engine.begin() as conn:
+            for jtable in ("entities", "rules", "licenses"):
+                if jtable not in tables:
+                    continue
+                col = next(
+                    (c for c in inspector.get_columns(jtable)
+                     if c["name"] == "jurisdiction_code"),
+                    None,
+                )
+                length = getattr(col["type"], "length", None) if col else None
+                if length is not None and length < 16:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {jtable} "
+                            "ALTER COLUMN jurisdiction_code TYPE VARCHAR(16)"
+                        )
+                    )
+
     with engine.begin() as conn:
         for table, additions in table_additions.items():
             if table not in tables:
@@ -245,12 +269,80 @@ def _add_missing_columns() -> None:
                 "12w": "w12",
             }
             for bad, good in band_value_to_name.items():
+                # CAST the column to TEXT in the WHERE clause: on Postgres the
+                # bare literal :bad ('1w', '4w', …) is validated against the
+                # effortband ENUM type at plan time and rejected (those are
+                # enum VALUES, not NAMES), crashing even when no rows match.
+                # Casting to text sidesteps the enum check. No-op on SQLite.
                 conn.execute(
                     text(
                         "UPDATE obligations SET effort_band = :good "
-                        "WHERE effort_band = :bad"
+                        "WHERE CAST(effort_band AS TEXT) = :bad"
                     ),
                     {"good": good, "bad": bad},
+                )
+
+        # tax_type on rules (Direct / Indirect / Not-a-Tax). SAEnum stores the
+        # enum NAME, so the DB values are direct / indirect / not_tax. On
+        # Postgres the `taxtype` enum type isn't auto-created by create_all when
+        # the rules table already exists, so we create it explicitly (idempotent
+        # via the duplicate_object guard) before adding the column.
+        if "rules" in tables:
+            rules_cols = {col["name"] for col in inspector.get_columns("rules")}
+            if "tax_type" not in rules_cols:
+                if is_pg:
+                    conn.execute(
+                        text(
+                            "DO $$ BEGIN "
+                            "CREATE TYPE taxtype AS ENUM "
+                            "('direct', 'indirect', 'not_tax'); "
+                            "EXCEPTION WHEN duplicate_object THEN null; "
+                            "END $$;"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "ALTER TABLE rules ADD COLUMN IF NOT EXISTS tax_type "
+                            "taxtype NOT NULL DEFAULT 'not_tax'"
+                        )
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE rules ADD COLUMN tax_type "
+                            f"{varchar(16)} NOT NULL DEFAULT 'not_tax'"
+                        )
+                    )
+
+                # One-shot backfill so the pre-loaded catalog (which was
+                # seeded before this column existed) gets sensible defaults
+                # without a re-seed. Conservative category match; only touches
+                # rows still at the not_tax default, so it never overwrites an
+                # admin's manual choice. Stored values are enum NAMES.
+                conn.execute(
+                    text(
+                        "UPDATE rules SET tax_type = 'indirect' "
+                        "WHERE tax_type = 'not_tax' AND ("
+                        "lower(category) LIKE '%gst%' OR "
+                        "lower(category) LIKE '%vat%' OR "
+                        "lower(category) LIKE '%sales%tax%' OR "
+                        "lower(category) LIKE '%use tax%' OR "
+                        "lower(category) LIKE '%excise%' OR "
+                        "lower(category) LIKE '%customs%' OR "
+                        "lower(category) LIKE '%import duty%' OR "
+                        "lower(category) LIKE '%indirect%')"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "UPDATE rules SET tax_type = 'direct' "
+                        "WHERE tax_type = 'not_tax' AND ("
+                        "lower(category) LIKE '%corporate tax%' OR "
+                        "lower(category) LIKE '%income tax%' OR "
+                        "lower(category) LIKE '%corporate income%' OR "
+                        "lower(category) LIKE '%capital gains%' OR "
+                        "lower(category) LIKE '%direct tax%')"
+                    )
                 )
 
 
