@@ -371,6 +371,24 @@ def _add_missing_columns() -> None:
                         "lower(category) LIKE '%direct tax%')"
                     )
                 )
+
+        # Archive the old UAE rules that bundled DIFC + ADGM into one row, so a
+        # DIFC license stops surfacing ADGM (and vice-versa). The catalog now
+        # ships separate DIFC-only / ADGM-only rules; re-running the seed adds
+        # those. Idempotent. (Status is stored as the enum NAME.)
+        if "rules" in tables:
+            conn.execute(
+                text(
+                    "UPDATE rules SET status = 'archived' "
+                    "WHERE status != 'archived' AND form_name IN ("
+                    ":r1, :r2)"
+                ),
+                {
+                    "r1": "DFSA / FSRA permission (Money Services, Operating an Exchange) — if licensed in DIFC/ADGM",
+                    "r2": "DIFC Data Protection Law 5/2020 / ADGM Data Protection Regulations 2021 — annual registration + DPO",
+                },
+            )
+
         # Expand jurisdiction_code from VARCHAR(8) to VARCHAR(16). The
         # seed has codes like "singapore" / "lithuania" (9 chars) which
         # fit in the model (now String(16)) but the live Postgres
