@@ -6,7 +6,7 @@ Endpoints:
   GET /api/regulations/{reg_id}     — extracted requirements (+ optional verification)
 
 Default mode is mock (no API key needed). Set `COMPLIANCE_AGENT_LIVE=1` and
-provide `ANTHROPIC_API_KEY` to switch to live Grok extraction.
+provide `ANTHROPIC_API_KEY` to switch to live Claude extraction.
 """
 from __future__ import annotations
 

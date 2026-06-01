@@ -1,7 +1,7 @@
 """Reviewer-style second opinion on a pending obligation.
 
 Aggregates the rule definition + the obligation's filled fields + comments
-+ uploaded documents (filenames only — not contents, yet) and asks Grok
++ uploaded documents (filenames only — not contents, yet) and asks Claude
 for a verdict: approve / needs_more_info / reject, plus reasoning and
 next-step suggestions.
 """
@@ -76,7 +76,7 @@ def review(db: Session, obligation_id: int) -> SecondOpinionResult:
         opinion = _call_claude(prompt)
         return SecondOpinionResult(available=True, opinion=opinion)
     except Exception as e:
-        return SecondOpinionResult(available=True, error=f"Grok call failed: {e}")
+        return SecondOpinionResult(available=True, error=f"Claude call failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ def _build_prompt(
 
 
 # ---------------------------------------------------------------------------
-# Grok call
+# Claude call
 # ---------------------------------------------------------------------------
 _SYSTEM = """\
 You are a senior compliance reviewer at a fintech remittance company. The
@@ -203,4 +203,4 @@ def _call_claude(prompt: str) -> SecondOpinion:
         if getattr(block, "type", None) == "tool_use" and block.name == "record_opinion":
             return SecondOpinion(**(block.input or {}))
 
-    raise RuntimeError("Grok didn't call record_opinion.")
+    raise RuntimeError("Claude didn't call record_opinion.")

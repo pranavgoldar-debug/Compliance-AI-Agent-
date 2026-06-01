@@ -87,7 +87,7 @@ def extract_rules_from_text(
     jurisdiction_hint: Optional[str] = None,
     model: str = "claude-opus-4-7",
 ) -> RuleExtractionResult:
-    """Call Grok on the supplied text and return candidate Rule rows."""
+    """Call Claude on the supplied text and return candidate Rule rows."""
     if not is_live():
         raise RuleExtractorUnavailable(
             "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 plus either "
@@ -163,7 +163,7 @@ def extract_license_metadata(
     jurisdiction_hint: Optional[str] = None,
     model: str = "claude-opus-4-7",
 ) -> LicenseMetadata:
-    """Call Grok on a license document and return its metadata fields."""
+    """Call Claude on a license document and return its metadata fields."""
     if not is_live():
         raise RuleExtractorUnavailable(
             "AI license reading requires COMPLIANCE_AGENT_LIVE=1 and an API key."

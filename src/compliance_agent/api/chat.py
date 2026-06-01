@@ -1,6 +1,6 @@
 """Ask Aspora — chat assistant that can read the compliance DB.
 
-Uses Grok with a small set of tools that wrap the existing SQL queries.
+Uses Claude with a small set of tools that wrap the existing SQL queries.
 The model decides which tool(s) to call to answer the user's question.
 
 To stay safe: every tool query is scoped to the authenticated user's

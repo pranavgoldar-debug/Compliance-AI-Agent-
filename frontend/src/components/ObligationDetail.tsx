@@ -983,21 +983,21 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-xs font-medium text-foreground">
               <Sparkles className="inline h-3 w-3 mr-1 text-aspora-600" />
-              Ask Grok what this page says
+              Ask Claude what this page says
             </div>
             <Button
               size="sm"
               variant="outline"
               disabled={aiSummaryMutation.isPending}
               onClick={() => aiSummaryMutation.mutate()}
-              title="Fetches the regulator page and asks Grok to extract form name, template link, and key requirements"
+              title="Fetches the regulator page and asks Claude to extract form name, template link, and key requirements"
             >
               {aiSummaryMutation.isPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}
-              {aiSummary ? "Re-read" : "Read with Grok"}
+              {aiSummary ? "Re-read" : "Read with Claude"}
             </Button>
           </div>
           {aiSummary && !aiSummary.available && (

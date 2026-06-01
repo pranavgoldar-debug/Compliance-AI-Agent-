@@ -74,7 +74,7 @@ export function SecondOpinionPanel({ obligationId }: Props) {
 
         {!result && !mutation.isPending && (
           <p className="text-sm text-muted-foreground">
-            Grok reviews the rule, the filled fields, comments, and attached document
+            Claude reviews the rule, the filled fields, comments, and attached document
             list, and returns a verdict (approve / needs_more_info / reject) plus risk
             flags. Useful as a second pair of eyes before you sign off a pending review.
           </p>
@@ -172,7 +172,7 @@ function OpinionView({ opinion }: { opinion: SecondOpinion }) {
       )}
 
       <p className="text-[11px] text-muted-foreground italic">
-        Grok's review is advisory — confirm with the rule itself and the attached
+        Claude's review is advisory — confirm with the rule itself and the attached
         documents before approving.
       </p>
     </div>

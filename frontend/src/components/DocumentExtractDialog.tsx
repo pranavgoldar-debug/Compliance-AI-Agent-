@@ -118,7 +118,7 @@ export function DocumentExtractDialog({ doc, obligationId, open, onOpenChange }:
           {extractQuery.isLoading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Reading document and asking Grok…
+              Reading document and asking Claude…
             </div>
           )}
 
@@ -199,7 +199,7 @@ export function DocumentExtractDialog({ doc, obligationId, open, onOpenChange }:
                 />
               </Field>
               <p className="text-[11px] text-muted-foreground">
-                Review and edit before applying — Grok can be wrong, especially on
+                Review and edit before applying — Claude can be wrong, especially on
                 payment-reference vs filing-reference distinctions.
               </p>
             </>

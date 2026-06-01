@@ -7,7 +7,7 @@ The watcher is on-demand only in Phase 7 (no scheduler). When admins click
   3. Compute a sha256 of the text. If it matches the latest snapshot,
      return {changed: False}; otherwise persist a new snapshot and
      return {changed: True, diff_excerpt, prev_excerpt, new_excerpt}.
-  4. Optionally ask Grok to summarise the change in one sentence
+  4. Optionally ask Claude to summarise the change in one sentence
      (skipped when AI is off).
 """
 from __future__ import annotations

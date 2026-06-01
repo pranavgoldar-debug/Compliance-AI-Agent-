@@ -3,7 +3,7 @@
 Each regulation points at a text excerpt shipped with the package. The
 mock extractor recognizes the markers in those files (see `mock.py`) and
 returns curated requirements per regulation. When wired to the live API,
-the same files will be re-extracted by Grok.
+the same files will be re-extracted by Claude.
 """
 from __future__ import annotations
 

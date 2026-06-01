@@ -172,9 +172,9 @@ def list_rule_snapshots(
 
 
 # ---------------------------------------------------------------------------
-# AI page summary — fetch the rule's source_url, ask Grok to extract
+# AI page summary — fetch the rule's source_url, ask Claude to extract
 # the form name, where to download the template, and key filing rules.
-# Read-only, no DB writes. Used by the "Ask Grok about this page" button
+# Read-only, no DB writes. Used by the "Ask Claude about this page" button
 # on the obligation drawer + the rules table.
 # ---------------------------------------------------------------------------
 class PageSummary(BaseModel):
@@ -194,7 +194,7 @@ def read_source_with_claude(
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ) -> PageSummary:
-    """Have Grok read the rule's regulator page and surface the form
+    """Have Claude read the rule's regulator page and surface the form
     template name, where to download it, and the key requirements.
     Compliance + finance both call this — anyone with a login can read
     the regulation summary."""
@@ -302,8 +302,8 @@ def read_source_with_claude(
                 )
     except Exception as e:  # noqa: BLE001
         return PageSummary(
-            available=False, rule_id=rule_id, url=url, error=f"Grok call failed: {e}"
+            available=False, rule_id=rule_id, url=url, error=f"Claude call failed: {e}"
         )
     return PageSummary(
-        available=False, rule_id=rule_id, url=url, error="No structured response from Grok."
+        available=False, rule_id=rule_id, url=url, error="No structured response from Claude."
     )

@@ -484,7 +484,7 @@ function StagingCard({ rule }: { rule: Rule }) {
                 {rule.applicability_note || "(no applicability note)"}
                 {"\n\n"}
                 <span className="italic text-muted-foreground/70">
-                  When this rule was extracted by Grok, the full source text was the regulatory excerpt above. Per-field provenance + side-by-side diff vs an existing rule lands in Phase 5.
+                  When this rule was extracted by Claude, the full source text was the regulatory excerpt above. Per-field provenance + side-by-side diff vs an existing rule lands in Phase 5.
                 </span>
               </div>
             </div>

@@ -127,7 +127,7 @@ export function AddRuleFromTextDialog({ open, onOpenChange }: Props) {
             Add Compliance Rules from regulation text
           </DialogTitle>
           <DialogDescription>
-            Paste the text of a law, circular, or notice. Grok will pull out the filing
+            Paste the text of a law, circular, or notice. Claude will pull out the filing
             obligations as candidate rules. You review, tick the ones to keep, pick which
             entities they apply to, and create them as Staging rules.
           </DialogDescription>
@@ -177,7 +177,7 @@ export function AddRuleFromTextDialog({ open, onOpenChange }: Props) {
               <div className="font-medium mb-1">No filing obligations detected.</div>
               <div className="text-muted-foreground">
                 {extraction.notes ||
-                  "Grok didn't find any recurring or event-based filings in the text. Try a different excerpt that describes returns, reports, or notification timings."}
+                  "Claude didn't find any recurring or event-based filings in the text. Try a different excerpt that describes returns, reports, or notification timings."}
               </div>
             </div>
           ) : (

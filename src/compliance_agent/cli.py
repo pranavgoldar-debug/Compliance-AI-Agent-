@@ -85,7 +85,7 @@ def _write_or_print(rendered: str, output: Optional[Path]) -> None:
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--framework", "framework_hint", default=None, help="Optional framework hint.")
 @click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=None)
-@click.option("--model", default="claude-opus-4-7", show_default=True, help="Grok model (live only).")
+@click.option("--model", default="claude-opus-4-7", show_default=True, help="Claude model (live only).")
 @click.option("--verify", is_flag=True, default=False, help="Run the verifier pass.")
 @click.option("--live", is_flag=True, default=False, help="Call Anthropic API; default is mock mode.")
 @click.option(
@@ -125,7 +125,7 @@ def extract(
 @click.argument("new_source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--framework", "framework_hint", default=None, help="Optional framework hint.")
 @click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=None)
-@click.option("--model", default="claude-opus-4-7", show_default=True, help="Grok model (live only).")
+@click.option("--model", default="claude-opus-4-7", show_default=True, help="Claude model (live only).")
 @click.option("--live", is_flag=True, default=False, help="Call Anthropic API; default is mock mode.")
 @click.option(
     "--format",
@@ -196,7 +196,7 @@ def render(input_json: Path, output: Optional[Path]) -> None:
 @main.command()
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8000, show_default=True, type=int)
-@click.option("--live", is_flag=True, default=False, help="Use live Grok extraction (requires ANTHROPIC_API_KEY).")
+@click.option("--live", is_flag=True, default=False, help="Use live Claude extraction (requires ANTHROPIC_API_KEY).")
 @click.option("--reload", is_flag=True, default=False, help="Auto-reload on code changes (dev).")
 @click.option("--no-browser", is_flag=True, default=False, help="Do not auto-open the browser.")
 def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> None:

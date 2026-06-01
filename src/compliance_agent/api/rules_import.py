@@ -6,7 +6,7 @@ Admin uploads a CSV or XLSX with one rule per row. Three endpoints:
   POST /api/rules/import/preview                   - parse + validate
   POST /api/rules/import/commit                    - persist as Staging rules
 
-No Grok. This is the plain bulk importer for an existing compliance tracker
+No Claude. This is the plain bulk importer for an existing compliance tracker
 sheet (e.g. the Aspora Global Compliance Tracker CSV).
 """
 from __future__ import annotations

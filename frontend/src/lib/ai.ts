@@ -19,7 +19,7 @@ export function useAiAvailable() {
     mode: data?.mode ?? "mock",
     tooltip:
       data && data.ai_available
-        ? "Runs on Grok with your ANTHROPIC_API_KEY."
+        ? "Runs on Claude with your ANTHROPIC_API_KEY."
         : "AI is off. Set COMPLIANCE_AGENT_LIVE=1 + ANTHROPIC_API_KEY to enable.",
   };
 }

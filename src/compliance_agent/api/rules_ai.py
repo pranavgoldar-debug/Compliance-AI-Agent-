@@ -1,10 +1,10 @@
 """AI-backed rule extraction endpoint.
 
-Admin pastes raw regulatory text -> Grok extracts candidate Rule rows ->
+Admin pastes raw regulatory text -> Claude extracts candidate Rule rows ->
 admin reviews + ticks -> bulk-create endpoint persists them as Staging
 rules associated with selected entities.
 
-Only the extraction call hits Grok. Creation is plain SQL.
+Only the extraction call hits Claude. Creation is plain SQL.
 """
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def extract_rules(
     except Exception as exc:  # noqa: BLE001
         # Surface Anthropic / network errors verbatim — admin needs to see them
         # to know whether to retry, top up credits, fix the key, etc.
-        raise HTTPException(status_code=502, detail=f"Grok call failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
 
     return ExtractResponse(
         available=True,
