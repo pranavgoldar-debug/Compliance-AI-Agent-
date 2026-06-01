@@ -73,6 +73,7 @@ export interface Obligation {
   rule_form_name: string;
   rule_authority: string;
   rule_category: string;
+  rule_tax_type: TaxType;
   rule_frequency: string;
   rule_due_date_rule: string | null;
   rule_source_url: string | null;
@@ -109,6 +110,7 @@ export interface CalendarObligation {
   rule_form_name: string;
   rule_authority: string;
   rule_category: string;
+  rule_tax_type: TaxType;
   effort_band: EffortBand;
   assignee: UserBrief | null;
   is_overdue: boolean;

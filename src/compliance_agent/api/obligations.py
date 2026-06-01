@@ -473,6 +473,7 @@ def calendar_range(
     jurisdiction_codes: Optional[list[str]] = Query(None),
     category: Optional[str] = Query(None),
     categories: Optional[list[str]] = Query(None),
+    tax_types: Optional[list[str]] = Query(None),
     assignee_id: Optional[int] = Query(None),
     assignee_ids: Optional[list[int]] = Query(None),
     status: Optional[ObligationStatus] = Query(None),
@@ -515,4 +516,10 @@ def calendar_range(
     if categories:
         cats = set(categories)
         items = [o for o in items if o.rule.category in cats]
+    if tax_types:
+        wanted = set(tax_types)
+        items = [
+            o for o in items
+            if o.rule.tax_type and o.rule.tax_type.value in wanted
+        ]
     return [serialize_calendar_obligation(o) for o in items]

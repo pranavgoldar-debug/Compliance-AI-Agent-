@@ -121,6 +121,7 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
+        rule_tax_type=o.rule.tax_type,
         rule_frequency=o.rule.frequency,
         rule_due_date_rule=o.rule.due_date_rule,
         rule_source_url=None,  # populated later when we capture source URLs
@@ -160,6 +161,7 @@ def serialize_calendar_obligation(o: Obligation) -> CalendarObligation:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
+        rule_tax_type=o.rule.tax_type,
         effort_band=band,
         assignee=serialize_user(o.assignee),
         is_overdue=is_overdue(o.due_date, o.status),

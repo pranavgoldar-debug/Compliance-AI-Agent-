@@ -80,26 +80,20 @@ const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
   { value: "not_applicable", label: "N/A" },
 ];
 
-const CATEGORIES = [
-  "Direct Tax",
-  "Indirect Tax",
-  "Annual Report",
-  "License",
-  "Other",
-];
+const TAX_TYPES = ["Direct Tax", "Indirect Tax", "Not a Tax"];
 
 
 interface Filters {
   entityIds: number[];
   jurisdictions: string[];
-  categories: string[];
+  taxTypes: string[];
   statuses: ObligationStatus[];
   assigneeIds: number[];
 }
 
 
 function emptyFilters(): Filters {
-  return { entityIds: [], jurisdictions: [], categories: [], statuses: [], assigneeIds: [] };
+  return { entityIds: [], jurisdictions: [], taxTypes: [], statuses: [], assigneeIds: [] };
 }
 
 
@@ -161,7 +155,7 @@ export function CalendarPage() {
       });
       filters.entityIds.forEach((id) => params.append("entity_ids", String(id)));
       filters.jurisdictions.forEach((j) => params.append("jurisdiction_codes", j));
-      filters.categories.forEach((c) => params.append("categories", c));
+      filters.taxTypes.forEach((t) => params.append("tax_types", t));
       filters.statuses.forEach((s) => params.append("statuses", s));
       filters.assigneeIds.forEach((id) => params.append("assignee_ids", String(id)));
       return api.get<CalendarObligation[]>(`/api/calendar?${params.toString()}`);
@@ -171,7 +165,7 @@ export function CalendarPage() {
   const activeFilterCount =
     filters.entityIds.length +
     filters.jurisdictions.length +
-    filters.categories.length +
+    filters.taxTypes.length +
     filters.statuses.length +
     filters.assigneeIds.length;
 
@@ -237,8 +231,6 @@ export function CalendarPage() {
                 due_to: format(end, "yyyy-MM-dd"),
                 jurisdiction_code:
                   filters.jurisdictions.length === 1 ? filters.jurisdictions[0] : undefined,
-                category:
-                  filters.categories.length === 1 ? filters.categories[0] : undefined,
               }}
             />
           </div>
@@ -267,10 +259,10 @@ export function CalendarPage() {
             onChange={(vals) => setFilters((f) => ({ ...f, jurisdictions: vals }))}
           />
           <MultiSelectFilter
-            label="Category"
-            options={CATEGORIES.map((c) => ({ value: c, label: c }))}
-            selected={filters.categories}
-            onChange={(vals) => setFilters((f) => ({ ...f, categories: vals }))}
+            label="Tax type"
+            options={TAX_TYPES.map((t) => ({ value: t, label: t }))}
+            selected={filters.taxTypes}
+            onChange={(vals) => setFilters((f) => ({ ...f, taxTypes: vals }))}
           />
           <MultiSelectFilter
             label="Status"
@@ -899,7 +891,21 @@ function ListView({
                       <div className="text-xs text-muted-foreground truncate">{ob.rule_authority}</div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <Badge variant="neutral">{ob.rule_category}</Badge>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge variant="neutral">{ob.rule_category}</Badge>
+                        {(ob.rule_tax_type === "Direct Tax" ||
+                          ob.rule_tax_type === "Indirect Tax") && (
+                          <Badge
+                            variant={
+                              ob.rule_tax_type === "Direct Tax"
+                                ? "progress"
+                                : "review"
+                            }
+                          >
+                            {ob.rule_tax_type}
+                          </Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <EffortBandBadge band={ob.effort_band} />

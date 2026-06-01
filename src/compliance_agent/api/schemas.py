@@ -208,6 +208,7 @@ class ObligationOut(_Base):
     rule_form_name: str
     rule_authority: str
     rule_category: str
+    rule_tax_type: TaxType = TaxType.not_tax
     rule_frequency: str
     rule_due_date_rule: Optional[str] = None
     rule_source_url: Optional[str] = None
@@ -306,6 +307,7 @@ class CalendarObligation(_Base):
     rule_form_name: str
     rule_authority: str
     rule_category: str
+    rule_tax_type: TaxType = TaxType.not_tax
     effort_band: EffortBand = EffortBand.w4
     assignee: Optional[UserBrief] = None
     is_overdue: bool
