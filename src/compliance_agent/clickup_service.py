@@ -213,13 +213,21 @@ def register_webhook(db: Session, *, endpoint: str, updated_by_id: Optional[int]
     if not token or not list_id:
         raise ValueError("Set the API token + list ID first.")
 
-    team_id = cfg.get("team_id")
-    if not team_id:
-        teams = list_teams(token)
-        if not teams:
-            raise ValueError("No ClickUp workspace is visible to this token.")
-        team_id = str(teams[0]["id"])
-        cfg["team_id"] = team_id
+    # Validate the list id up front so we can give a clean error instead of
+    # ClickUp's opaque "Invalid list id".
+    lr = httpx.get(
+        f"{API_BASE}/list/{list_id}", headers=_headers(token), timeout=_TIMEOUT
+    )
+    if lr.status_code != 200:
+        raise ValueError(
+            "That List ID isn't valid for this token. Open the list in ClickUp, "
+            "copy the link, and use the number after /li/ in the URL — that's the "
+            "List ID (not a folder, space, or view id)."
+        )
+
+    teams = list_teams(token)
+    if not teams:
+        raise ValueError("No ClickUp workspace is visible to this token.")
 
     # Remove any stale webhook we previously created so we don't stack dupes.
     old = cfg.get("webhook_id")
@@ -231,23 +239,35 @@ def register_webhook(db: Session, *, endpoint: str, updated_by_id: Optional[int]
         except Exception:  # noqa: BLE001
             pass
 
-    r = httpx.post(
-        f"{API_BASE}/team/{team_id}/webhook",
-        headers=_headers(token),
-        json={
-            "endpoint": endpoint,
-            "events": ["taskStatusUpdated"],
-            "list_id": list_id,
-        },
-        timeout=_TIMEOUT,
+    # The webhook must be created on the workspace (team) that owns the list.
+    # We can't always tell which one that is up front, so try each workspace
+    # the token can see and keep the first that accepts the list_id. Don't
+    # trust a previously-cached team_id — it may be the wrong one.
+    last_err = ""
+    for team in teams:
+        team_id = str(team["id"])
+        r = httpx.post(
+            f"{API_BASE}/team/{team_id}/webhook",
+            headers=_headers(token),
+            json={
+                "endpoint": endpoint,
+                "events": ["taskStatusUpdated"],
+                "list_id": list_id,
+            },
+            timeout=_TIMEOUT,
+        )
+        if r.status_code in (200, 201):
+            data = r.json()
+            hook = data.get("webhook") or {}
+            cfg["team_id"] = team_id
+            cfg["webhook_id"] = str(hook.get("id") or data.get("id") or "")
+            cfg["webhook_secret"] = hook.get("secret") or ""
+            return set_config(db, cfg, updated_by_id=updated_by_id)
+        last_err = r.text[:300]
+
+    raise ValueError(
+        f"ClickUp rejected the webhook across all workspaces: {last_err}"
     )
-    if r.status_code not in (200, 201):
-        raise ValueError(f"ClickUp rejected the webhook: {r.text[:300]}")
-    data = r.json()
-    hook = data.get("webhook") or {}
-    cfg["webhook_id"] = str(hook.get("id") or data.get("id") or "")
-    cfg["webhook_secret"] = hook.get("secret") or ""
-    return set_config(db, cfg, updated_by_id=updated_by_id)
 
 
 def verify_signature(secret: str, raw_body: bytes, signature: str) -> bool:
