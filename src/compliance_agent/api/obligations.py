@@ -4,8 +4,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
@@ -31,10 +31,11 @@ from compliance_agent.api.schemas import (
     ObligationOut,
     ObligationUpdate,
 )
-from compliance_agent.auth import get_current_user
+from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
     Comment,
     Department,
+    Document,
     Notification,
     NotificationKind,
     Obligation,
@@ -265,6 +266,51 @@ def update_obligation(
         _base_query().where(Obligation.id == obligation.id)
     ).scalars().unique().one()
     return serialize_obligation(obligation)
+
+
+@router.delete("/{obligation_id}", status_code=204)
+def delete_obligation(
+    obligation_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> Response:
+    """Admin-only: permanently delete a single filing/obligation.
+
+    Used to clean up obligations whose driving license/rule no longer
+    applies. Proof-of-filing documents are kept (just unlinked); comments
+    and notifications tied to the obligation are removed. We unlink/clean
+    the references explicitly rather than relying on DB-level ON DELETE,
+    since the legacy production FKs may predate those clauses.
+    """
+    obligation = db.get(Obligation, obligation_id)
+    if obligation is None:
+        raise HTTPException(status_code=404, detail="Obligation not found.")
+
+    # Keep proof-of-filing documents — just detach them from the deleted row.
+    db.execute(
+        sa_update(Document)
+        .where(Document.obligation_id == obligation_id)
+        .values(obligation_id=None)
+    )
+    # Notifications + comments are scoped to this obligation; drop them.
+    db.execute(sa_delete(Notification).where(Notification.obligation_id == obligation_id))
+    db.execute(sa_delete(Comment).where(Comment.obligation_id == obligation_id))
+
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="obligation.deleted",
+        target_type="obligation",
+        target_id=obligation_id,
+        payload={
+            "rule_id": obligation.rule_id,
+            "entity_id": obligation.entity_id,
+            "due_date": str(obligation.due_date),
+        },
+    )
+    db.delete(obligation)
+    db.commit()
+    return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------------

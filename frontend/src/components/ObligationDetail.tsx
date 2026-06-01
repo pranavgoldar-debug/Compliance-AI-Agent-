@@ -3,7 +3,7 @@
 // sidebar: page shows it inline, drawer stacks it below the main content.
 
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity as ActivityIcon,
@@ -21,6 +21,7 @@ import {
   Sparkles,
   Tag,
   FileText,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -226,6 +227,7 @@ interface Props {
 
 export function ObligationDetail({ obligationId, variant, onClose }: Props) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { user: currentUser } = useAuth();
 
   const { data: obligation, isLoading } = useQuery({
@@ -257,6 +259,24 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
     },
   });
 
+  // Admin-only: permanently delete this filing. Used to clean up
+  // obligations whose driving license/rule no longer applies.
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/api/obligations/${obligationId}`),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ["obligation", obligationId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-task-count"] });
+      // Drawer just closes; full page navigates back to the work list.
+      if (onClose) onClose();
+      else navigate("/tasks");
+    },
+  });
+
   if (isLoading || !obligation) {
     return (
       <div className="p-6 space-y-4">
@@ -278,6 +298,8 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
         onPatch={(p) => patchMutation.mutate(p)}
         saving={patchMutation.isPending}
         currentUser={currentUser}
+        onDelete={() => deleteMutation.mutate()}
+        deleting={deleteMutation.isPending}
       />
       <Body
         obligation={obligation}
@@ -538,12 +560,16 @@ function ActionBar({
   onPatch,
   saving,
   currentUser,
+  onDelete,
+  deleting,
 }: {
   obligation: Obligation;
   users: UserBrief[];
   onPatch: (p: Partial<Obligation>) => void;
   saving: boolean;
   currentUser: { id: number; role: string } | null;
+  onDelete: () => void;
+  deleting: boolean;
 }) {
   const isAdmin = currentUser?.role === "admin";
   const isAssignee = currentUser?.id === obligation.assignee?.id;
@@ -758,6 +784,36 @@ function ActionBar({
               <Loader2 className="h-3 w-3 animate-spin" />
               Saving…
             </span>
+          )}
+          {/* Admin-only destructive action — delete this filing entirely.
+              Used to remove obligations whose license/rule no longer
+              applies. Kept on the far right, away from the everyday
+              workflow buttons, behind a confirm. */}
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={deleting}
+              onClick={() => {
+                const form = obligation.rule_form_name || "this filing";
+                if (
+                  window.confirm(
+                    `Delete "${form}"?\n\nThis permanently removes this filing and its comments. Uploaded documents are kept. This can't be undone.`,
+                  )
+                ) {
+                  onDelete();
+                }
+              }}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              title="Delete this filing permanently"
+            >
+              {deleting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              Delete
+            </Button>
           )}
         </div>
       </div>
