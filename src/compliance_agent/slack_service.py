@@ -126,7 +126,7 @@ def _app_base_url() -> str:
     """Best-effort base URL for the deployed app — drives the "View in
     Aspora" buttons. Falls back to a sensible default if unset."""
     import os
-    return os.environ.get("COMPLIANCE_BASE_URL", "").rstrip("/") or "https://compliance-ai-agent-zv3q.onrender.com"
+    return os.environ.get("COMPLIANCE_BASE_URL", "").rstrip("/") or "https://compliance-ai-agent-j3l9.onrender.com"
 
 
 def _obligation_link(obligation: Obligation) -> str:
