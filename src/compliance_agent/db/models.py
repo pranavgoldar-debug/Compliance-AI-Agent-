@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -520,6 +521,25 @@ class WorkspaceSetting(Base):
     )
     updated_by_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# File blobs — uploaded license PDFs + documents stored IN the database so
+# they survive redeploys. (Render's free tier has an ephemeral disk, so the
+# old filesystem storage lost every upload on each deploy.) Keyed by the same
+# `entity_<id>/<uuid>__<name>` path string the storage layer hands out, so
+# License.storage_path / Document.storage_path keep working unchanged.
+# ---------------------------------------------------------------------------
+class FileBlob(Base):
+    __tablename__ = "file_blobs"
+
+    path: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
     )
 
 

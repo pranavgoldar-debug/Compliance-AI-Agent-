@@ -55,14 +55,26 @@ def extract_from_document(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    try:
-        path = storage.absolute_path(doc.storage_path)
-    except ValueError:
-        raise HTTPException(status_code=410, detail="Document file is missing on disk.")
-    if not path.exists():
-        raise HTTPException(status_code=410, detail="Document file is missing on disk.")
+    data = storage.read_bytes(doc.storage_path)
+    if not data:
+        raise HTTPException(status_code=410, detail="Document file is missing.")
 
-    result = extract_doc(path, doc.content_type)
+    # extract_doc works on a file path; write the DB blob to a short-lived
+    # temp file so we don't have to change the extractor.
+    import tempfile
+    from pathlib import Path as _Path
+
+    suffix = _Path(doc.filename or doc.storage_path or "").suffix or ""
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = _Path(tmp.name)
+    try:
+        result = extract_doc(tmp_path, doc.content_type)
+    finally:
+        try:
+            tmp_path.unlink()
+        except Exception:  # noqa: BLE001
+            pass
 
     if result.available and result.suggestion is not None:
         # Log only on success so audit doesn't get flooded with "AI off" entries.

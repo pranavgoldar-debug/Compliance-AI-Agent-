@@ -414,22 +414,22 @@ def _read_license_text(lic: License) -> str:
     pypdf; text-like uploads pass through. Returns '' if no file."""
     if not lic.storage_path:
         return ""
-    path = storage.absolute_path(lic.storage_path)
-    if not path.exists():
-        return ""
-    if path.stat().st_size > _MAX_EXTRACT_BYTES:
+    data = storage.read_bytes(lic.storage_path)
+    if not data or len(data) > _MAX_EXTRACT_BYTES:
         return ""
 
-    suffix = path.suffix.lower()
+    name = (lic.filename or lic.storage_path or "").lower()
     try:
-        if suffix == ".pdf":
+        if name.endswith(".pdf"):
+            import io
+
             from pypdf import PdfReader
 
-            reader = PdfReader(str(path))
+            reader = PdfReader(io.BytesIO(data))
             return "\n\n".join((p.extract_text() or "") for p in reader.pages)
         # Best-effort text read for .txt / .md / .csv etc. Binary files (e.g.
         # an image) will just return empty after decode-with-replace.
-        return path.read_text(encoding="utf-8", errors="ignore")
+        return data.decode("utf-8", errors="ignore")
     except Exception:  # noqa: BLE001
         return ""
 

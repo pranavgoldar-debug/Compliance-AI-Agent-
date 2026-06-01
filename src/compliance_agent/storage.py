@@ -1,42 +1,34 @@
-"""Document storage backend — pluggable filesystem implementation.
+"""Document storage backend — database-backed blobs.
 
-For now we only ship a local filesystem backend. To swap to S3/R2 later,
-implement the same `save_bytes` / `open_read` / `delete` contract and route
-through an env var (COMPLIANCE_STORAGE_BACKEND=s3 etc).
+Uploaded files (license PDFs, documents) are stored as rows in the
+`file_blobs` table rather than on local disk. This is deliberate: Render's
+free tier (and most PaaS) give web services an EPHEMERAL filesystem, so any
+file written to disk is wiped on every redeploy/restart — which silently
+lost every upload. The database persists, so blobs survive deploys.
 
-Files live under `COMPLIANCE_UPLOADS_DIR` (default: ./uploads). Storage paths
-are content-addressed by a UUID4 prefix so re-uploads of the same filename
-don't collide. The original filename is kept in the Document.filename column
-for display.
+The public contract is unchanged: `save_bytes` returns a string
+`storage_path` key (kept in License.storage_path / Document.storage_path),
+and `open_read` / `read_bytes` / `delete` / `file_size` operate on that key.
+The key format stays `entity_<id>/<uuid>__<safe-filename>` for readability.
+
+To swap to S3/R2 later, reimplement the same contract behind an env switch.
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 import uuid
-from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 
 
-def _resolve_root() -> Path:
-    root = os.environ.get("COMPLIANCE_UPLOADS_DIR", "uploads")
-    p = Path(root).resolve()
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-ROOT = _resolve_root()
-
-
-# Filename normalisation — strip path components, control chars, and length-cap.
+# Filename normalisation — strip path components, control chars, length-cap.
 _FILENAME_BAD = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _safe_filename(name: str) -> str:
-    """Return a filesystem-safe filename. Always preserves an extension if
-    one was present in the original."""
+    """Return a safe filename. Always preserves an extension if present."""
     base = os.path.basename(name or "").strip() or "file"
-    # Split off extension first so we can keep it intact.
     if "." in base:
         stem, ext = base.rsplit(".", 1)
         ext = "." + _FILENAME_BAD.sub("", ext)[:16]
@@ -46,61 +38,81 @@ def _safe_filename(name: str) -> str:
     return stem + ext
 
 
-def save_bytes(entity_id: int, original_filename: str, source: BinaryIO) -> tuple[str, int]:
-    """Persist a file. Returns (relative_storage_path, size_bytes).
+def save_bytes(
+    entity_id: int,
+    original_filename: str,
+    source: BinaryIO,
+    content_type: Optional[str] = None,
+) -> tuple[str, int]:
+    """Persist a file in the DB. Returns (storage_path_key, size_bytes)."""
+    from compliance_agent.db import session_scope
+    from compliance_agent.db.models import FileBlob
 
-    The storage path is `entity_<id>/<uuid>__<safe-filename>` so we can browse
-    on disk by entity in the worst case.
-    """
     safe = _safe_filename(original_filename)
-    subdir = ROOT / f"entity_{entity_id}"
-    subdir.mkdir(parents=True, exist_ok=True)
-    token = uuid.uuid4().hex
-    target = subdir / f"{token}__{safe}"
+    key = f"entity_{entity_id}/{uuid.uuid4().hex}__{safe}"
 
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = source.read(64 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
+    data = source.read()
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    size = len(data)
 
-    relative = target.relative_to(ROOT).as_posix()
-    return relative, size
+    with session_scope() as db:
+        db.add(
+            FileBlob(path=key, data=data, size_bytes=size, content_type=content_type)
+        )
+    return key, size
 
 
-def absolute_path(storage_path: str) -> Path:
-    """Convert a stored relative path back to an absolute filesystem path.
-    Raises ValueError if the path tries to escape the uploads root."""
-    p = (ROOT / storage_path).resolve()
-    # Guard against path traversal (e.g. a malicious DB row "../etc/passwd").
-    try:
-        p.relative_to(ROOT)
-    except ValueError as e:
-        raise ValueError("Document path escapes uploads root.") from e
-    return p
+def read_bytes(storage_path: str) -> Optional[bytes]:
+    """Return the stored bytes for a key, or None if it doesn't exist."""
+    if not storage_path:
+        return None
+    from compliance_agent.db import session_scope
+    from compliance_agent.db.models import FileBlob
+
+    with session_scope() as db:
+        blob = db.get(FileBlob, storage_path)
+        return bytes(blob.data) if blob else None
 
 
 def open_read(storage_path: str) -> BinaryIO:
-    return absolute_path(storage_path).open("rb")
+    """Return a binary stream over the stored bytes (empty if missing)."""
+    return io.BytesIO(read_bytes(storage_path) or b"")
 
 
 def delete(storage_path: str) -> None:
-    p = absolute_path(storage_path)
-    if p.exists():
-        p.unlink()
+    if not storage_path:
+        return
+    from compliance_agent.db import session_scope
+    from compliance_agent.db.models import FileBlob
+
+    with session_scope() as db:
+        blob = db.get(FileBlob, storage_path)
+        if blob is not None:
+            db.delete(blob)
 
 
 def file_size(storage_path: str) -> int:
-    p = absolute_path(storage_path)
-    return p.stat().st_size if p.exists() else 0
-
-
-# Convenience for the API — total bytes used by an entity.
-def entity_usage_bytes(entity_id: int) -> int:
-    subdir = ROOT / f"entity_{entity_id}"
-    if not subdir.exists():
+    if not storage_path:
         return 0
-    return sum(f.stat().st_size for f in subdir.iterdir() if f.is_file())
+    from compliance_agent.db import session_scope
+    from compliance_agent.db.models import FileBlob
+
+    with session_scope() as db:
+        blob = db.get(FileBlob, storage_path)
+        return blob.size_bytes if blob else 0
+
+
+def entity_usage_bytes(entity_id: int) -> int:
+    from sqlalchemy import func, select
+
+    from compliance_agent.db import session_scope
+    from compliance_agent.db.models import FileBlob
+
+    with session_scope() as db:
+        total = db.execute(
+            select(func.coalesce(func.sum(FileBlob.size_bytes), 0)).where(
+                FileBlob.path.like(f"entity_{entity_id}/%")
+            )
+        ).scalar_one()
+        return int(total or 0)
