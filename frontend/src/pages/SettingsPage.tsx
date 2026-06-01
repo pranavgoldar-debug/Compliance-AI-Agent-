@@ -952,11 +952,22 @@ interface SlackConfig {
   default_channel: string | null;
 }
 
+interface ClickUpConfig {
+  configured: boolean;
+  enabled: boolean;
+  has_token: boolean;
+  api_token_masked: string | null;
+  list_id: string | null;
+  done_status: string | null;
+  two_way_connected: boolean;
+}
+
 
 function IntegrationsTab() {
   return (
     <div className="space-y-4">
       <SlackCard />
+      <ClickUpCard />
       <GmailCard />
       <ComingSoonGrid />
     </div>
@@ -1152,6 +1163,250 @@ function SlackCard() {
 }
 
 
+function ClickUpCard() {
+  const queryClient = useQueryClient();
+  const { data: cfg, isLoading } = useQuery({
+    queryKey: ["integrations", "clickup"],
+    queryFn: () => api.get<ClickUpConfig>("/api/admin/integrations/clickup"),
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [token, setToken] = useState("");
+  const [listId, setListId] = useState("");
+  const [doneStatus, setDoneStatus] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
+
+  useEffect(() => {
+    if (cfg) {
+      setListId(cfg.list_id || "");
+      setDoneStatus(cfg.done_status || "");
+    }
+  }, [cfg]);
+
+  const saveMutation = useMutation({
+    mutationFn: (body: {
+      api_token?: string;
+      list_id?: string;
+      done_status?: string;
+      enabled?: boolean;
+    }) => api.post<ClickUpConfig>("/api/admin/integrations/clickup", body),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["integrations", "clickup"], fresh);
+      setEditing(false);
+      setToken("");
+      setResult(null);
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>("/api/admin/integrations/clickup/test"),
+    onSuccess: (r) => setResult(r),
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: () =>
+      api.post<ClickUpConfig>("/api/admin/integrations/clickup/connect-webhook"),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["integrations", "clickup"], fresh);
+      setResult({ ok: true, detail: "Two-way sync connected — ClickUp will now push status updates back." });
+    },
+    onError: (e: unknown) =>
+      setResult({ ok: false, detail: (e as Error).message }),
+  });
+
+  if (isLoading || !cfg) {
+    return <Card><CardContent className="p-4 text-sm text-muted-foreground">Loading ClickUp config…</CardContent></Card>;
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
+            <ListChecks className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold">ClickUp</div>
+              {cfg.configured && cfg.enabled ? (
+                <Badge variant="completed">
+                  <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                  Connected
+                </Badge>
+              ) : cfg.configured ? (
+                <Badge variant="alert">Paused</Badge>
+              ) : (
+                <Badge variant="neutral">Not connected</Badge>
+              )}
+              {cfg.two_way_connected && (
+                <Badge variant="default">Two-way sync</Badge>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              When compliance requests a payment, a task is created in your finance ClickUp list. Closing it there marks the obligation complete here.
+            </div>
+          </div>
+
+          {cfg.configured && !editing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending}
+            >
+              {testMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ListChecks className="h-3.5 w-3.5" />}
+              Test
+            </Button>
+          )}
+        </div>
+
+        {cfg.configured && !editing && (
+          <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">API token</span>
+              <span className="font-mono truncate">{cfg.api_token_masked}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">List ID</span>
+              <span className="font-mono">{cfg.list_id}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Done status</span>
+              <span className="font-mono">{cfg.done_status || "complete"}</span>
+            </div>
+          </div>
+        )}
+
+        {result && (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              result.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-destructive/30 bg-destructive/5 text-destructive",
+            )}
+          >
+            {result.detail}
+          </div>
+        )}
+
+        {!editing ? (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              {cfg.configured ? "Update" : "Connect"}
+            </Button>
+            {cfg.configured && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => connectMutation.mutate()}
+                  disabled={connectMutation.isPending}
+                >
+                  {connectMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {cfg.two_way_connected ? "Re-connect two-way sync" : "Enable two-way sync"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => saveMutation.mutate({ enabled: !cfg.enabled })}
+                  disabled={saveMutation.isPending}
+                >
+                  {cfg.enabled ? "Pause" : "Resume"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600"
+                  onClick={() => {
+                    if (window.confirm("Disconnect ClickUp? New payment requests won't create tasks.")) {
+                      saveMutation.mutate({ api_token: "" });
+                    }
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                ClickUp API token
+              </label>
+              <Input
+                autoFocus
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={cfg.has_token ? "•••• (leave blank to keep current)" : "pk_12345678_ABCDEF…"}
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                ClickUp → your avatar → Settings → Apps → Generate / copy your API token.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Finance list ID
+              </label>
+              <Input
+                value={listId}
+                onChange={(e) => setListId(e.target.value)}
+                placeholder="901100123456"
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Open the ClickUp list → ⋯ → Copy link. The number after /li/ (or /v/li/) is the List ID.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Done status (optional)
+              </label>
+              <Input
+                value={doneStatus}
+                onChange={(e) => setDoneStatus(e.target.value)}
+                placeholder="complete"
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                The list status that means "paid". Defaults to <code>complete</code>.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() =>
+                  saveMutation.mutate({
+                    api_token: token.trim() || undefined,
+                    list_id: listId.trim() || undefined,
+                    done_status: doneStatus.trim() || undefined,
+                    enabled: true,
+                  })
+                }
+                disabled={
+                  saveMutation.isPending ||
+                  (!token.trim() && !cfg.has_token) ||
+                  !listId.trim()
+                }
+              >
+                {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
 function GmailCard() {
   const [recipient, setRecipient] = useState("");
   const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
@@ -1249,11 +1504,6 @@ SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
 
 function ComingSoonGrid() {
   const items: { name: string; description: string; icon: React.ReactNode }[] = [
-    {
-      name: "ClickUp",
-      description: "Push obligations as tasks for execution by the ops team",
-      icon: <ListChecks className="h-5 w-5" />,
-    },
     {
       name: "Google Calendar",
       description: "Per-user OAuth — drops events on each due date",

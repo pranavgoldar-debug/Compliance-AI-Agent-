@@ -732,6 +732,18 @@ function FilingFields({
           />
         </div>
 
+        {obligation.clickup_task_url && (
+          <a
+            href={obligation.clickup_task_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs text-aspora-700 hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            View finance task in ClickUp
+          </a>
+        )}
+
         {/* Explicit compliance → finance hand-off. Shown when the rule has a
             payment leg AND payment isn't logged yet. Clicking pings the
             finance team + admins so the hand-off is actively visible. */}

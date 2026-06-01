@@ -10,21 +10,33 @@
 """
 from __future__ import annotations
 
+import json
+import logging
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from compliance_agent import slack_service
+from compliance_agent import clickup_service, slack_service
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
-from compliance_agent.db import User, get_session
+from compliance_agent.db import (
+    Obligation,
+    ObligationStatus,
+    User,
+    get_session,
+    session_scope,
+)
 from compliance_agent.email_service import (
     base_url as app_base_url,
     send_email,
     smtp_configured,
 )
+
+logger = logging.getLogger("compliance_agent.integrations")
 
 
 admin_router = APIRouter(prefix="/api/admin/integrations", tags=["integrations"])
@@ -201,6 +213,199 @@ def test_email(
             detail="SMTP send failed. Check the server logs for the underlying error.",
         )
     return TestResult(ok=True, detail=f"Sent to {to}.")
+
+
+# ---------------------------------------------------------------------------
+# ClickUp — finance payment tasks + two-way status sync
+# ---------------------------------------------------------------------------
+def _mask_token(tok: Optional[str]) -> Optional[str]:
+    if not tok:
+        return None
+    if len(tok) <= 10:
+        return "***"
+    return f"{tok[:5]}…{tok[-4:]}"
+
+
+class ClickUpConfigOut(BaseModel):
+    configured: bool
+    enabled: bool
+    has_token: bool = False
+    api_token_masked: Optional[str] = None
+    list_id: Optional[str] = None
+    done_status: Optional[str] = None
+    two_way_connected: bool = False
+
+
+class ClickUpConfigUpdate(BaseModel):
+    api_token: Optional[str] = None  # "" to clear
+    list_id: Optional[str] = None
+    done_status: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+def _clickup_out(cfg: dict) -> ClickUpConfigOut:
+    tok = cfg.get("api_token")
+    return ClickUpConfigOut(
+        configured=bool(tok) and bool(cfg.get("list_id")),
+        enabled=bool(cfg.get("enabled", True)),
+        has_token=bool(tok),
+        api_token_masked=_mask_token(tok),
+        list_id=cfg.get("list_id"),
+        done_status=cfg.get("done_status") or "complete",
+        two_way_connected=bool(cfg.get("webhook_id")),
+    )
+
+
+@admin_router.get("/clickup", response_model=ClickUpConfigOut)
+def get_clickup(
+    db: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+) -> ClickUpConfigOut:
+    return _clickup_out(clickup_service.get_config(db))
+
+
+@admin_router.post("/clickup", response_model=ClickUpConfigOut)
+def update_clickup(
+    payload: ClickUpConfigUpdate,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ClickUpConfigOut:
+    cfg = clickup_service.get_config(db)
+    if payload.api_token is not None:
+        cfg["api_token"] = payload.api_token.strip() or None
+    if payload.list_id is not None:
+        cfg["list_id"] = payload.list_id.strip() or None
+    if payload.done_status is not None:
+        cfg["done_status"] = payload.done_status.strip() or None
+    if payload.enabled is not None:
+        cfg["enabled"] = bool(payload.enabled)
+    clickup_service.set_config(db, cfg, updated_by_id=actor.id)
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="integration.clickup.updated",
+        target_type="integration",
+        payload={"has_token": bool(cfg.get("api_token")), "list_id": cfg.get("list_id")},
+    )
+    db.commit()
+    return _clickup_out(cfg)
+
+
+@admin_router.post("/clickup/test", response_model=TestResult)
+def test_clickup(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> TestResult:
+    cfg = clickup_service.get_config(db)
+    token = cfg.get("api_token")
+    if not token:
+        return TestResult(ok=False, detail="Add your ClickUp API token first.")
+    try:
+        teams = clickup_service.list_teams(token)
+    except Exception as exc:  # noqa: BLE001
+        return TestResult(ok=False, detail=f"ClickUp rejected the token: {exc}")
+    if not cfg.get("list_id"):
+        return TestResult(
+            ok=False,
+            detail=f"Token works ({len(teams)} workspace(s)), but set a List ID to create tasks.",
+        )
+    names = ", ".join(t.get("name", "?") for t in teams[:3])
+    return TestResult(ok=True, detail=f"Connected to ClickUp ({names}).")
+
+
+@admin_router.post("/clickup/connect-webhook", response_model=ClickUpConfigOut)
+def connect_clickup_webhook(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ClickUpConfigOut:
+    base = app_base_url()
+    if not base or base.startswith("http://localhost") or "127.0.0.1" in base:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Set COMPLIANCE_BASE_URL to your public app URL first — ClickUp "
+                "needs a reachable https endpoint to send webhooks to."
+            ),
+        )
+    endpoint = f"{base.rstrip('/')}/api/webhooks/clickup"
+    try:
+        cfg = clickup_service.register_webhook(
+            db, endpoint=endpoint, updated_by_id=actor.id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="integration.clickup.webhook_connected",
+        target_type="integration",
+        payload={"endpoint": endpoint},
+    )
+    db.commit()
+    return _clickup_out(cfg)
+
+
+# Public, signature-verified — ClickUp posts here when a task changes status.
+webhook_router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+
+
+@webhook_router.post("/clickup")
+async def clickup_webhook(request: Request) -> dict:
+    raw = await request.body()
+    signature = request.headers.get("X-Signature", "")
+    with session_scope() as db:
+        cfg = clickup_service.get_config(db)
+        secret = cfg.get("webhook_secret") or ""
+        if not clickup_service.verify_signature(secret, raw, signature):
+            raise HTTPException(status_code=401, detail="Invalid signature.")
+
+        try:
+            data = json.loads(raw or b"{}")
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Bad JSON.")
+
+        if data.get("event") != "taskStatusUpdated":
+            return {"ok": True, "ignored": "event"}
+
+        task_id = str(data.get("task_id") or "")
+        done_status = (cfg.get("done_status") or "complete").lower()
+        became_done = False
+        for h in data.get("history_items", []):
+            if h.get("field") not in (None, "status"):
+                continue
+            after = h.get("after") or {}
+            if isinstance(after, dict):
+                name = str(after.get("status") or "").lower()
+                kind = str(after.get("type") or "").lower()
+            else:
+                name, kind = str(after).lower(), ""
+            if kind == "closed" or (name and name == done_status):
+                became_done = True
+                break
+
+        if not (task_id and became_done):
+            return {"ok": True, "ignored": "no-op"}
+
+        ob = db.execute(
+            select(Obligation).where(Obligation.clickup_task_id == task_id)
+        ).scalars().first()
+        if ob is None:
+            return {"ok": True, "ignored": "unmatched"}
+        if ob.status == ObligationStatus.completed:
+            return {"ok": True, "ignored": "already-complete"}
+
+        ob.status = ObligationStatus.completed
+        ob.completed_at = datetime.now(tz=timezone.utc)
+        log_activity(
+            db,
+            actor_id=None,
+            action="obligation.completed_via_clickup",
+            target_type="obligation",
+            target_id=ob.id,
+            payload={"clickup_task_id": task_id},
+        )
+        # session_scope commits on exit.
+        return {"ok": True, "obligation_id": ob.id}
 
 
 # ---------------------------------------------------------------------------

@@ -224,6 +224,7 @@ class ObligationOut(_Base):
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
+    clickup_task_url: Optional[str] = None
     is_awaiting_payment: bool = False
     notes: Optional[str] = None
     days_remaining: int = 0

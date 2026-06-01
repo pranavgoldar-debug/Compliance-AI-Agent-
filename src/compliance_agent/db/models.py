@@ -289,6 +289,11 @@ class Obligation(Base):
     payment_amount: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     payment_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # ClickUp two-way sync — set when a finance payment task is created in
+    # ClickUp; lets the webhook map a closed task back to this obligation.
+    clickup_task_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    clickup_task_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
