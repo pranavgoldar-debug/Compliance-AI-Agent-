@@ -198,12 +198,14 @@ def create_app() -> FastAPI:
     # index.html. When the bundle isn't built (fresh clone, dev mode), we
     # fall back to the legacy vanilla-JS index.
     # ------------------------------------------------------------------
-    # Locate the built React bundle. The repo-relative path works for local
-    # dev; on Render an editable install can resolve __file__ elsewhere, so we
-    # also probe the CWD and Render's project dir. First hit with an
-    # index.html wins — otherwise SPA deep-links (e.g. /obligations/2) fall
-    # through to FastAPI and 404 with {"detail":"Not Found"}.
+    # Locate the built React bundle. The build copies frontend/dist into the
+    # package at compliance_agent/data/webapp (see render.yaml) — that path is
+    # resolved the SAME way as /static, which is proven to work on Render, so
+    # it's the reliable first choice. The repo-relative / CWD paths are
+    # fallbacks for local dev. First hit with an index.html wins — otherwise
+    # SPA deep-links (e.g. /obligations/2) 404 with {"detail":"Not Found"}.
     _dist_candidates = [
+        Path(str(files("compliance_agent.data").joinpath("webapp"))),
         Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
         Path.cwd() / "frontend" / "dist",
         Path("/opt/render/project/src/frontend/dist"),

@@ -14,7 +14,7 @@ services:
     # Deployed branch. Render reads this from the selected branch in the
     # dashboard, so also set Settings → Branch to match.
     branch: claude/upbeat-turing-DCFHF
-    buildCommand: pip install -e ".[postgres]" && cd frontend && npm ci && npm run build
+    buildCommand: pip install -e ".[postgres]" && cd frontend && npm ci && npm run build && mkdir -p ../src/compliance_agent/data/webapp && cp -r dist/. ../src/compliance_agent/data/webapp/
     startCommand: uvicorn compliance_agent.web:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/fintech/countries
     envVars:
