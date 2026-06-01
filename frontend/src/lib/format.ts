@@ -131,12 +131,32 @@ export const EFFORT_BAND_DAYS: Record<EffortBand, number> = {
 
 export const EFFORT_BANDS: EffortBand[] = ["1w", "2w", "4w", "8w", "12w"];
 
+// How early the FIRST reminder fires, per band. Single source of truth —
+// matches the backend reminder policy (monthly → 1 week, quarterly → 1 month,
+// annual → 45 days before the due date).
+const _LEAD_DAYS: Record<EffortBand, number> = {
+  "1w": 7,
+  "2w": 30,
+  "4w": 30,
+  "8w": 45,
+  "12w": 60,
+};
+
+const _LEAD_LABEL: Record<EffortBand, string> = {
+  "1w": "1 week before",
+  "2w": "1 month before",
+  "4w": "30 days before",
+  "8w": "45 days before",
+  "12w": "60 days before",
+};
+
 export function effortBandLabel(b: EffortBand): string {
-  return `${b} effort`;
+  // Human-readable reminder lead time instead of the raw band code.
+  return _LEAD_LABEL[b] ?? `${b} effort`;
 }
 
 export function leadTimeDays(b: EffortBand): number {
-  return EFFORT_BAND_DAYS[b] * 2;
+  return _LEAD_DAYS[b] ?? 30;
 }
 
 export function statusLabelShort(status: ObligationStatus, isOverdue: boolean): string {

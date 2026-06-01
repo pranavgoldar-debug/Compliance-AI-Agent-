@@ -45,7 +45,14 @@ import { MentionTextarea, renderCommentBody } from "@/components/MentionTextarea
 import { SecondOpinionPanel } from "@/components/SecondOpinionPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
-import { fmtDate, fmtRelative, userInitials, EFFORT_BANDS } from "@/lib/format";
+import {
+  fmtDate,
+  fmtRelative,
+  userInitials,
+  EFFORT_BANDS,
+  effortBandLabel,
+  leadTimeDays,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
   ActivityOut,
@@ -1306,13 +1313,14 @@ function EffortBandRow({
     );
   }
   return (
-    <FieldRow label="Effort band">
+    <FieldRow label="Reminder lead time">
       <div className="space-y-2">
         <div className="flex flex-wrap gap-1.5">
           {EFFORT_BANDS.map((b) => (
             <button
               key={b}
               type="button"
+              title={effortBandLabel(b)}
               onClick={() => onChange(b, draftReason.trim() || null)}
               className={cn(
                 "h-7 px-2.5 rounded-md text-xs font-medium border",
@@ -1321,7 +1329,7 @@ function EffortBandRow({
                   : "bg-background border-border hover:bg-secondary",
               )}
             >
-              {b}
+              {leadTimeDays(b)}d
             </button>
           ))}
         </div>

@@ -60,8 +60,10 @@ def lead_time_days(band: EffortBand) -> int:
 
 
 _REMINDER_OFFSETS: dict[EffortBand, list[int]] = {
+    # Aspora policy — first number = how early the FIRST reminder fires:
+    #   Monthly   → 1 week before · Quarterly → 1 month before · Annual → 45 days
     EffortBand.w1: [7],
-    EffortBand.w2: [25, 15],
+    EffortBand.w2: [30, 15],
     EffortBand.w4: [30, 15],
     EffortBand.w8: [45, 30],
     EffortBand.w12: [60, 30],
