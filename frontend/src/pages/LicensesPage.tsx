@@ -258,6 +258,20 @@ export function LicensesPage() {
 // ---------------------------------------------------------------------------
 // Upload dialog
 // ---------------------------------------------------------------------------
+interface LicenseAnalyze {
+  available: boolean;
+  notes: string | null;
+  suggested_entity_id: number | null;
+  entity_name: string | null;
+  name: string | null;
+  license_type: string | null;
+  authority: string | null;
+  jurisdiction_code: string | null;
+  license_number: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+}
+
 function UploadDialog({
   open,
   onOpenChange,
@@ -268,6 +282,7 @@ function UploadDialog({
   onUploaded: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [aiNote, setAiNote] = useState<string | null>(null);
 
   const { data: entities = [] } = useQuery({
     queryKey: ["entities", "for-license-upload"],
@@ -305,8 +320,43 @@ function UploadDialog({
     setExpiryDate("");
     setNotes("");
     setFile(null);
+    setAiNote(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     uploadMutation.reset();
+    analyzeMutation.reset();
+  }
+
+  // Claude reads the uploaded PDF and pre-fills the form fields below.
+  const analyzeMutation = useMutation({
+    mutationFn: async (f: File) => {
+      const form = new FormData();
+      form.append("file", f);
+      return api.upload<LicenseAnalyze>("/api/licenses/analyze", form);
+    },
+    onSuccess: (r) => {
+      if (!r.available) {
+        setAiNote(r.notes || "Couldn't auto-read the file — fill the fields manually.");
+        return;
+      }
+      setAiNote("Claude pre-filled these from the PDF — review and edit before saving.");
+      if (r.suggested_entity_id) pickEntity(r.suggested_entity_id);
+      if (r.name) setName(r.name);
+      if (r.license_type) setLicenseType(r.license_type);
+      if (r.authority) setAuthority(r.authority);
+      if (r.jurisdiction_code) setJurisdictionCode(r.jurisdiction_code);
+      if (r.license_number) setLicenseNumber(r.license_number);
+      if (r.issue_date) setIssueDate(r.issue_date);
+      if (r.expiry_date) setExpiryDate(r.expiry_date);
+    },
+    onError: (e) => setAiNote((e as Error).message),
+  });
+
+  function handleFile(f: File | null) {
+    setFile(f);
+    setAiNote(null);
+    if (f && f.name.toLowerCase().endsWith(".pdf")) {
+      analyzeMutation.mutate(f);
+    }
   }
 
   const uploadMutation = useMutation({
@@ -337,7 +387,9 @@ function UploadDialog({
     name.trim() &&
     authority.trim() &&
     jurisdictionCode &&
-    !uploadMutation.isPending;
+    file !== null &&
+    !uploadMutation.isPending &&
+    !analyzeMutation.isPending;
 
   return (
     <Dialog
@@ -354,8 +406,9 @@ function UploadDialog({
             Upload license
           </DialogTitle>
           <DialogDescription>
-            Pin a regulator + jurisdiction to one of your entities. Once saved,
-            open the license to see which compliance rules apply.
+            Upload the license PDF — Claude reads it and fills the fields below.
+            Review, pick the entity, and save. Then open the license to extract
+            the compliance rules it triggers.
           </DialogDescription>
         </DialogHeader>
 
@@ -460,33 +513,42 @@ function UploadDialog({
             />
           </Field>
 
-          <Field label="License file (optional)">
+          <Field label="License file (PDF) *">
             <label
               className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-2 cursor-pointer hover:border-aspora-400 hover:bg-aspora-50/40"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                const f = e.dataTransfer.files?.[0] ?? null;
-                setFile(f);
+                handleFile(e.dataTransfer.files?.[0] ?? null);
               }}
             >
               <input
                 ref={fileInputRef}
                 type="file"
+                accept=".pdf,application/pdf"
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               />
-              <Upload className="h-4 w-4 text-muted-foreground" />
+              {analyzeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin text-aspora-600" />
+              ) : (
+                <Upload className="h-4 w-4 text-muted-foreground" />
+              )}
               <span className="text-sm">
-                {file ? file.name : "Drop a PDF/image or click to browse"}
+                {analyzeMutation.isPending
+                  ? "Claude is reading the PDF…"
+                  : file
+                    ? file.name
+                    : "Drop the license PDF or click to browse"}
               </span>
-              {file && (
+              {file && !analyzeMutation.isPending && (
                 <button
                   type="button"
                   className="ml-auto text-xs text-muted-foreground hover:text-foreground"
                   onClick={(e) => {
                     e.preventDefault();
                     setFile(null);
+                    setAiNote(null);
                     if (fileInputRef.current) fileInputRef.current.value = "";
                   }}
                 >
@@ -494,6 +556,12 @@ function UploadDialog({
                 </button>
               )}
             </label>
+            {aiNote && (
+              <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                <Sparkles className="h-3 w-3 mt-0.5 shrink-0 text-aspora-600" />
+                <span>{aiNote}</span>
+              </div>
+            )}
           </Field>
 
           {uploadMutation.error && (

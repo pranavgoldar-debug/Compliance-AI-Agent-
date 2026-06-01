@@ -121,3 +121,66 @@ def extract_rules_from_text(
             f"Rule extraction failed — stop_reason={response.stop_reason}."
         )
     return response.parsed_output
+
+
+# ---------------------------------------------------------------------------
+# License metadata extraction — read a regulator's license/authorisation PDF
+# and pull out the fields needed to pre-fill the "Add license" form.
+# ---------------------------------------------------------------------------
+LICENSE_META_PROMPT = """You read a regulator-issued license / authorisation document and extract its key metadata so a compliance team can file it.
+
+Extract these fields (leave a field null if the document doesn't state it — never guess):
+- `entity_name` — the legal entity the license is ISSUED TO (the licensee / company name), exactly as written.
+- `name` — a short human title for the license (e.g. "FCA Authorisation", "MAS Major Payment Institution Licence", "CBUAE SVF Licence"). If a formal title exists, use it.
+- `license_type` — the category/type of licence if distinct from the name (e.g. "EMI", "Major Payment Institution", "Trade License").
+- `authority` — the issuing regulator (e.g. FCA, MAS, CBUAE, RBI, FinCEN, Bank of Lithuania).
+- `jurisdiction_code` — the country, mapped to EXACTLY one of: india, uk, us, uae, singapore, lithuania, canada, eu. Use null if it's none of these.
+- `license_number` — the licence / registration / reference number.
+- `issue_date` — the date granted/issued, as ISO YYYY-MM-DD.
+- `expiry_date` — the expiry / renewal-due date, as ISO YYYY-MM-DD. Null if the licence has no expiry.
+- `notes` — one short line of anything important (conditions, scope) — optional.
+
+Be precise. Only use what the document actually says."""
+
+
+class LicenseMetadata(BaseModel):
+    entity_name: Optional[str] = None
+    name: Optional[str] = None
+    license_type: Optional[str] = None
+    authority: Optional[str] = None
+    jurisdiction_code: Optional[str] = None
+    license_number: Optional[str] = None
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+def extract_license_metadata(
+    document_text: str,
+    *,
+    jurisdiction_hint: Optional[str] = None,
+    model: str = "claude-opus-4-7",
+) -> LicenseMetadata:
+    """Call Claude on a license document and return its metadata fields."""
+    if not is_live():
+        raise RuleExtractorUnavailable(
+            "AI license reading requires COMPLIANCE_AGENT_LIVE=1 and an API key."
+        )
+
+    client = make_client()
+    user_content = document_text
+    if jurisdiction_hint:
+        user_content = f"Jurisdiction hint: {jurisdiction_hint}\n\n---\n\n{document_text}"
+
+    response = client.messages.parse(
+        model=model,
+        max_tokens=4000,
+        system=[{"type": "text", "text": LICENSE_META_PROMPT}],
+        messages=[{"role": "user", "content": user_content}],
+        output_format=LicenseMetadata,
+    )
+    if response.parsed_output is None:
+        raise RuntimeError(
+            f"License metadata extraction failed — stop_reason={response.stop_reason}."
+        )
+    return response.parsed_output
