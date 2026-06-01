@@ -1429,38 +1429,50 @@ function GmailCard() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <div className="font-semibold">Email (Gmail / any SMTP)</div>
+              <div className="font-semibold">Email (Resend or SMTP)</div>
               <Badge variant="neutral">Config via .env</Badge>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
-              Sends password-reset emails today; assignment + overdue emails when notification
+              Sends password-reset, assignment, overdue + weekly-digest emails when notification
               prefs are on.
             </div>
           </div>
         </div>
 
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+          <strong>On Render?</strong> Render blocks outbound SMTP ports, so smtp.gmail.com fails
+          with “Network is unreachable”. Use Resend (HTTPS) instead — it works on Render.
+        </div>
+
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
-          <div className="font-medium">Connect Gmail in three steps</div>
+          <div className="font-medium">Recommended: Resend (works on Render)</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
             <li>
-              Turn on 2-Step Verification on the Google account that will send the mail.
+              Sign up at <span className="font-mono">resend.com</span> → API Keys → create one
+              (starts with <span className="font-mono">re_</span>).
             </li>
             <li>
-              Visit <span className="font-mono">myaccount.google.com/apppasswords</span> →
-              generate an App Password for "Mail / Other → Aspora".
+              Add &amp; verify your domain <span className="font-mono">aspora.com</span> in Resend
+              (Domains → add the DNS records). For a quick test you can skip this and send only to
+              your own inbox.
             </li>
             <li>
-              Drop the password into your <span className="font-mono">.env</span>:
+              Set these env vars (Render → Environment), then redeploy:
               <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
+{`RESEND_API_KEY=re_xxxxxxxxxxxx
+RESEND_FROM="Aspora Compliance <compliance@aspora.com>"`}
+              </pre>
+              (Before the domain is verified, use <span className="font-mono">onboarding@resend.dev</span> as the from.)
+            </li>
+          </ol>
+          <div className="font-medium pt-1">Alternative: SMTP (local / non-Render only)</div>
+          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
 {`SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=you@aspora.com
 SMTP_PASSWORD=<the 16-char app password>
 SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
-              </pre>
-              Restart the server. That's it.
-            </li>
-          </ol>
+          </pre>
         </div>
 
         <div className="flex items-end gap-2">

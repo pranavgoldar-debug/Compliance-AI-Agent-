@@ -1,20 +1,26 @@
-"""Outbound email — SMTP with a console fallback for local dev.
+"""Outbound email — Resend HTTP API (recommended) or SMTP, with a console
+fallback for local dev.
+
+IMPORTANT: Render (and many PaaS) block outbound SMTP ports (25/465/587),
+so raw smtp.gmail.com sends fail with "Network is unreachable". On those
+hosts use a transactional email HTTP API instead — set RESEND_API_KEY and
+we'll send over HTTPS (port 443), which isn't blocked.
 
 Config (env):
-  SMTP_HOST            — e.g. smtp.sendgrid.net
+  RESEND_API_KEY       — Resend API key (re_...). When set, used first.
+  RESEND_FROM          — From address for Resend (defaults to SMTP_FROM).
+                         Must be on a domain verified in Resend, or
+                         onboarding@resend.dev for testing to your own inbox.
+  SMTP_HOST            — e.g. smtp.gmail.com (only works where SMTP isn't blocked)
   SMTP_PORT            — default 587
   SMTP_USER            — SMTP username
   SMTP_PASSWORD        — SMTP password
   SMTP_FROM            — From address (defaults to SMTP_USER)
   SMTP_TLS             — "1" to enable STARTTLS (default), "0" to disable
-  COMPLIANCE_BASE_URL  — public base URL for the app (e.g. https://aspora-compliance.onrender.com).
-                         Used to build reset-link URLs. Defaults to "http://127.0.0.1:8000".
+  COMPLIANCE_BASE_URL  — public base URL for the app (e.g. https://...onrender.com).
 
-When SMTP_HOST is unset OR sending fails, we fall back to logging the
-message body (with the reset link) to the server console so devs can grab
-the link without setting up a mailer. We never raise to the caller — the
-forgot-password endpoint always succeeds the same way regardless of whether
-delivery actually worked, to avoid leaking which emails exist.
+When neither Resend nor SMTP is configured, OR sending fails, we fall back
+to logging the message to the server console. We never raise to the caller.
 """
 from __future__ import annotations
 
@@ -34,12 +40,49 @@ def base_url() -> str:
 
 
 def smtp_configured() -> bool:
-    return bool(os.environ.get("SMTP_HOST"))
+    """True when we have *any* usable email backend (Resend or SMTP). Kept
+    under the old name so existing call sites ('can we email?') still work."""
+    return bool(os.environ.get("RESEND_API_KEY") or os.environ.get("SMTP_HOST"))
+
+
+def _send_via_resend(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> bool:
+    """Send through Resend's HTTPS API. Returns True on delivery."""
+    from_addr = (
+        os.environ.get("RESEND_FROM")
+        or os.environ.get("SMTP_FROM")
+        or "Aspora Compliance <onboarding@resend.dev>"
+    )
+    payload: dict = {"from": from_addr, "to": [to], "subject": subject, "text": text}
+    if html:
+        payload["html"] = html
+    try:
+        import httpx
+
+        r = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=15.0,
+        )
+        if r.status_code in (200, 201):
+            logger.info("Sent email via Resend to %s — subject=%r", to, subject)
+            return True
+        logger.warning("Resend send failed: status=%s body=%r", r.status_code, r.text[:300])
+        return False
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Resend send crashed: %s", e)
+        return False
 
 
 def send_email(*, to: str, subject: str, body_text: str, body_html: Optional[str] = None) -> bool:
     """Best-effort send. Returns True if delivered, False if we fell back
-    to console-only. Never raises."""
+    to console-only. Never raises. Prefers Resend (HTTPS) over SMTP."""
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if resend_key and _send_via_resend(
+        resend_key, to=to, subject=subject, text=body_text, html=body_html
+    ):
+        return True
+
     host = os.environ.get("SMTP_HOST")
     if not host:
         _log_to_console(to, subject, body_text)
