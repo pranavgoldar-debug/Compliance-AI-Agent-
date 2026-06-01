@@ -488,6 +488,38 @@ def send_reminders_cmd(dry_run: bool) -> None:
     click.echo(f"{len(results)} reminder(s) processed.", err=True)
 
 
+@main.command(name="send-digest")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print the digest summary without sending email / Slack.",
+)
+def send_digest_cmd(dry_run: bool) -> None:
+    """Send the weekly compliance digest to every active admin (email +
+    Slack): overdue items, filings due within 7 days, and anything awaiting
+    sign-off. Meant to run on a weekly cron.
+    """
+    from compliance_agent.db import init_db
+    from compliance_agent.digest import send_admin_digest
+
+    init_db()
+    res = send_admin_digest(dry_run=dry_run)
+    s = res.summary
+    click.echo(
+        f"Digest: {len(s.overdue)} overdue, {len(s.upcoming)} due within 7d, "
+        f"{len(s.pending_review)} awaiting sign-off.",
+        err=True,
+    )
+    if dry_run:
+        click.echo("[DRY-RUN] nothing sent.", err=True)
+        return
+    click.echo(
+        f"Sent {res.sent_emails} email(s); slack={'yes' if res.slack_sent else 'no'}.",
+        err=True,
+    )
+
+
 @main.command(name="merge-finance-legs")
 @click.option(
     "--yes",

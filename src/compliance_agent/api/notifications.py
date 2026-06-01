@@ -25,6 +25,7 @@ from compliance_agent.api._helpers import is_in_alert_window, is_overdue, serial
 from compliance_agent.api.schemas import UserBrief
 from compliance_agent.auth import get_current_user
 from compliance_agent.db import (
+    Department,
     EffortBand,
     Notification,
     NotificationKind,
@@ -33,7 +34,7 @@ from compliance_agent.db import (
     User,
     get_session,
 )
-from compliance_agent.email_service import send_email
+from compliance_agent.email_service import base_url, send_email, smtp_configured
 
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -210,6 +211,50 @@ def emit_assignment(
                 obligation=obligation, assignee=assignee, actor=actor
             )
         )
+
+    # Email the assignee (when they have email alerts on + SMTP is set up).
+    if assignee.notify_email and smtp_configured():
+        link = f"{base_url().rstrip('/')}/obligations/{obligation.id}"
+        try:
+            send_email(
+                to=assignee.email,
+                subject=f"Assigned: {body}",
+                body_text=(
+                    f"{actor.full_name or actor.email} assigned you a compliance item.\n\n"
+                    f"{body}\n"
+                    f"Due: {obligation.due_date.isoformat()}\n\n"
+                    f"Open it: {link}"
+                ),
+                body_html=(
+                    f"<p><strong>{actor.full_name or actor.email}</strong> assigned you "
+                    f"a compliance item.</p>"
+                    f"<p>{body}<br/>Due: {obligation.due_date.isoformat()}</p>"
+                    f'<p><a href="{link}">Open in Compliance OS</a></p>'
+                ),
+            )
+        except Exception:  # noqa: BLE001 — never block the assignment on email
+            pass
+
+    # Finance hand-off via ClickUp: if the assignee is on the finance team and
+    # ClickUp is connected, drop a task so they can action it there. Guarded on
+    # clickup_task_id so we never create a duplicate (the payment-request flow
+    # may already have made one).
+    if (
+        assignee.department == Department.finance
+        and not obligation.clickup_task_id
+    ):
+        from compliance_agent import clickup_service
+
+        if clickup_service.is_configured(db):
+            created = clickup_service.create_payment_task(
+                db,
+                obligation,
+                amount=obligation.payment_amount or "—",
+                notes=f"Assigned to {assignee.full_name or assignee.email}.",
+                app_url=base_url(),
+            )
+            if created:
+                obligation.clickup_task_id, obligation.clickup_task_url = created
 
 
 # Match @<identifier>. We resolve against active users by:
