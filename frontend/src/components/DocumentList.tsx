@@ -75,25 +75,32 @@ function fmtSize(bytes: number): string {
 }
 
 
-function buildQueryKey(scope: DocumentScope) {
+function buildQueryKey(scope: DocumentScope, filterCategory?: DocumentCategory) {
+  const cat = filterCategory ?? "";
   switch (scope.kind) {
     case "entity":
-      return ["documents", "entity", scope.entityId];
+      return ["documents", "entity", scope.entityId, cat];
     case "obligation":
-      return ["documents", "obligation", scope.obligationId];
+      return ["documents", "obligation", scope.obligationId, cat];
     case "category":
       return ["documents", "category", scope.category];
     default:
-      return ["documents", "all"];
+      return ["documents", "all", cat];
   }
 }
 
 
-function buildListPath(scope: DocumentScope): string {
+function buildListPath(scope: DocumentScope, filterCategory?: DocumentCategory): string {
   const params = new URLSearchParams();
   if (scope.kind === "entity") params.set("entity_id", String(scope.entityId));
   if (scope.kind === "obligation") params.set("obligation_id", String(scope.obligationId));
   if (scope.kind === "category") params.set("category", scope.category);
+  // When the parent is showing a category-scoped view of an entity, also
+  // filter the list. Without this, picking "Templates" still returned every
+  // doc on the entity including the Filings ones.
+  if (filterCategory && scope.kind !== "category") {
+    params.set("category", filterCategory);
+  }
   return `/api/documents${params.toString() ? "?" + params : ""}`;
 }
 
@@ -107,11 +114,15 @@ export function DocumentList({
   defaultCategory,
 }: Props) {
   const queryClient = useQueryClient();
-  const queryKey = buildQueryKey(scope);
+  // `defaultCategory` drives both the upload's tagged category AND the
+  // list filter — picking "Templates" must hide Filings rows even though
+  // they live on the same entity.
+  const queryKey = buildQueryKey(scope, defaultCategory);
 
   const { data: documents = [], isLoading } = useQuery({
     queryKey,
-    queryFn: () => api.get<DocumentOut[]>(buildListPath(scope)),
+    queryFn: () =>
+      api.get<DocumentOut[]>(buildListPath(scope, defaultCategory)),
   });
 
   // ----------------------------------------------------------------
@@ -217,8 +228,16 @@ export function DocumentList({
         >
           <EmptyState
             icon={<Upload className="h-5 w-5" />}
-            title="No documents yet"
-            description="Drag-and-drop PDFs, receipts, or screenshots here. Max 25 MB per file."
+            title={
+              defaultCategory
+                ? `No ${defaultCategory.toLowerCase()} uploaded yet`
+                : "No documents yet"
+            }
+            description={
+              defaultCategory
+                ? `Drop PDFs / images here and they'll be tagged ${defaultCategory}. Max 25 MB per file.`
+                : "Drag-and-drop PDFs, receipts, or screenshots here. Max 25 MB per file."
+            }
             action={
               <Button variant="outline" onClick={pickFiles}>
                 <Upload className="h-3.5 w-3.5" />

@@ -579,7 +579,7 @@ def ai_extract_obligations(
 
     Falls back gracefully when:
       - no file is attached → returns available=False with a hint
-      - AI is off (no ANTHROPIC_API_KEY / COMPLIANCE_AGENT_LIVE) → available=False
+      - AI is off (no ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) / COMPLIANCE_AGENT_LIVE) → available=False
       - the PDF has no extractable text → notes explain
     """
     from compliance_agent.rule_extractor import (
@@ -611,7 +611,7 @@ def ai_extract_obligations(
             jurisdiction_hint=lic.jurisdiction_code,
             notes=(
                 "AI extraction is off in this deployment. Set "
-                "COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY in the server "
+                "COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) in the server "
                 "environment, then retry."
             ),
         )
@@ -831,102 +831,107 @@ def applicable_rules(
 
 
 # ---------------------------------------------------------------------------
-# Schedule an applicable rule straight from the license — attaches the rule to
-# the license's entity and creates the next upcoming obligation (deadline) on
-# the calendar, optionally assigned to someone. This is the "see what's needed
-# → assign it" loop, without going through the staging-rules promotion.
+# Schedule a rule against a license → creates one Obligation row
 # ---------------------------------------------------------------------------
-class ScheduleRuleRequest(BaseModel):
+class ScheduleRulePayload(BaseModel):
+    rule_id: int
+    due_date: Optional[date] = None
     assignee_id: Optional[int] = None
+    notes: Optional[str] = None
 
 
 class ScheduleRuleResponse(BaseModel):
     obligation_id: int
     due_date: date
-    created: bool
+    assignee_id: Optional[int]
+
+
+def _next_due_for_rule(rule: Rule, base: date) -> date:
+    """Pick a sensible default due date for a manually-scheduled obligation
+    when the admin doesn't pass one. Keeps it close enough that the alert
+    window will still fire."""
+    freq = (rule.frequency or "").lower()
+    if "monthly" in freq:
+        return base + timedelta(days=30)
+    if "quarterly" in freq:
+        return base + timedelta(days=90)
+    if "half" in freq:
+        return base + timedelta(days=180)
+    if "annual" in freq or "year" in freq:
+        return base + timedelta(days=365)
+    return base + timedelta(days=60)
 
 
 @router.post(
-    "/{license_id}/rules/{rule_id}/schedule", response_model=ScheduleRuleResponse
+    "/{license_id}/schedule-rule",
+    response_model=ScheduleRuleResponse,
+    status_code=201,
 )
-def schedule_rule(
+def schedule_rule_for_license(
     license_id: int,
-    rule_id: int,
-    payload: ScheduleRuleRequest,
+    payload: ScheduleRulePayload,
     db: Session = Depends(get_session),
-    user: User = Depends(require_admin),
+    actor: User = Depends(require_admin),
 ) -> ScheduleRuleResponse:
-    from datetime import timedelta
-
-    from compliance_agent.api._helpers import today
-    from compliance_agent.db.seed import (
-        _effort_band_for_frequency,
-        _offsets_for_frequency,
-        _period_label_for_frequency,
-    )
-
+    """Admin manually creates an obligation for a rule that applies to the
+    license's entity. This is the production workflow — no auto-spawn — so
+    admins only schedule what actually applies."""
     lic = db.get(License, license_id)
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
-    rule = db.get(Rule, rule_id)
+
+    rule = db.get(Rule, payload.rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found.")
-    entity = lic.entity
-    if entity is None:
-        raise HTTPException(status_code=404, detail="License has no entity.")
 
-    # Attach the rule to the entity so it shows as tracked going forward.
-    if entity.id not in {e.id for e in rule.entities}:
-        rule.entities.append(entity)
+    due = payload.due_date or _next_due_for_rule(rule, date.today())
 
-    # Next upcoming due date from the rule's cadence (fallback: ~30 days out).
-    future = sorted(o for o in _offsets_for_frequency(rule.frequency) if o > 0)
-    due = today() + timedelta(days=future[0] if future else 30)
-
-    existing = (
-        db.execute(
-            select(Obligation).where(
-                Obligation.rule_id == rule.id,
-                Obligation.entity_id == entity.id,
-                Obligation.due_date == due,
-                Obligation.department == Department.compliance,
-            )
+    # Refuse a duplicate scheduling (rule + entity + due + department).
+    existing = db.execute(
+        select(Obligation).where(
+            Obligation.rule_id == rule.id,
+            Obligation.entity_id == lic.entity_id,
+            Obligation.due_date == due,
+            Obligation.department == Department.compliance,
         )
-        .scalars()
-        .first()
-    )
-    created = existing is None
+    ).scalar_one_or_none()
     if existing is not None:
-        ob = existing
-    else:
-        ob = Obligation(
-            rule_id=rule.id,
-            entity_id=entity.id,
-            due_date=due,
-            period_label=_period_label_for_frequency(rule.frequency, due),
-            status=ObligationStatus.not_started,
-            department=Department.compliance,
-            effort_band=_effort_band_for_frequency(rule.frequency),
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"An obligation for this rule already exists on {due}. "
+                f"Pick a different date or open the existing one."
+            ),
         )
-        db.add(ob)
-        db.flush()
 
-    if payload.assignee_id:
-        assignee = db.get(User, payload.assignee_id)
-        if assignee is not None:
-            ob.assignee_id = assignee.id
-            db.flush()
-            from compliance_agent.api.notifications import emit_assignment
-
-            emit_assignment(db, assignee=assignee, obligation=ob, actor=user)
+    obligation = Obligation(
+        rule_id=rule.id,
+        entity_id=lic.entity_id,
+        due_date=due,
+        status=ObligationStatus.not_started,
+        department=Department.compliance,
+        assignee_id=payload.assignee_id,
+        notes=payload.notes,
+    )
+    db.add(obligation)
+    db.flush()
 
     log_activity(
         db,
-        actor_id=user.id,
-        action="license.rule_scheduled",
+        actor_id=actor.id,
+        action="obligation.scheduled_from_license",
         target_type="obligation",
-        target_id=ob.id,
-        payload={"license_id": license_id, "rule_id": rule_id, "created": created},
+        target_id=obligation.id,
+        payload={
+            "license_id": license_id,
+            "rule_id": rule.id,
+            "due_date": str(due),
+            "assignee_id": payload.assignee_id,
+        },
     )
     db.commit()
-    return ScheduleRuleResponse(obligation_id=ob.id, due_date=ob.due_date, created=created)
+    return ScheduleRuleResponse(
+        obligation_id=obligation.id,
+        due_date=obligation.due_date,
+        assignee_id=obligation.assignee_id,
+    )

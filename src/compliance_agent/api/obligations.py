@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
     ALERT_WINDOW_DAYS,
+    is_awaiting_payment,
     log_activity,
     serialize_calendar_obligation,
     serialize_obligation,
@@ -19,6 +20,7 @@ from compliance_agent.api._helpers import (
 from compliance_agent.api.notifications import (
     emit_assignment,
     emit_mentions,
+    emit_payment_request,
     emit_status_change,
     extract_mentions,
 )
@@ -37,9 +39,11 @@ from compliance_agent.db import (
     NotificationKind,
     Obligation,
     ObligationStatus,
+    Role,
     User,
     get_session,
 )
+from compliance_agent import slack_service
 
 
 router = APIRouter(prefix="/api/obligations", tags=["obligations"])
@@ -117,6 +121,81 @@ def update_obligation(
         raise HTTPException(status_code=404, detail="Obligation not found.")
 
     data = payload.model_dump(exclude_unset=True)
+
+    # Reassigning work is an admin-only action. Employees can self-update
+    # status / filing fields on items they own, but they can't push work to
+    # other people.
+    if "assignee_id" in data and user.role != Role.admin:
+        new_assignee = data.get("assignee_id")
+        if new_assignee != obligation.assignee_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can change assignees.",
+            )
+
+    # Workflow gate: each role can only drive their own stage. Without
+    # this, an employee could curl the API and push their item straight
+    # to "completed", bypassing admin verification and the finance
+    # hand-off. UI hides the buttons; this enforces it server-side.
+    if "status" in data and data["status"] is not None:
+        new_status = data["status"]
+        old_status = obligation.status
+        if new_status != old_status and user.role != Role.admin:
+            # Employees may only move their own item to:
+            #   - in_progress  (start working)
+            #   - pending_review  (their leg is done → admin review)
+            #   - not_started  (revert before submitting)
+            # Anything else (completed / not_applicable) is admin-only.
+            allowed_employee_targets = {
+                ObligationStatus.not_started,
+                ObligationStatus.in_progress,
+                ObligationStatus.pending_review,
+            }
+            if new_status not in allowed_employee_targets:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Only admins can mark an obligation Completed or Not "
+                        "Applicable. Use 'Mark filing complete' / 'Mark "
+                        "payment complete' to submit your leg for admin review."
+                    ),
+                )
+            # Also block touching items they aren't assigned to.
+            if obligation.assignee_id != user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only change the status of items assigned to you.",
+                )
+
+    # Field-level team lock: compliance team can edit filing-side fields,
+    # finance team can edit payment-side fields. Admin can edit anything.
+    # Skipped if the user isn't touching any team-specific field — the
+    # generic "notes" + status + due_date pass through for both teams.
+    if user.role != Role.admin:
+        from compliance_agent.db import Department as _Dept
+
+        user_team = user.department.value if user.department else None
+        compliance_fields = {"filing_reference"}
+        finance_fields = {"payment_amount", "payment_reference", "beneficiary_details"}
+        touched_compliance = compliance_fields & set(data.keys())
+        touched_finance = finance_fields & set(data.keys())
+        if touched_compliance and user_team == "finance":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Finance team can't edit the compliance filing reference. "
+                    "Ask the compliance assignee to update it, or escalate to admin."
+                ),
+            )
+        if touched_finance and user_team == "compliance":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Compliance team can't edit payment amount / UTR / "
+                    "beneficiary details. Hand the obligation to finance first."
+                ),
+            )
+
     completed_now = (
         data.get("status") == ObligationStatus.completed
         and obligation.status != ObligationStatus.completed
@@ -159,6 +238,11 @@ def update_obligation(
             new_status=obligation.status,
             actor=user,
         )
+        # Filing was just approved AND the rule has a payment leg → fire an
+        # explicit "payment requested" notification so finance doesn't have
+        # to come check the Awaiting payment chip.
+        if completed_now and is_awaiting_payment(obligation):
+            emit_payment_request(db, obligation=obligation, actor=user)
 
     # Two-way sync: completing in-app closes the linked ClickUp task.
     # (The inbound webhook updates the ORM directly, not via this endpoint,
@@ -270,102 +354,96 @@ def add_comment(
 from pydantic import BaseModel as _BaseModel
 
 
-# ---------------------------------------------------------------------------
-# Request payment — explicit compliance → finance hand-off
-# ---------------------------------------------------------------------------
-class RequestPaymentRequest(_BaseModel):
-    amount: str
+class HandoffPayload(_BaseModel):
+    finance_user_id: int
     notes: Optional[str] = None
 
 
-@router.post("/{obligation_id}/request-payment", response_model=ObligationOut)
-def request_payment(
+class HandoffResponse(_BaseModel):
+    obligation_id: int
+    new_assignee_id: int
+    new_status: ObligationStatus
+
+
+@router.post(
+    "/{obligation_id}/handoff-to-finance",
+    response_model=HandoffResponse,
+)
+def handoff_to_finance(
     obligation_id: int,
-    payload: RequestPaymentRequest,
+    payload: HandoffPayload,
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
-) -> ObligationOut:
-    """Compliance side hits this when they're done with the filing and the
-    finance team needs to process the payment.
-
-    Effects:
-      1. Saves the expected payment amount on the obligation.
-      2. Posts an auto-comment so the conversation has a clear "payment
-         requested" marker.
-      3. Sends a notification to every active user whose department is
-         'finance', plus all admins (so the hand-off is always visible
-         to someone who can act on it).
+) -> HandoffResponse:
+    """Admin marks the filing leg approved and reassigns the obligation to
+    a finance team member, who'll now log the payment + UTR. Status flips
+    from pending_review back to in_progress (work continues, just by a
+    different team).
     """
+    if user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Only admins can hand off filings.")
+
     obligation = db.execute(
         _base_query().where(Obligation.id == obligation_id)
     ).scalars().unique().one_or_none()
     if obligation is None:
         raise HTTPException(status_code=404, detail="Obligation not found.")
-    amount = (payload.amount or "").strip()
-    if not amount:
-        raise HTTPException(status_code=400, detail="Payment amount is required.")
 
-    rule = obligation.rule
-    if rule is None or not (rule.payment_rule or "").strip():
+    if obligation.status != ObligationStatus.pending_review:
         raise HTTPException(
             status_code=400,
-            detail="This filing doesn't have a payment leg — no payment to request.",
+            detail=(
+                "Hand-off only applies when the filing is awaiting your review. "
+                "Current status: " + obligation.status.value + "."
+            ),
         )
 
-    # 1. Save the amount so the Awaiting payment surface picks it up + the
-    # finance team knows how much to wire.
-    obligation.payment_amount = amount
+    finance_user = db.get(User, payload.finance_user_id)
+    if finance_user is None or not finance_user.is_active:
+        raise HTTPException(status_code=400, detail="Finance team member not found.")
 
-    # 2. Auto-comment — the conversation thread on the obligation now has
-    # a clear "payment requested" entry.
+    prev_assignee_id = obligation.assignee_id
+    obligation.assignee_id = finance_user.id
+    obligation.status = ObligationStatus.in_progress
+    obligation.department = Department.finance
+    if payload.notes:
+        # Append to existing notes rather than overwriting compliance's notes.
+        prefix = (obligation.notes + "\n\n") if obligation.notes else ""
+        obligation.notes = (
+            prefix
+            + f"[Admin → Finance handoff by {user.full_name or user.email}]: "
+            + payload.notes
+        )
+
+    # Notification + Slack ping so finance knows they own this now.
+    rule = obligation.rule
+    entity = obligation.entity
     form = rule.form_name if rule else "Compliance item"
-    entity_name = obligation.entity.name if obligation.entity else "—"
-    extra = f"\n\nNotes: {payload.notes}" if (payload.notes or "").strip() else ""
-    body = (
-        f"Payment requested from finance for **{form}** ({entity_name}).\n"
-        f"Amount: {amount}.\n"
-        f"Payment rule: {rule.payment_rule}.{extra}"
-    )
-    comment = Comment(obligation_id=obligation_id, author_id=user.id, body=body)
-    db.add(comment)
-    db.flush()
-
-    # 3. Fanout notifications. Finance dept + admins, minus the requester.
-    from compliance_agent.db import Role as _Role  # local import to avoid cycle
-
-    recipients = (
-        db.execute(
-            select(User).where(
-                User.is_active.is_(True),
-                or_(
-                    User.department == Department.finance,
-                    User.role == _Role.admin,
-                ),
-            )
+    entity_name = entity.name if entity else "—"
+    db.add(
+        Notification(
+            user_id=finance_user.id,
+            kind=NotificationKind.payment_request,
+            title=f"Filing approved — log payment for {form}",
+            body=(
+                f"{entity_name} · {user.full_name or user.email} verified the "
+                f"filing. Enter the payment amount + UTR, then submit for "
+                f"final review."
+            ),
+            link_url=f"/obligations/{obligation.id}",
+            obligation_id=obligation.id,
+            actor_id=user.id,
         )
-        .scalars()
-        .all()
     )
-
-    sent = 0
-    for r in recipients:
-        if r.id == user.id:
-            continue
-        db.add(
-            Notification(
-                user_id=r.id,
-                kind=NotificationKind.assigned,
-                title=f"Payment requested: {form} ({entity_name})",
-                body=f"{user.full_name or user.email} is asking finance to process {amount}.",
-                link_url=f"/obligations/{obligation_id}",
-                obligation_id=obligation_id,
-                actor_id=user.id,
-            )
+    if slack_service.is_configured(db):
+        slack_service.post(
+            f":money_with_wings: *Payment requested* — *{form}* ({entity_name}). "
+            f"Filing approved by {user.full_name or user.email}. "
+            f"Assigned to {finance_user.full_name or finance_user.email} to pay."
         )
-        sent += 1
 
-    # 4. ClickUp two-way sync — create a finance task so the team can action
-    # the payment in ClickUp. Best-effort: never blocks the hand-off.
+    # ClickUp two-way sync — create a finance task so the team can action the
+    # payment in ClickUp. Best-effort; never blocks the hand-off.
     from compliance_agent import clickup_service
     from compliance_agent.email_service import base_url as _app_base_url
 
@@ -373,7 +451,7 @@ def request_payment(
         created = clickup_service.create_payment_task(
             db,
             obligation,
-            amount=amount,
+            amount=obligation.payment_amount or "—",
             notes=payload.notes or "",
             app_url=_app_base_url(),
         )
@@ -383,14 +461,20 @@ def request_payment(
     log_activity(
         db,
         actor_id=user.id,
-        action="obligation.payment_requested",
+        action="obligation.handoff_to_finance",
         target_type="obligation",
-        target_id=obligation_id,
-        payload={"amount": amount, "fanout": sent, "clickup": bool(obligation.clickup_task_id)},
+        target_id=obligation.id,
+        payload={
+            "prev_assignee_id": prev_assignee_id,
+            "finance_user_id": finance_user.id,
+        },
     )
     db.commit()
-    db.refresh(obligation)
-    return serialize_obligation(obligation)
+    return HandoffResponse(
+        obligation_id=obligation.id,
+        new_assignee_id=finance_user.id,
+        new_status=obligation.status,
+    )
 
 
 class BulkUpdateRequest(_BaseModel):
@@ -417,6 +501,12 @@ def bulk_update(
     if payload.status is None and payload.assignee_id is None and not payload.clear_assignee:
         raise HTTPException(
             status_code=400, detail="Provide at least one of status, assignee_id, clear_assignee."
+        )
+    # Admin-only: bulk reassignment moves work between people.
+    if (payload.assignee_id is not None or payload.clear_assignee) and user.role != Role.admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can change assignees.",
         )
 
     obligations = db.execute(
@@ -467,6 +557,12 @@ def bulk_update(
             emit_status_change(
                 db, assignee=assignee, obligation=o, new_status=o.status, actor=user
             )
+            if (
+                o.status == ObligationStatus.completed
+                and prev_status != ObligationStatus.completed
+                and is_awaiting_payment(o)
+            ):
+                emit_payment_request(db, obligation=o, actor=user)
 
         log_activity(
             db,

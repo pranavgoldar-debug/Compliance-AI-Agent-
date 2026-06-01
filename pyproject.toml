@@ -9,7 +9,7 @@ description = "AI agent that extracts structured compliance requirements from po
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "anthropic>=0.92.0",
-    "openai>=1.40",
+    "openai>=1.50",
     "pydantic>=2.6",
     "pydantic[email]>=2.6",
     "pypdf>=4.0",

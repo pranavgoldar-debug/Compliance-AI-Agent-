@@ -6,11 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Calendar,
+  CheckCircle2,
   Download,
   ExternalLink,
   FileBadge,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Trash2,
@@ -41,7 +43,6 @@ import type {
   License,
   LicenseExpiryStatus,
   LicenseRuleHit,
-  UserBrief,
 } from "@/types/api";
 
 function expiryBadgeVariant(
@@ -75,6 +76,9 @@ export function LicensesPage() {
   const [jurisdiction, setJurisdiction] = useState<string>("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [activeLicense, setActiveLicense] = useState<License | null>(null);
+  // Brief check-mark flash after a successful manual refresh so the user
+  // gets visual confirmation even when no new data arrived.
+  const [justRefreshed, setJustRefreshed] = useState(false);
 
   const licensesQuery = useQuery({
     queryKey: ["licenses", jurisdiction],
@@ -83,10 +87,13 @@ export function LicensesPage() {
       if (jurisdiction) params.set("jurisdiction_code", jurisdiction);
       return api.get<License[]>(`/api/licenses?${params.toString()}`);
     },
-    // Poll every 60s + on window focus so a license an admin uploaded
-    // in one tab shows up in an employee's tab without manual refresh.
-    refetchInterval: 60_000,
+    // Poll every 20s + on window focus + on every mount so a license an admin
+    // uploaded in one tab shows up in an employee's tab quickly. staleTime: 0
+    // forces a fresh fetch when the page is revisited.
+    refetchInterval: 20_000,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const filtered = useMemo(() => {
@@ -144,6 +151,26 @@ export function LicensesPage() {
             </option>
           ))}
         </select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            await licensesQuery.refetch();
+            setJustRefreshed(true);
+            setTimeout(() => setJustRefreshed(false), 1500);
+          }}
+          disabled={licensesQuery.isFetching}
+          title="Fetch the latest licenses from the server"
+        >
+          {licensesQuery.isFetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : justRefreshed ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          {justRefreshed ? "Up to date" : "Refresh"}
+        </Button>
       </div>
 
       {licensesQuery.isLoading ? (
@@ -407,9 +434,8 @@ function UploadDialog({
             Upload license
           </DialogTitle>
           <DialogDescription>
-            Upload the license PDF — Claude reads it and fills the fields below.
-            Review, pick the entity, and save. Then open the license to extract
-            the compliance rules it triggers.
+            Pin a regulator + jurisdiction to one of your entities. Once saved,
+            open the license to see which compliance rules apply.
           </DialogDescription>
         </DialogHeader>
 
@@ -627,7 +653,6 @@ interface CandidateRule {
   payment_rule: string | null;
   applicability: string;
   applicability_note: string | null;
-  tax_type: string;
 }
 
 interface AIExtractResponse {
@@ -796,25 +821,13 @@ function AIExtractDialog({
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <Badge
-                          variant={
-                            r.applicability === "Mandatory" ? "alert" : "neutral"
-                          }
-                        >
-                          {r.applicability}
-                        </Badge>
-                        {(r.tax_type === "Direct Tax" ||
-                          r.tax_type === "Indirect Tax") && (
-                          <Badge
-                            variant={
-                              r.tax_type === "Direct Tax" ? "progress" : "review"
-                            }
-                          >
-                            {r.tax_type}
-                          </Badge>
-                        )}
-                      </div>
+                      <Badge
+                        variant={
+                          r.applicability === "Mandatory" ? "alert" : "neutral"
+                        }
+                      >
+                        {r.applicability}
+                      </Badge>
                     </label>
                   );
                 })}
@@ -884,7 +897,6 @@ function LicenseDetailDialog({
 }) {
   const open = license !== null;
   const [aiOpen, setAiOpen] = useState(false);
-  const queryClient = useQueryClient();
 
   const rulesQuery = useQuery({
     queryKey: ["license-rules", license?.id],
@@ -894,18 +906,6 @@ function LicenseDetailDialog({
       ),
     enabled: open,
   });
-
-  const { data: users = [] } = useQuery({
-    queryKey: ["users", "for-schedule"],
-    queryFn: () => api.get<UserBrief[]>("/api/users"),
-    enabled: open && isAdmin,
-  });
-
-  const onScheduled = () => {
-    rulesQuery.refetch();
-    queryClient.invalidateQueries({ queryKey: ["calendar"] });
-    queryClient.invalidateQueries({ queryKey: ["tasks"] });
-  };
 
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/licenses/${license!.id}`),
@@ -1001,7 +1001,7 @@ function LicenseDetailDialog({
                         {rulesQuery.data.entity_other.length} other for this entity
                       </div>
                     )}
-                    {isAdmin && license.has_file && (
+                    {isAdmin && license.has_file ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -1011,7 +1011,14 @@ function LicenseDetailDialog({
                         <Sparkles className="h-3.5 w-3.5" />
                         Extract with AI
                       </Button>
-                    )}
+                    ) : isAdmin ? (
+                      <span
+                        className="text-[11px] text-muted-foreground italic"
+                        title="Re-open this license, upload the PDF, and Extract with AI will appear here."
+                      >
+                        Upload a file to enable AI extract
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1049,8 +1056,7 @@ function LicenseDetailDialog({
                               tone="mandatory"
                               licenseId={license.id}
                               isAdmin={isAdmin}
-                              users={users}
-                              onScheduled={onScheduled}
+                              onScheduled={() => rulesQuery.refetch()}
                             />
                           )}
                           {optional.length > 0 && (
@@ -1061,24 +1067,47 @@ function LicenseDetailDialog({
                               tone="conditional"
                               licenseId={license.id}
                               isAdmin={isAdmin}
-                              users={users}
-                              onScheduled={onScheduled}
+                              onScheduled={() => rulesQuery.refetch()}
                             />
                           )}
                         </>
                       );
                     })()}
-                    {rulesQuery.data.entity_other.length > 0 && (
-                      <RuleGroup
-                        title="Other obligations for this entity"
-                        subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
-                        items={rulesQuery.data.entity_other}
-                        licenseId={license.id}
-                        isAdmin={isAdmin}
-                        users={users}
-                        onScheduled={onScheduled}
-                      />
-                    )}
+                    {rulesQuery.data.entity_other.length > 0 && (() => {
+                      const other = rulesQuery.data.entity_other;
+                      const otherMandatory = other.filter(
+                        (r) => r.applicability === "Mandatory",
+                      );
+                      const otherOptional = other.filter(
+                        (r) => r.applicability !== "Mandatory",
+                      );
+                      return (
+                        <>
+                          {otherMandatory.length > 0 && (
+                            <RuleGroup
+                              title={`Other entity rules — Mandatory · ${otherMandatory.length}`}
+                              subtitle="Linked to this entity via the rule catalogue, didn't match this license's keywords directly. Treat as required."
+                              items={otherMandatory}
+                              tone="mandatory"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
+                            />
+                          )}
+                          {otherOptional.length > 0 && (
+                            <RuleGroup
+                              title={`Other entity rules — Optional · ${otherOptional.length}`}
+                              subtitle="Linked to this entity but only file if your business actually triggers the conditions (turnover thresholds, sector activity, etc.)."
+                              items={otherOptional}
+                              tone="conditional"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              onScheduled={() => rulesQuery.refetch()}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -1131,6 +1160,60 @@ function LicenseDetailDialog({
     </Dialog>
   );
 }
+
+function ScheduleRuleButton({
+  licenseId,
+  ruleId,
+  onScheduled,
+}: {
+  licenseId: number;
+  ruleId: number;
+  onScheduled: () => void;
+}) {
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post<{ obligation_id: number; due_date: string }>(
+        `/api/licenses/${licenseId}/schedule-rule`,
+        { rule_id: ruleId },
+      ),
+    onSuccess: (result) => {
+      onScheduled();
+      // Drop the user straight into the new obligation — they wanted to
+      // schedule it because they're about to assign / work on it.
+      window.location.href = `/obligations/${result.obligation_id}`;
+    },
+    onError: (e) => {
+      // Without this, a 404 (server not restarted with the new endpoint) or
+      // 409 (duplicate) silently fails and the button just stops spinning.
+      const msg = e instanceof Error ? e.message : String(e);
+      window.alert(
+        `Couldn't schedule this rule:\n\n${msg}\n\n` +
+          `If you see "Not Found", restart the backend so the new endpoint is loaded.`,
+      );
+    },
+  });
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        mutation.mutate();
+      }}
+      disabled={mutation.isPending}
+      className="inline-flex items-center gap-1 rounded-md border border-aspora-300 bg-aspora-50 px-2 py-1 text-[11px] font-medium text-aspora-800 hover:bg-aspora-100 disabled:opacity-50"
+      title="Create a single obligation for this rule + entity. Default due date is based on the rule's frequency; you can change it after."
+    >
+      {mutation.isPending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <Plus className="h-3 w-3" />
+      )}
+      Schedule
+    </button>
+  );
+}
+
 
 function Stat({
   label,
@@ -1199,7 +1282,6 @@ function RuleGroup({
   tone,
   licenseId,
   isAdmin,
-  users,
   onScheduled,
 }: {
   title: string;
@@ -1208,7 +1290,6 @@ function RuleGroup({
   tone?: "mandatory" | "conditional";
   licenseId: number;
   isAdmin: boolean;
-  users: UserBrief[];
   onScheduled: () => void;
 }) {
   const headingClass =
@@ -1235,134 +1316,106 @@ function RuleGroup({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {items.map((r) => (
-              <RuleRow
-                key={r.id}
-                r={r}
-                licenseId={licenseId}
-                isAdmin={isAdmin}
-                users={users}
-                onScheduled={onScheduled}
-              />
-            ))}
+            {items.map((r) => {
+              const assignee = r.next_assignee;
+              const daysOut = r.days_to_next;
+              return (
+                <tr
+                  key={r.id}
+                  className="hover:bg-secondary/20 cursor-pointer"
+                  onClick={(e) => {
+                    if (r.next_obligation_id) {
+                      e.stopPropagation();
+                      window.location.href = `/obligations/${r.next_obligation_id}`;
+                    }
+                  }}
+                >
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium text-sm">{r.form_name}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.authority} · {r.category}
+                      {r.area ? ` · ${r.area}` : ""}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1 items-center">
+                      <Badge variant="neutral">{r.frequency}</Badge>
+                      <Badge
+                        variant={
+                          r.applicability === "Mandatory" ? "overdue" : "alert"
+                        }
+                        title={
+                          r.applicability === "Mandatory"
+                            ? "You MUST file this. Non-compliance = regulatory breach."
+                            : "File only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
+                        }
+                      >
+                        {r.applicability === "Mandatory" ? "Mandatory" : "Optional"}
+                      </Badge>
+                      {r.match_reason && (
+                        <span
+                          className="text-[11px] text-muted-foreground italic"
+                          title="How we matched this rule to the license — either license keywords (authority / type) or because the rule is registered against this entity."
+                        >
+                          {r.match_reason}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <Badge variant={statusBadgeVariant(r.next_status)}>
+                      {statusLabel(r.next_status)}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {assignee ? (
+                      <div>
+                        <div className="text-sm">
+                          {assignee.full_name || assignee.email}
+                        </div>
+                        {assignee.full_name && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {assignee.email}
+                          </div>
+                        )}
+                      </div>
+                    ) : r.next_obligation_id ? (
+                      <span className="text-xs text-amber-700">Unassigned</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {r.next_due_date ? (
+                      <div>
+                        <div>{r.next_due_date}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {daysOut !== null && daysOut !== undefined
+                            ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+                            : ""}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">
+                        {r.due_date_rule}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-right">
+                    {r.next_obligation_id ? (
+                      <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
+                    ) : isAdmin ? (
+                      <ScheduleRuleButton
+                        licenseId={licenseId}
+                        ruleId={r.id}
+                        onScheduled={onScheduled}
+                      />
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
     </div>
-  );
-}
-
-function RuleRow({
-  r,
-  licenseId,
-  isAdmin,
-  users,
-  onScheduled,
-}: {
-  r: LicenseRuleHit;
-  licenseId: number;
-  isAdmin: boolean;
-  users: UserBrief[];
-  onScheduled: () => void;
-}) {
-  const assignee = r.next_assignee;
-  const daysOut = r.days_to_next;
-  const [assigneeId, setAssigneeId] = useState<number | "">("");
-  const scheduled = !!r.next_obligation_id;
-
-  const scheduleMutation = useMutation({
-    mutationFn: () =>
-      api.post(`/api/licenses/${licenseId}/rules/${r.id}/schedule`, {
-        assignee_id: assigneeId === "" ? null : assigneeId,
-      }),
-    onSuccess: () => onScheduled(),
-  });
-
-  return (
-    <tr
-      className={scheduled ? "hover:bg-secondary/20 cursor-pointer" : ""}
-      onClick={() => {
-        if (scheduled) window.location.href = `/obligations/${r.next_obligation_id}`;
-      }}
-    >
-      <td className="px-3 py-2 align-top">
-        <div className="font-medium text-sm">{r.form_name}</div>
-        <div className="text-[11px] text-muted-foreground">
-          {r.authority} · {r.category}
-          {r.area ? ` · ${r.area}` : ""}
-        </div>
-        <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
-          <Badge variant="neutral">{r.frequency}</Badge>
-          {r.match_reason && <span className="text-aspora-700">{r.match_reason}</span>}
-        </div>
-      </td>
-      <td className="px-3 py-2 align-top">
-        <Badge variant={statusBadgeVariant(r.next_status)}>
-          {statusLabel(r.next_status)}
-        </Badge>
-      </td>
-      <td className="px-3 py-2 align-top text-sm">
-        {assignee ? (
-          <div>
-            <div className="text-sm">{assignee.full_name || assignee.email}</div>
-            {assignee.full_name && (
-              <div className="text-[11px] text-muted-foreground">{assignee.email}</div>
-            )}
-          </div>
-        ) : scheduled ? (
-          <span className="text-xs text-amber-700">Unassigned</span>
-        ) : isAdmin ? (
-          <select
-            value={assigneeId}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) =>
-              setAssigneeId(e.target.value ? Number(e.target.value) : "")
-            }
-            className="h-7 w-full rounded border border-input bg-background px-1.5 text-xs"
-          >
-            <option value="">Unassigned</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.full_name || u.email}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
-      </td>
-      <td className="px-3 py-2 align-top text-sm">
-        {r.next_due_date ? (
-          <div>
-            <div>{r.next_due_date}</div>
-            <div className="text-[11px] text-muted-foreground">
-              {daysOut !== null && daysOut !== undefined
-                ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
-                : ""}
-            </div>
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground italic">{r.due_date_rule}</span>
-        )}
-      </td>
-      <td className="px-3 py-2 align-top text-right">
-        {scheduled ? (
-          <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
-        ) : isAdmin ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={scheduleMutation.isPending}
-            onClick={(e) => {
-              e.stopPropagation();
-              scheduleMutation.mutate();
-            }}
-          >
-            {scheduleMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-            Schedule
-          </Button>
-        ) : null}
-      </td>
-    </tr>
   );
 }

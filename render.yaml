@@ -11,8 +11,8 @@ services:
     runtime: python
     plan: free
     region: oregon
-    # Active feature branch. Switch to `main` once PR #6 (and successors)
-    # are merged into main.
+    # Deployed branch. Render reads this from the selected branch in the
+    # dashboard, so also set Settings → Branch to match.
     branch: claude/upbeat-turing-DCFHF
     buildCommand: pip install -e ".[postgres]" && cd frontend && npm ci && npm run build
     startCommand: uvicorn compliance_agent.web:app --host 0.0.0.0 --port $PORT
@@ -57,18 +57,40 @@ services:
           name: compliance-agent-db
           property: connectionString
 
-  # Weekly admin digest — runs `compliance-agent send-digest` every Monday
-  # at 08:00 UTC. Emails + Slacks each admin the overdue list, filings due
-  # within 7 days, and items awaiting sign-off. Snapshot, safe to re-run.
+  # Daily employee morning brief. 04:30 UTC = 10:00 AM IST.
+  # Picks every active user, builds their open-items context, has Claude
+  # compose a tight prioritised digest, posts to the workspace Slack
+  # channel + emails them (if SMTP is wired). Idempotent per (user, day).
   - type: cron
-    name: compliance-agent-weekly-digest
+    name: compliance-agent-employee-digest
     runtime: python
     plan: free
     region: oregon
     branch: claude/upbeat-turing-DCFHF
-    schedule: "0 8 * * 1"
+    schedule: "30 4 * * *"
     buildCommand: pip install -e ".[postgres]"
-    startCommand: python -m compliance_agent.cli send-digest
+    startCommand: python -m compliance_agent.cli send-digest --kind employee_daily
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: COMPLIANCE_DB_URL
+        fromDatabase:
+          name: compliance-agent-db
+          property: connectionString
+      # COMPLIANCE_AGENT_LIVE + OPENROUTER_API_KEY (or ANTHROPIC_API_KEY)
+      # must be set in the Render dashboard for the digest to be AI-
+      # composed. Without them it falls back to a deterministic template.
+
+  # Weekly admin recap. 04:30 UTC Monday = 10:00 AM IST Monday.
+  - type: cron
+    name: compliance-agent-admin-recap
+    runtime: python
+    plan: free
+    region: oregon
+    branch: claude/upbeat-turing-DCFHF
+    schedule: "30 4 * * 1"
+    buildCommand: pip install -e ".[postgres]"
+    startCommand: python -m compliance_agent.cli send-digest --kind admin_weekly
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9

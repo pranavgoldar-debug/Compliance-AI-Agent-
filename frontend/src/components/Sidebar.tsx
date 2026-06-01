@@ -46,7 +46,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Compliance OS",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+      { to: "/", label: "Home", icon: LayoutDashboard, exact: true },
       { to: "/licenses", label: "Licenses", icon: FileBadge },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       {
@@ -55,6 +55,9 @@ const NAV_GROUPS: NavGroup[] = [
         icon: CheckCircle2,
         badge: "tasks",
       },
+      // Employees should see what admin uploaded — the page itself
+      // gates the upload affordance on isAdmin, but reading is open.
+      { to: "/documents", label: "Documents", icon: FolderOpen },
     ],
   },
   {
@@ -63,8 +66,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/entities", label: "Entities", icon: Building2, adminOnly: true },
       { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
-      { to: "/regulations", label: "Regulations", icon: BookOpen, adminOnly: true },
-      { to: "/documents", label: "Documents", icon: FolderOpen, adminOnly: true },
+      // /regulations (Regulation Library) intentionally hidden — overlaps
+      // with "Add rule from text" on the Compliance Rules page and was
+      // confusing users with a slow/blank state. Re-add the line above to
+      // restore.
       { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
       { to: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
     ],

@@ -251,6 +251,12 @@ def _ensure_entities(db: Session, users: dict[str, User]) -> dict[str, Entity]:
     return entities
 
 
+def _authority_url(authority: str) -> Optional[str]:
+    """Lookup helper — kept tiny so the seed import stays cheap."""
+    from compliance_agent.data.authority_urls import lookup
+    return lookup(authority or "")
+
+
 def _applicability_from_str(s: str) -> Applicability:
     s = (s or "").strip().lower()
     if s.startswith("mandatory"):
@@ -318,6 +324,8 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
                 applicability=_applicability_from_str(filing.applicability),
                 applicability_note=filing.applicability_note,
                 tax_type=_tax_type_from_category(filing.category, filing.area),
+                source_url=_authority_url(filing.authority),
+                submission_url=_authority_url(filing.authority),
                 status=RuleStatus.production,
             )
             rule.entities = list(jurisdiction_entities)
@@ -509,12 +517,22 @@ def _backfill_effort_bands(db: Session) -> int:
     return touched
 
 
-def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
+def run_seed(
+    *,
+    auto_assign: bool = True,
+    create_obligations: bool = True,
+) -> dict[str, int]:
     """Idempotent seed. Returns counts of created objects.
 
     auto_assign — when True (default), randomly distribute obligations
     across the demo employee users so the dashboard / queue look populated.
     Set False for a production-like seed where everything starts unassigned.
+
+    create_obligations — when False, seed only users / entities / rules and
+    skip the obligation-generation step entirely. Use this when you want a
+    clean state where the admin manually creates obligations off the back of
+    licenses they've uploaded. Implies auto_assign=False (no obligations
+    to assign).
     """
     from compliance_agent.db import init_db
 
@@ -523,7 +541,10 @@ def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
         users = _ensure_users(db)
         entities_map = _ensure_entities(db, users)
         rules = _ensure_rules(db, list(entities_map.values()))
-        ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
+        if create_obligations:
+            ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
+        else:
+            ob_count = 0
         backfilled = _backfill_effort_bands(db)
     return {
         "users": len(users),
@@ -532,6 +553,83 @@ def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
         "obligations_created": ob_count,
         "effort_bands_backfilled": backfilled,
     }
+
+
+def purge_obligations() -> dict[str, int]:
+    """Wipe every Obligation row plus dependent rows (comments, notifications,
+    activities). Keeps users / entities / rules / licenses intact so the
+    admin can rebuild obligations explicitly from the licenses they upload.
+
+    Returns counts of deleted rows per table.
+    """
+    from sqlalchemy import delete
+    from compliance_agent.db import (
+        Activity,
+        Comment,
+        Notification,
+        Obligation,
+    )
+
+    counts = {"obligations": 0, "comments": 0, "notifications": 0, "activities": 0}
+    with session_scope() as db:
+        # Order matters — child rows first.
+        counts["comments"] = db.execute(
+            delete(Comment).where(Comment.obligation_id.is_not(None))
+        ).rowcount or 0
+        counts["notifications"] = db.execute(
+            delete(Notification).where(Notification.obligation_id.is_not(None))
+        ).rowcount or 0
+        counts["activities"] = db.execute(
+            delete(Activity).where(Activity.target_type == "obligation")
+        ).rowcount or 0
+        counts["obligations"] = db.execute(delete(Obligation)).rowcount or 0
+    return counts
+
+
+def populate_source_urls(*, overwrite: bool = False) -> dict[str, int]:
+    """Backfill Rule.source_url AND Rule.submission_url for existing
+    rules by matching authority against the authority_urls table.
+
+    Two URLs are seeded with the same lookup result by default; admins
+    can split them per-rule in the UI later.
+
+    overwrite=False (default): only fill empty URLs. Admin-set values
+    survive.
+    overwrite=True: replace EVERY rule's URLs with the lookup result.
+
+    Returns counts.
+    """
+    from compliance_agent.data.authority_urls import lookup
+    from compliance_agent.db import init_db
+
+    # Critical: ensure the submission_url column exists on the live DB
+    # before we try to read/write it. init_db is idempotent — it's a
+    # cheap no-op when the column is already there. Without this call,
+    # users running populate-source-urls before ever starting the
+    # server hit "no such column: rules.submission_url".
+    init_db()
+
+    counts = {
+        "checked": 0,
+        "source_filled": 0,
+        "submission_filled": 0,
+        "skipped_no_match": 0,
+    }
+    with session_scope() as db:
+        rules = db.execute(select(Rule)).scalars().all()
+        for rule in rules:
+            counts["checked"] += 1
+            url = lookup(rule.authority or "")
+            if not url:
+                counts["skipped_no_match"] += 1
+                continue
+            if not (rule.source_url or "").strip() or overwrite:
+                rule.source_url = url
+                counts["source_filled"] += 1
+            if not (rule.submission_url or "").strip() or overwrite:
+                rule.submission_url = url
+                counts["submission_filled"] += 1
+    return counts
 
 
 if __name__ == "__main__":

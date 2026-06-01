@@ -12,7 +12,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from compliance_agent.ai.llm_client import make_client
+from compliance_agent.ai.llm_client import ai_available, make_client
 from compliance_agent.db import Applicability, TaxType
 
 
@@ -77,7 +77,8 @@ class RuleExtractorUnavailable(Exception):
 
 
 def is_live() -> bool:
-    return os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
+    # Mirrors ai.ai_available — live mode + either backend's key.
+    return ai_available()
 
 
 def extract_rules_from_text(
@@ -89,7 +90,8 @@ def extract_rules_from_text(
     """Call Claude on the supplied text and return candidate Rule rows."""
     if not is_live():
         raise RuleExtractorUnavailable(
-            "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY set."
+            "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 plus either "
+            "ANTHROPIC_API_KEY or OPENROUTER_API_KEY."
         )
 
     client = make_client()

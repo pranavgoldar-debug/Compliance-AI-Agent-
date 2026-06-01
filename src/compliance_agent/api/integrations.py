@@ -33,6 +33,7 @@ from compliance_agent.db import (
 from compliance_agent.email_service import (
     base_url as app_base_url,
     send_email,
+    send_email_detailed,
     smtp_configured,
 )
 
@@ -172,7 +173,7 @@ def test_email(
     actor: User = Depends(require_admin),
 ) -> TestResult:
     to = (payload.to or "").strip() or actor.email
-    delivered = send_email(
+    delivered, smtp_error = send_email_detailed(
         to=to,
         subject="Aspora Compliance OS — test email",
         body_text=(
@@ -210,9 +211,9 @@ def test_email(
     if not delivered:
         return TestResult(
             ok=False,
-            detail="SMTP send failed. Check the server logs for the underlying error.",
+            detail=smtp_error or "SMTP send failed. Check the server logs.",
         )
-    return TestResult(ok=True, detail=f"Sent to {to}.")
+    return TestResult(ok=True, detail=f"Sent to {to}. Check your inbox + spam folder.")
 
 
 # ---------------------------------------------------------------------------

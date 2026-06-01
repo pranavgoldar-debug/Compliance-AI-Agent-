@@ -38,14 +38,12 @@ type Selection =
 
 
 // Buckets shown as top-of-page chips. Maps to the DocumentCategory enum
-// for the filter; "all" is the unfiltered passthrough.
+// for the filter; "all" is the unfiltered passthrough. Trimmed to the
+// two categories actually surfaced in the entity upload cards.
 const CATEGORY_CHIPS: { key: "all" | DocumentCategory; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "Filings", label: "Filed documents" },
-  { key: "Formation", label: "Formation" },
-  { key: "Contracts", label: "Templates" },
-  { key: "Expert notes", label: "Reference" },
-  { key: "Other", label: "Other" },
+  { key: "Filings", label: "Filings" },
+  { key: "Templates", label: "Templates" },
 ];
 
 export function DocumentsPage() {
@@ -97,7 +95,7 @@ export function DocumentsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Documents"
-        description="Filings, certificates, and audit artifacts across every entity."
+        description="Filings, certificates, and audit artifacts. Pick an entity in the sidebar to upload — files always live under one entity."
         actions={
           <div className="inline-flex rounded-lg border border-input overflow-hidden">
             <button
@@ -198,27 +196,62 @@ export function DocumentsPage() {
                   </button>
                 ))}
               </div>
-              <AllDocsView documents={filteredAll} layout={layout} />
+              <AllDocsView
+                documents={filteredAll}
+                layout={layout}
+                entities={entities}
+                onPickEntity={(id) =>
+                  setSelection({ kind: "entity", entityId: id })
+                }
+              />
             </>
           ) : selection.kind === "entity" ? (
-            <DocumentList
-              key={`e-${selection.entityId}`}
-              scope={{ kind: "entity", entityId: selection.entityId }}
-              layout={layout}
-              showEntityColumn={false}
-              title={undefined}
-              hint="Drag files onto the dropzone to add new ones."
-            />
+            <>
+              <CategoryCards
+                entityName={
+                  entities.find((e) => e.id === selection.entityId)?.name ?? "Entity"
+                }
+                counts={countsByEntity.get(selection.entityId) ?? new Map()}
+                onPick={(cat) =>
+                  setSelection({
+                    kind: "entity-category",
+                    entityId: selection.entityId,
+                    category: cat,
+                  })
+                }
+              />
+              <DocumentList
+                key={`e-${selection.entityId}`}
+                scope={{ kind: "entity", entityId: selection.entityId }}
+                layout={layout}
+                showEntityColumn={false}
+                title={undefined}
+                hint="Drag files here to upload. Set the category after upload, or pick a category card above for a category-targeted upload."
+              />
+            </>
           ) : (
-            <DocumentList
-              key={`ec-${selection.entityId}-${selection.category}`}
-              scope={{ kind: "entity", entityId: selection.entityId }}
-              layout={layout}
-              showEntityColumn={false}
-              defaultCategory={selection.category}
-              title={undefined}
-              hint={`Files in ${selection.category}.`}
-            />
+            <>
+              <div className="flex items-center gap-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelection({ kind: "entity", entityId: selection.entityId })
+                  }
+                  className="text-aspora-700 hover:underline"
+                >
+                  ← All categories for this entity
+                </button>
+              </div>
+              <DocumentList
+                key={`ec-${selection.entityId}-${selection.category}`}
+                scope={{ kind: "entity", entityId: selection.entityId }}
+                layout={layout}
+                showEntityColumn={false}
+                defaultCategory={selection.category}
+                title={selection.category}
+                hint={`New uploads here will be tagged as ${selection.category}.`}
+              />
+            </>
           )}
         </div>
       </div>
@@ -349,23 +382,98 @@ function SelectionCrumbs({
 // ---------------------------------------------------------------------------
 // All-documents view (no upload here — pick an entity first)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Category cards — shown when an entity is selected. Each card jumps to that
+// entity's documents filtered to a category. Lets the user upload as a
+// specific category in one click instead of uploading and renaming after.
+// ---------------------------------------------------------------------------
+function CategoryCards({
+  entityName,
+  counts,
+  onPick,
+}: {
+  entityName: string;
+  counts: Map<DocumentCategory, number>;
+  onPick: (cat: DocumentCategory) => void;
+}) {
+  const CATEGORY_HINTS: Partial<Record<DocumentCategory, string>> = {
+    "Filings": "Filed returns, ACK receipts, regulator portal printouts.",
+    "Templates": "Blank forms, MIS templates, reusable drafts.",
+  };
+  return (
+    <div className="space-y-2">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">
+        Upload to {entityName} — pick a category
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {DOCUMENT_CATEGORIES.map((cat) => {
+          const n = counts.get(cat) ?? 0;
+          return (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => onPick(cat)}
+              className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-4 py-3 text-left transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold">{cat}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {n}
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                {CATEGORY_HINTS[cat]}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function AllDocsView({
   documents,
   layout,
+  entities,
+  onPickEntity,
 }: {
   documents: DocumentOut[];
   layout: "rows" | "grid";
+  entities: Entity[];
+  onPickEntity: (entityId: number) => void;
 }) {
   if (documents.length === 0) {
     return (
       <Card>
-        <div className="p-10 text-center text-sm text-muted-foreground">
-          No documents uploaded yet across the whole workspace.
-          <div className="mt-2">
-            <Button variant="outline" size="sm" disabled>
-              Pick an entity to upload
-            </Button>
+        <div className="p-10 text-center text-sm space-y-3">
+          <div className="text-muted-foreground">
+            No documents uploaded yet across the whole workspace.
           </div>
+          <div className="text-xs text-muted-foreground">
+            Documents always belong to one entity. Pick the entity below and
+            you'll get a drag-and-drop zone to upload PDFs, receipts, and
+            anything else (max 25 MB per file).
+          </div>
+          {entities.length > 0 && (
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) onPickEntity(Number(e.target.value));
+                }}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm max-w-xs"
+              >
+                <option value="">Pick an entity…</option>
+                {entities.map((ent) => (
+                  <option key={ent.id} value={ent.id}>
+                    {ent.name} ({ent.jurisdiction_code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </Card>
     );

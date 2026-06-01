@@ -88,7 +88,7 @@ def extract(path: Path, content_type: Optional[str]) -> DocumentExtractionResult
     if not ai_available():
         return DocumentExtractionResult(
             available=False,
-            error="AI is off in this deployment. Set COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY to enable.",
+            error="AI is off in this deployment. Set COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) to enable.",
         )
 
     text = _extract_text(path, content_type)

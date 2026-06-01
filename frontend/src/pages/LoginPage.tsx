@@ -31,7 +31,10 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      // Lowercase + trim mirror the backend's normalization. Belt + braces:
+      // copy-pasting creds from Slack often grabs a trailing space, and DB
+      // stores emails lowercased so a capital first letter would 401.
+      await login(email.trim().toLowerCase(), password);
       navigate(from, { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {

@@ -52,7 +52,14 @@ export function fmtShortDate(iso: string | null | undefined): string {
 export function fmtRelative(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
-    return formatDistanceToNow(parseISO(iso), { addSuffix: true });
+    // Backend serialises datetimes from SQLAlchemy with no timezone
+    // marker (e.g. "2026-05-28T12:34:56"). parseISO treats those as
+    // LOCAL time, which makes a 2-min-old event look 5h old in IST.
+    // Force the parser to read them as UTC by appending Z when no
+    // explicit offset is present.
+    const looksAware = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+    const normalised = looksAware ? iso : iso + "Z";
+    return formatDistanceToNow(parseISO(normalised), { addSuffix: true });
   } catch {
     return iso;
   }
