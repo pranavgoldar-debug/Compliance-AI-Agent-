@@ -7,7 +7,11 @@ hosts use a transactional email HTTP API instead — set RESEND_API_KEY and
 we'll send over HTTPS (port 443), which isn't blocked.
 
 Config (env):
-  RESEND_API_KEY       — Resend API key (re_...). Used first when set.
+  GMAIL_CLIENT_ID      — Google OAuth client id. When the Gmail trio is set,
+  GMAIL_CLIENT_SECRET    we send through Gmail's HTTPS API (gmail.send scope)
+  GMAIL_REFRESH_TOKEN    over port 443 — works on Render, no third party.
+  GMAIL_SENDER         — From address (your Gmail / Workspace, e.g. you@aspora.com).
+  RESEND_API_KEY       — Resend API key (re_...). Used next when set.
   RESEND_FROM          — From for Resend. Needs a domain verified in Resend
                          to email anyone; onboarding@resend.dev only reaches
                          your own Resend account inbox.
@@ -20,10 +24,11 @@ Config (env):
   SMTP_PORT / SMTP_USER / SMTP_PASSWORD / SMTP_FROM / SMTP_TLS
   COMPLIANCE_BASE_URL  — public base URL for the app (e.g. https://...onrender.com).
 
-Send order: Resend → Brevo → SMTP → console fallback. We never raise.
+Send order: Gmail API → Resend → Brevo → SMTP → console fallback. Never raises.
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import smtplib
@@ -39,14 +44,92 @@ def base_url() -> str:
     return os.environ.get("COMPLIANCE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
+def _gmail_configured() -> bool:
+    return bool(
+        os.environ.get("GMAIL_CLIENT_ID")
+        and os.environ.get("GMAIL_CLIENT_SECRET")
+        and os.environ.get("GMAIL_REFRESH_TOKEN")
+    )
+
+
 def smtp_configured() -> bool:
     """True when we have *any* usable email backend. Kept under the old name
     so existing call sites ('can we email?') still work."""
     return bool(
-        os.environ.get("RESEND_API_KEY")
+        _gmail_configured()
+        or os.environ.get("RESEND_API_KEY")
         or os.environ.get("BREVO_API_KEY")
         or os.environ.get("SMTP_HOST")
     )
+
+
+def _build_mime(*, sender: str, to: str, subject: str, text: str, html: Optional[str]) -> EmailMessage:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = to
+    msg.set_content(text)
+    if html:
+        msg.add_alternative(html, subtype="html")
+    return msg
+
+
+def _gmail_access_token() -> Optional[str]:
+    """Exchange the long-lived refresh token for a short-lived access token."""
+    try:
+        import httpx
+
+        r = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": os.environ["GMAIL_CLIENT_ID"],
+                "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+                "refresh_token": os.environ["GMAIL_REFRESH_TOKEN"],
+                "grant_type": "refresh_token",
+            },
+            timeout=15.0,
+        )
+        if r.status_code == 200:
+            return r.json().get("access_token")
+        logger.warning("Gmail token refresh failed: status=%s body=%r", r.status_code, r.text[:300])
+        return None
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Gmail token refresh crashed: %s", e)
+        return None
+
+
+def _send_via_gmail_api(*, to: str, subject: str, text: str, html: Optional[str]) -> bool:
+    """Send through the Gmail HTTPS API (gmail.send scope). Uses the configured
+    refresh token to mint an access token, then posts the raw MIME message.
+    Works on hosts that block SMTP (e.g. Render). Returns True on delivery."""
+    sender = (
+        os.environ.get("GMAIL_SENDER")
+        or os.environ.get("SMTP_FROM")
+        or os.environ.get("SMTP_USER")
+        or "me"
+    )
+    token = _gmail_access_token()
+    if not token:
+        return False
+    try:
+        import httpx
+
+        msg = _build_mime(sender=sender, to=to, subject=subject, text=text, html=html)
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        r = httpx.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"raw": raw},
+            timeout=15.0,
+        )
+        if r.status_code in (200, 201):
+            logger.info("Sent email via Gmail API to %s — subject=%r", to, subject)
+            return True
+        logger.warning("Gmail API send failed: status=%s body=%r", r.status_code, r.text[:300])
+        return False
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Gmail API send crashed: %s", e)
+        return False
 
 
 def _send_via_resend(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> bool:
@@ -121,8 +204,13 @@ def _send_via_brevo(api_key: str, *, to: str, subject: str, text: str, html: Opt
 
 def send_email(*, to: str, subject: str, body_text: str, body_html: Optional[str] = None) -> bool:
     """Best-effort send. Returns True if delivered, False if we fell back
-    to console-only. Never raises. Prefers HTTPS APIs (Resend, Brevo) over
-    SMTP, since hosts like Render block outbound SMTP ports."""
+    to console-only. Never raises. Prefers HTTPS APIs (Gmail, Resend, Brevo)
+    over SMTP, since hosts like Render block outbound SMTP ports."""
+    if _gmail_configured() and _send_via_gmail_api(
+        to=to, subject=subject, text=body_text, html=body_html
+    ):
+        return True
+
     resend_key = os.environ.get("RESEND_API_KEY")
     if resend_key and _send_via_resend(
         resend_key, to=to, subject=subject, text=body_text, html=body_html

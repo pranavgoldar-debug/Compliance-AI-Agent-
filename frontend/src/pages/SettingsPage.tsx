@@ -1441,11 +1441,40 @@ function GmailCard() {
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           <strong>On Render?</strong> Render blocks outbound SMTP ports, so smtp.gmail.com fails
-          with “Network is unreachable”. Use an HTTPS email API (Brevo or Resend) instead.
+          with “Network is unreachable”. Send over an HTTPS API instead (port 443 isn’t blocked).
         </div>
 
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
-          <div className="font-medium">Fastest (email anyone, no DNS): Brevo</div>
+          <div className="font-medium">Your Gmail only, no third party: Gmail API</div>
+          <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+            <li>
+              Google Cloud Console → new project → enable the <strong>Gmail API</strong>.
+            </li>
+            <li>
+              OAuth consent screen → add scope{" "}
+              <span className="font-mono">.../auth/gmail.send</span> → add your email as a test user.
+            </li>
+            <li>
+              Credentials → <strong>OAuth client ID</strong> (Web app) → redirect URI{" "}
+              <span className="font-mono">https://developers.google.com/oauthplayground</span> →
+              copy the client id + secret.
+            </li>
+            <li>
+              At <span className="font-mono">developers.google.com/oauthplayground</span> → gear →
+              “Use your own credentials” → authorize the gmail.send scope → exchange for a{" "}
+              <strong>refresh token</strong>.
+            </li>
+            <li>
+              Set these env vars (Render → Environment), then redeploy:
+              <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
+{`GMAIL_CLIENT_ID=xxxx.apps.googleusercontent.com
+GMAIL_CLIENT_SECRET=GOCSPX-xxxx
+GMAIL_REFRESH_TOKEN=1//xxxx
+GMAIL_SENDER=you@aspora.com`}
+              </pre>
+            </li>
+          </ol>
+          <div className="font-medium pt-1">Easiest (no DNS, email anyone): Brevo</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
             <li>
               Sign up at <span className="font-mono">brevo.com</span> (free: 300 emails/day).
