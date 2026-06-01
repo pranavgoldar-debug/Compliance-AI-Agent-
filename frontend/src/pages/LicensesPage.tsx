@@ -41,6 +41,7 @@ import type {
   License,
   LicenseExpiryStatus,
   LicenseRuleHit,
+  UserBrief,
 } from "@/types/api";
 
 function expiryBadgeVariant(
@@ -883,6 +884,7 @@ function LicenseDetailDialog({
 }) {
   const open = license !== null;
   const [aiOpen, setAiOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const rulesQuery = useQuery({
     queryKey: ["license-rules", license?.id],
@@ -892,6 +894,18 @@ function LicenseDetailDialog({
       ),
     enabled: open,
   });
+
+  const { data: users = [] } = useQuery({
+    queryKey: ["users", "for-schedule"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    enabled: open && isAdmin,
+  });
+
+  const onScheduled = () => {
+    rulesQuery.refetch();
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  };
 
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/licenses/${license!.id}`),
@@ -1033,6 +1047,10 @@ function LicenseDetailDialog({
                               subtitle="You MUST file these — non-compliance is a regulatory breach."
                               items={mandatory}
                               tone="mandatory"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              users={users}
+                              onScheduled={onScheduled}
                             />
                           )}
                           {optional.length > 0 && (
@@ -1041,6 +1059,10 @@ function LicenseDetailDialog({
                               subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
                               items={optional}
                               tone="conditional"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              users={users}
+                              onScheduled={onScheduled}
                             />
                           )}
                         </>
@@ -1051,6 +1073,10 @@ function LicenseDetailDialog({
                         title="Other obligations for this entity"
                         subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
                         items={rulesQuery.data.entity_other}
+                        licenseId={license.id}
+                        isAdmin={isAdmin}
+                        users={users}
+                        onScheduled={onScheduled}
                       />
                     )}
                   </div>
@@ -1171,11 +1197,19 @@ function RuleGroup({
   subtitle,
   items,
   tone,
+  licenseId,
+  isAdmin,
+  users,
+  onScheduled,
 }: {
   title: string;
   subtitle: string;
   items: LicenseRuleHit[];
   tone?: "mandatory" | "conditional";
+  licenseId: number;
+  isAdmin: boolean;
+  users: UserBrief[];
+  onScheduled: () => void;
 }) {
   const headingClass =
     tone === "mandatory"
@@ -1201,83 +1235,134 @@ function RuleGroup({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {items.map((r) => {
-              const assignee = r.next_assignee;
-              const daysOut = r.days_to_next;
-              return (
-                <tr
-                  key={r.id}
-                  className="hover:bg-secondary/20 cursor-pointer"
-                  onClick={(e) => {
-                    if (r.next_obligation_id) {
-                      e.stopPropagation();
-                      window.location.href = `/obligations/${r.next_obligation_id}`;
-                    }
-                  }}
-                >
-                  <td className="px-3 py-2 align-top">
-                    <div className="font-medium text-sm">{r.form_name}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {r.authority} · {r.category}
-                      {r.area ? ` · ${r.area}` : ""}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
-                      <Badge variant="neutral">{r.frequency}</Badge>
-                      {r.match_reason && (
-                        <span className="text-aspora-700">{r.match_reason}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge variant={statusBadgeVariant(r.next_status)}>
-                      {statusLabel(r.next_status)}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top text-sm">
-                    {assignee ? (
-                      <div>
-                        <div className="text-sm">
-                          {assignee.full_name || assignee.email}
-                        </div>
-                        {assignee.full_name && (
-                          <div className="text-[11px] text-muted-foreground">
-                            {assignee.email}
-                          </div>
-                        )}
-                      </div>
-                    ) : r.next_obligation_id ? (
-                      <span className="text-xs text-amber-700">Unassigned</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top text-sm">
-                    {r.next_due_date ? (
-                      <div>
-                        <div>{r.next_due_date}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {daysOut !== null && daysOut !== undefined
-                            ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
-                            : ""}
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">
-                        {r.due_date_rule}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right">
-                    {r.next_obligation_id && (
-                      <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {items.map((r) => (
+              <RuleRow
+                key={r.id}
+                r={r}
+                licenseId={licenseId}
+                isAdmin={isAdmin}
+                users={users}
+                onScheduled={onScheduled}
+              />
+            ))}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+function RuleRow({
+  r,
+  licenseId,
+  isAdmin,
+  users,
+  onScheduled,
+}: {
+  r: LicenseRuleHit;
+  licenseId: number;
+  isAdmin: boolean;
+  users: UserBrief[];
+  onScheduled: () => void;
+}) {
+  const assignee = r.next_assignee;
+  const daysOut = r.days_to_next;
+  const [assigneeId, setAssigneeId] = useState<number | "">("");
+  const scheduled = !!r.next_obligation_id;
+
+  const scheduleMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/licenses/${licenseId}/rules/${r.id}/schedule`, {
+        assignee_id: assigneeId === "" ? null : assigneeId,
+      }),
+    onSuccess: () => onScheduled(),
+  });
+
+  return (
+    <tr
+      className={scheduled ? "hover:bg-secondary/20 cursor-pointer" : ""}
+      onClick={() => {
+        if (scheduled) window.location.href = `/obligations/${r.next_obligation_id}`;
+      }}
+    >
+      <td className="px-3 py-2 align-top">
+        <div className="font-medium text-sm">{r.form_name}</div>
+        <div className="text-[11px] text-muted-foreground">
+          {r.authority} · {r.category}
+          {r.area ? ` · ${r.area}` : ""}
+        </div>
+        <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
+          <Badge variant="neutral">{r.frequency}</Badge>
+          {r.match_reason && <span className="text-aspora-700">{r.match_reason}</span>}
+        </div>
+      </td>
+      <td className="px-3 py-2 align-top">
+        <Badge variant={statusBadgeVariant(r.next_status)}>
+          {statusLabel(r.next_status)}
+        </Badge>
+      </td>
+      <td className="px-3 py-2 align-top text-sm">
+        {assignee ? (
+          <div>
+            <div className="text-sm">{assignee.full_name || assignee.email}</div>
+            {assignee.full_name && (
+              <div className="text-[11px] text-muted-foreground">{assignee.email}</div>
+            )}
+          </div>
+        ) : scheduled ? (
+          <span className="text-xs text-amber-700">Unassigned</span>
+        ) : isAdmin ? (
+          <select
+            value={assigneeId}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              setAssigneeId(e.target.value ? Number(e.target.value) : "")
+            }
+            className="h-7 w-full rounded border border-input bg-background px-1.5 text-xs"
+          >
+            <option value="">Unassigned</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name || u.email}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2 align-top text-sm">
+        {r.next_due_date ? (
+          <div>
+            <div>{r.next_due_date}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {daysOut !== null && daysOut !== undefined
+                ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+                : ""}
+            </div>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground italic">{r.due_date_rule}</span>
+        )}
+      </td>
+      <td className="px-3 py-2 align-top text-right">
+        {scheduled ? (
+          <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
+        ) : isAdmin ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={scheduleMutation.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              scheduleMutation.mutate();
+            }}
+          >
+            {scheduleMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+            Schedule
+          </Button>
+        ) : null}
+      </td>
+    </tr>
   );
 }
