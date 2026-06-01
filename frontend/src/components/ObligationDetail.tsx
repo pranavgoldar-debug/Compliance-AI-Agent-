@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Send,
   UserCheck,
+  UserPlus,
   Calendar as CalendarIcon,
   AlertTriangle,
   Slack,
@@ -636,8 +637,14 @@ function ActionBar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" disabled={saving}>
-              <UserCheck className="h-3.5 w-3.5" />
-              Assign
+              {obligation.assignee ? (
+                <UserCheck className="h-3.5 w-3.5" />
+              ) : (
+                <UserPlus className="h-3.5 w-3.5" />
+              )}
+              {obligation.assignee
+                ? obligation.assignee.full_name.split(" ")[0]
+                : "Assign"}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
