@@ -40,7 +40,7 @@ import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, Entity, Obligation } from "@/types/api";
+import type { ActivityOut, Entity, License, Obligation } from "@/types/api";
 
 
 function StatTile({
@@ -136,6 +136,7 @@ export function EntityDetailPage() {
               {obligations?.length ?? 0}
             </Badge>
           </TabsTrigger>
+          <TabsTrigger value="licenses">Licenses</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="people">Key Persons</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -151,6 +152,10 @@ export function EntityDetailPage() {
 
         <TabsContent value="obligations">
           <ObligationsTab obligations={obligations} loading={loadingObs} />
+        </TabsContent>
+
+        <TabsContent value="licenses">
+          <LicensesTab entity={entity} />
         </TabsContent>
 
         <TabsContent value="documents">
@@ -772,6 +777,67 @@ function ObligationsTab({
 // ---------------------------------------------------------------------------
 // Documents tab — wired to /api/documents via DocumentList.
 // ---------------------------------------------------------------------------
+function LicensesTab({ entity }: { entity: Entity }) {
+  const { data: licenses = [], isLoading } = useQuery({
+    queryKey: ["entity-licenses", entity.id],
+    queryFn: () => api.get<License[]>(`/api/licenses?entity_id=${entity.id}`),
+    refetchInterval: 30_000,
+  });
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="text-sm font-medium mb-3">
+          Licenses held by {entity.name}
+        </div>
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : licenses.length === 0 ? (
+          <div className="text-sm text-muted-foreground">
+            No licenses yet. Upload one on the Licenses page (admin) — it’ll
+            show here and surface the filings this entity owes.
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium">License</th>
+                  <th className="text-left px-3 py-2 font-medium">Authority</th>
+                  <th className="text-left px-3 py-2 font-medium">No.</th>
+                  <th className="text-left px-3 py-2 font-medium">Expiry</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {licenses.map((l) => (
+                  <tr key={l.id} className="hover:bg-secondary/20">
+                    <td className="px-3 py-2 font-medium">
+                      <Link to="/licenses" className="hover:underline">
+                        {l.name}
+                      </Link>
+                      {l.license_type && (
+                        <div className="text-[11px] text-muted-foreground">
+                          {l.license_type}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">{l.authority}</td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {l.license_number || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {l.expiry_date || "No expiry"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function DocumentsTab({ entity }: { entity: Entity }) {
   return (
     <Card>

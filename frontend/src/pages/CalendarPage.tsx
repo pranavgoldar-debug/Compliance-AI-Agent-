@@ -81,19 +81,28 @@ const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
 ];
 
 const TAX_TYPES = ["Direct Tax", "Indirect Tax", "Not a Tax"];
+const APPLICABILITIES = ["Mandatory", "Conditional", "Sector-specific"];
 
 
 interface Filters {
   entityIds: number[];
   jurisdictions: string[];
   taxTypes: string[];
+  applicabilities: string[];
   statuses: ObligationStatus[];
   assigneeIds: number[];
 }
 
 
 function emptyFilters(): Filters {
-  return { entityIds: [], jurisdictions: [], taxTypes: [], statuses: [], assigneeIds: [] };
+  return {
+    entityIds: [],
+    jurisdictions: [],
+    taxTypes: [],
+    applicabilities: [],
+    statuses: [],
+    assigneeIds: [],
+  };
 }
 
 
@@ -108,11 +117,6 @@ export function CalendarPage() {
   const [filters, setFilters] = useState<Filters>(emptyFilters());
   const [viewMode, setViewMode] = useState<ViewMode>("heatmap");
   const [selected, setSelected] = useState<Date>(new Date());
-  // "Mandatory only" toggle — when on, the calendar hides Conditional /
-  // Sector-specific items so admins can focus on the must-file list
-  // (e.g. straight after uploading a license and scheduling its rules,
-  // they want the can't-miss deadlines surfaced first).
-  const [mandatoryOnly, setMandatoryOnly] = useState(false);
 
   // Resolve current range.
   const { start, end } = useMemo(() => {
@@ -171,17 +175,17 @@ export function CalendarPage() {
     filters.entityIds.length +
     filters.jurisdictions.length +
     filters.taxTypes.length +
+    filters.applicabilities.length +
     filters.statuses.length +
     filters.assigneeIds.length;
 
-  // Apply the "Mandatory only" toggle as a client-side filter. The
-  // server already supports category / status / etc, but applicability
-  // isn't a query param yet — and it's a cheap filter on already-loaded
-  // data so doing it here keeps the dropdown snappy.
+  // Applicability (Mandatory / Conditional / Sector-specific) filter, applied
+  // client-side on already-loaded data. Empty = show everything.
   const filteredItems = useMemo(() => {
-    if (!mandatoryOnly) return items;
-    return items.filter((o) => o.rule_applicability === "Mandatory");
-  }, [items, mandatoryOnly]);
+    if (filters.applicabilities.length === 0) return items;
+    const set = new Set(filters.applicabilities);
+    return items.filter((o) => set.has(o.rule_applicability));
+  }, [items, filters.applicabilities]);
 
   // Build a date -> obligations map for the heatmap.
   const byDate = useMemo(() => {
@@ -279,6 +283,12 @@ export function CalendarPage() {
             onChange={(vals) => setFilters((f) => ({ ...f, taxTypes: vals }))}
           />
           <MultiSelectFilter
+            label="Applicability"
+            options={APPLICABILITIES.map((a) => ({ value: a, label: a }))}
+            selected={filters.applicabilities}
+            onChange={(vals) => setFilters((f) => ({ ...f, applicabilities: vals }))}
+          />
+          <MultiSelectFilter
             label="Status"
             options={STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
             selected={filters.statuses}
@@ -295,20 +305,6 @@ export function CalendarPage() {
             }
             searchable
           />
-          {/* Mandatory-only toggle — the most-clicked filter for admins
-              right after uploading a license. */}
-          <button
-            type="button"
-            onClick={() => setMandatoryOnly((v) => !v)}
-            className={
-              mandatoryOnly
-                ? "rounded-full border border-red-400 bg-red-50 px-3 py-1 text-xs text-red-800 font-semibold"
-                : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
-            }
-            title="Hide Conditional / Sector-specific items — show only the can't-miss filings"
-          >
-            ★ Mandatory only
-          </button>
           {activeFilterCount > 0 && (
             <>
               <Badge variant="default" className="ml-1">
@@ -324,7 +320,7 @@ export function CalendarPage() {
             </>
           )}
           <div className="ml-auto text-xs text-muted-foreground tabular-nums">
-            {items.length} item{items.length === 1 ? "" : "s"} in range
+            {filteredItems.length} item{filteredItems.length === 1 ? "" : "s"} in range
           </div>
         </div>
       </div>
@@ -342,7 +338,7 @@ export function CalendarPage() {
           onNext={() => setCursor(addMonths(cursor, 1))}
         />
       ) : (
-        <ListView items={items} isLoading={isLoading} />
+        <ListView items={filteredItems} isLoading={isLoading} />
       )}
     </div>
   );

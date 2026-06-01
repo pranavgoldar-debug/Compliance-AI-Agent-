@@ -260,18 +260,13 @@ def create_license(
     issue_date: Optional[str] = Form(None),
     expiry_date: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),
 ) -> LicenseOut:
     entity = db.get(Entity, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found.")
-    if file is None or not file.filename:
-        raise HTTPException(
-            status_code=400,
-            detail="A license file (PDF) is required.",
-        )
 
     lic = License(
         entity_id=entity_id,
@@ -286,14 +281,34 @@ def create_license(
         created_by_id=user.id,
     )
 
-    storage_path, size = storage.save_bytes(entity_id, file.filename, file.file)
-    lic.filename = file.filename
-    lic.storage_path = storage_path
-    lic.size_bytes = size
-    lic.content_type = file.content_type
+    if file is not None and file.filename:
+        storage_path, size = storage.save_bytes(entity_id, file.filename, file.file)
+        lic.filename = file.filename
+        lic.storage_path = storage_path
+        lic.size_bytes = size
+        lic.content_type = file.content_type
 
     db.add(lic)
     db.flush()
+
+    # Surface the uploaded license file in the Documents section too (reuses
+    # the same stored blob) so it shows on the entity's Documents tab.
+    if lic.storage_path:
+        from compliance_agent.db import Document, DocumentCategory
+
+        db.add(
+            Document(
+                entity_id=entity_id,
+                filename=lic.filename or "license",
+                storage_path=lic.storage_path,
+                content_type=lic.content_type,
+                size_bytes=lic.size_bytes,
+                category=DocumentCategory.filings,
+                tags="license",
+                uploaded_by_id=user.id,
+            )
+        )
+
     log_activity(
         db,
         actor_id=user.id,

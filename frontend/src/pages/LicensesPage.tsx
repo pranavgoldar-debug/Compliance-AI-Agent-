@@ -415,7 +415,6 @@ function UploadDialog({
     name.trim() &&
     authority.trim() &&
     jurisdictionCode &&
-    file !== null &&
     !uploadMutation.isPending &&
     !analyzeMutation.isPending;
 
@@ -540,7 +539,7 @@ function UploadDialog({
             />
           </Field>
 
-          <Field label="License file (PDF) *">
+          <Field label="License file (PDF — optional, but Claude auto-fills from it)">
             <label
               className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-2 cursor-pointer hover:border-aspora-400 hover:bg-aspora-50/40"
               onDragOver={(e) => e.preventDefault()}
