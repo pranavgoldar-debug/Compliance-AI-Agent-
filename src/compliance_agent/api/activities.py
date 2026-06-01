@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import delete as _sa_delete, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import serialize_user
@@ -212,3 +212,19 @@ def export_activities_csv(
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="aspora-audit-log.csv"'},
     )
+
+
+class ClearResult(__import__("pydantic").BaseModel):
+    deleted: int
+
+
+@router.delete("", response_model=ClearResult)
+def clear_activities(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ClearResult:
+    """Admin-only: wipe the activity / audit log. Irreversible."""
+    n = db.execute(select(func.count(Activity.id))).scalar_one()
+    db.execute(_sa_delete(Activity))
+    db.commit()
+    return ClearResult(deleted=int(n or 0))

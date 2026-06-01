@@ -529,6 +529,23 @@ def trigger_weekly_digest(token: str = _Query(..., description="Must equal CRON_
     }
 
 
+@cron_router.api_route("/sync-rules", methods=["GET", "POST"])
+def trigger_sync_rules(token: str = _Query(..., description="Must equal CRON_TOKEN.")) -> dict:
+    """Pull any newly-added catalogue rules (e.g. the split DIFC/ADGM rules)
+    into the live DB for existing entities — a re-seed of rules only, with no
+    server shell needed. Idempotent."""
+    expected = _os.environ.get("CRON_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=404, detail="Cron trigger not enabled.")
+    if not _hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Bad token.")
+
+    from compliance_agent.db.seed import sync_catalog_rules
+
+    count = sync_catalog_rules()
+    return {"ok": True, "rules_synced": count}
+
+
 # ---------------------------------------------------------------------------
 # Per-user notification prefs
 # ---------------------------------------------------------------------------

@@ -635,3 +635,23 @@ def populate_source_urls(*, overwrite: bool = False) -> dict[str, int]:
 if __name__ == "__main__":
     counts = run_seed()
     print(counts)
+
+
+def sync_catalog_rules() -> int:
+    """Idempotently ensure every catalogue rule exists for the existing
+    entities — used to pull in newly-added catalogue rules (e.g. the split
+    DIFC-only / ADGM-only rules) WITHOUT a full re-seed and without needing a
+    server shell. Safe to run repeatedly. Returns the total rule count seen."""
+    from sqlalchemy import select
+
+    from compliance_agent.db import init_db
+
+    init_db()
+    with session_scope() as db:
+        entities = (
+            db.execute(select(Entity).where(Entity.archived_at.is_(None)))
+            .scalars()
+            .all()
+        )
+        rules = _ensure_rules(db, list(entities))
+        return len(rules)
