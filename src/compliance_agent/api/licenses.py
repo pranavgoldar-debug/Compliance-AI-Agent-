@@ -393,7 +393,7 @@ def download_license_file(
 
 
 # ---------------------------------------------------------------------------
-# AI extraction — read the uploaded license file, ask Claude to surface
+# AI extraction — read the uploaded license file, ask Grok to surface
 # every compliance obligation a holder of this license owes, and return
 # them as CandidateRule rows the admin can review + materialise.
 # ---------------------------------------------------------------------------
@@ -407,7 +407,7 @@ class LicenseAIExtractResponse(BaseModel):
 
 
 _MAX_EXTRACT_BYTES = 4_000_000   # ~4 MB of source text — enough for any single licence
-_MAX_PROMPT_CHARS = 60_000        # rough char cap to keep Claude prompt manageable
+_MAX_PROMPT_CHARS = 60_000        # rough char cap to keep Grok prompt manageable
 
 
 def _read_license_text(lic: License) -> str:
@@ -436,7 +436,7 @@ def _read_license_text(lic: License) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Pre-fill the Add-License form by reading the uploaded PDF with Claude.
+# Pre-fill the Add-License form by reading the uploaded PDF with Grok.
 # Stateless — nothing is saved; we just return suggested field values + a
 # best-guess entity match for the admin to review before creating.
 # ---------------------------------------------------------------------------
@@ -539,7 +539,7 @@ def analyze_license_file(
     except RuleExtractorUnavailable as exc:
         return LicenseAnalyzeResponse(available=False, notes=str(exc))
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Grok call failed: {exc}") from exc
 
     code = (meta.jurisdiction_code or "").strip().lower() or None
     ent = _match_entity(db, entity_name=meta.entity_name, jurisdiction_code=code)
@@ -574,7 +574,7 @@ def ai_extract_obligations(
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),
 ) -> LicenseAIExtractResponse:
-    """Read the license file, ask Claude what obligations the holder owes,
+    """Read the license file, ask Grok what obligations the holder owes,
     return candidate rules for the admin to tick + create.
 
     Falls back gracefully when:
@@ -631,7 +631,7 @@ def ai_extract_obligations(
             ),
         )
 
-    # Prepend a short context line so Claude knows what this document is.
+    # Prepend a short context line so Grok knows what this document is.
     primer = (
         f"This is a regulator-issued license / authorisation document for "
         f"jurisdiction {lic.jurisdiction_code.upper()}, issued by "
@@ -659,7 +659,7 @@ def ai_extract_obligations(
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
-            status_code=502, detail=f"Claude call failed: {exc}"
+            status_code=502, detail=f"Grok call failed: {exc}"
         ) from exc
 
     log_activity(

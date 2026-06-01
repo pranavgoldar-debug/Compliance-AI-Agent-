@@ -354,7 +354,7 @@ function UploadDialog({
     analyzeMutation.reset();
   }
 
-  // Claude reads the uploaded PDF and pre-fills the form fields below.
+  // Grok reads the uploaded PDF and pre-fills the form fields below.
   const analyzeMutation = useMutation({
     mutationFn: async (f: File) => {
       const form = new FormData();
@@ -366,7 +366,7 @@ function UploadDialog({
         setAiNote(r.notes || "Couldn't auto-read the file — fill the fields manually.");
         return;
       }
-      setAiNote("Claude pre-filled these from the PDF — review and edit before saving.");
+      setAiNote("Grok pre-filled these from the PDF — review and edit before saving.");
       if (r.suggested_entity_id) pickEntity(r.suggested_entity_id);
       if (r.name) setName(r.name);
       if (r.license_type) setLicenseType(r.license_type);
@@ -563,7 +563,7 @@ function UploadDialog({
               )}
               <span className="text-sm">
                 {analyzeMutation.isPending
-                  ? "Claude is reading the PDF…"
+                  ? "Grok is reading the PDF…"
                   : file
                     ? file.name
                     : "Drop the license PDF or click to browse"}
@@ -730,7 +730,7 @@ function AIExtractDialog({
             Extract obligations from this license
           </DialogTitle>
           <DialogDescription>
-            Claude reads the uploaded license file and pulls out every ongoing
+            Grok reads the uploaded license file and pulls out every ongoing
             compliance obligation the licensee owes. You review, tick the ones
             to keep, and they're created as Staging rules attached to{" "}
             <strong>{license.entity_name}</strong>.
@@ -743,7 +743,7 @@ function AIExtractDialog({
               <p>
                 Hit Extract — we'll read{" "}
                 <strong>{license.filename || "your license file"}</strong> and
-                ask Claude what filings it triggers. Takes ~20–30 seconds.
+                ask Grok what filings it triggers. Takes ~20–30 seconds.
               </p>
               {extractMutation.error && (
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
@@ -762,7 +762,7 @@ function AIExtractDialog({
               <div className="font-medium mb-1">No obligations detected.</div>
               <div className="text-muted-foreground">
                 {response.notes ||
-                  "Claude didn't find any recurring filings in this document. Either the file doesn't list ongoing obligations or the text didn't extract cleanly."}
+                  "Grok didn't find any recurring filings in this document. Either the file doesn't list ongoing obligations or the text didn't extract cleanly."}
               </div>
             </div>
           ) : (
@@ -1005,7 +1005,7 @@ function LicenseDetailDialog({
                         size="sm"
                         variant="outline"
                         onClick={() => setAiOpen(true)}
-                        title="Read the uploaded license with Claude and surface obligations"
+                        title="Read the uploaded license with Grok and surface obligations"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         Extract with AI

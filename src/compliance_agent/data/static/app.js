@@ -367,7 +367,7 @@ function tagList(items) {
 }
 
 if (window.__COMPLIANCE_LIVE__) {
-  modeBadge.textContent = "Live (Claude)";
+  modeBadge.textContent = "Live (Grok)";
   modeBadge.classList.add("live");
 }
 

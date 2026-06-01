@@ -2,7 +2,7 @@
 
   POST /api/ai/extract-from-document/{document_id}
       Reads the uploaded file from storage, extracts plain text, and asks
-      Claude to suggest filing_reference / payment_* / completed_at /
+      Grok to suggest filing_reference / payment_* / completed_at /
       notes_suggestion. Caller (the UI) shows these as a preview before
       writing anything.
 

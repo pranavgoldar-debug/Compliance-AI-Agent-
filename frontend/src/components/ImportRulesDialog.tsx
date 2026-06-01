@@ -3,7 +3,7 @@
 //   2. Preview parsed rows with per-row validation errors.
 //   3. Tick rows to keep, optionally attach to entities, commit as Staging.
 //
-// No Claude calls — this is the plain bulk import path for an existing
+// No Grok calls — this is the plain bulk import path for an existing
 // compliance tracker sheet.
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

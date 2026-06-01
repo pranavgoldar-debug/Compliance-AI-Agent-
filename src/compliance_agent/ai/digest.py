@@ -13,7 +13,7 @@ Pipeline:
   1. Pull the user's relevant obligations from the DB
   2. Render a compact JSON-ish context block (no full SQL dumps —
      model only needs identifiers + dates + status)
-  3. Send to Claude (via the same llm_client.make_client adapter used
+  3. Send to Grok (via the same llm_client.make_client adapter used
      elsewhere — works with Anthropic key OR OpenRouter key)
   4. Get back a markdown blurb with prioritised next actions
   5. Post to the configured Slack channel + optionally email the user
@@ -56,7 +56,7 @@ logger = logging.getLogger("compliance_agent.digest")
 
 
 # ---------------------------------------------------------------------------
-# Context-builders — turn DB state into a tight JSON payload for Claude
+# Context-builders — turn DB state into a tight JSON payload for Grok
 # ---------------------------------------------------------------------------
 @dataclass
 class _ObBrief:

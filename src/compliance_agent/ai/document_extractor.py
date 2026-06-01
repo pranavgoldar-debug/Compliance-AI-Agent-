@@ -3,7 +3,7 @@
 Flow:
   1. open the file from storage
   2. extract plain text (pypdf for .pdf; raw decode otherwise)
-  3. send to Claude with a tight prompt → JSON suggestion
+  3. send to Grok with a tight prompt → JSON suggestion
   4. return suggestions to the API layer, which surfaces them as an
      "Auto-fill" preview the user accepts or edits before saving.
 
@@ -115,12 +115,12 @@ def extract(path: Path, content_type: Optional[str]) -> DocumentExtractionResult
         return DocumentExtractionResult(
             available=True,
             excerpt=excerpt[:4000],
-            error=f"Claude call failed: {e}",
+            error=f"Grok call failed: {e}",
         )
 
 
 # ---------------------------------------------------------------------------
-# Claude call — strict JSON via tool-use
+# Grok call — strict JSON via tool-use
 # ---------------------------------------------------------------------------
 _SYSTEM = """\
 You are an assistant for an internal compliance ops team. You will be given the
@@ -190,7 +190,7 @@ def _call_claude(text: str) -> DocumentExtractionSuggestion:
     for block in response.content:
         if getattr(block, "type", None) == "tool_use" and block.name == "record_extraction":
             raw = block.input or {}
-            # Coerce completed_at to a date if Claude returned a string.
+            # Coerce completed_at to a date if Grok returned a string.
             raw = dict(raw)
             if raw.get("completed_at"):
                 try:
@@ -201,4 +201,4 @@ def _call_claude(text: str) -> DocumentExtractionSuggestion:
                     raw["completed_at"] = None
             return DocumentExtractionSuggestion(**raw)
 
-    raise RuntimeError("Claude didn't call the tool — see response: " + json.dumps(response.model_dump()))
+    raise RuntimeError("Grok didn't call the tool — see response: " + json.dumps(response.model_dump()))

@@ -6,7 +6,7 @@ Endpoints:
   GET /api/regulations/{reg_id}     — extracted requirements (+ optional verification)
 
 Default mode is mock (no API key needed). Set `COMPLIANCE_AGENT_LIVE=1` and
-provide `ANTHROPIC_API_KEY` to switch to live Claude extraction.
+provide `ANTHROPIC_API_KEY` to switch to live Grok extraction.
 """
 from __future__ import annotations
 
@@ -198,7 +198,20 @@ def create_app() -> FastAPI:
     # index.html. When the bundle isn't built (fresh clone, dev mode), we
     # fall back to the legacy vanilla-JS index.
     # ------------------------------------------------------------------
-    react_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    # Locate the built React bundle. The repo-relative path works for local
+    # dev; on Render an editable install can resolve __file__ elsewhere, so we
+    # also probe the CWD and Render's project dir. First hit with an
+    # index.html wins — otherwise SPA deep-links (e.g. /obligations/2) fall
+    # through to FastAPI and 404 with {"detail":"Not Found"}.
+    _dist_candidates = [
+        Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
+        Path.cwd() / "frontend" / "dist",
+        Path("/opt/render/project/src/frontend/dist"),
+    ]
+    react_dist = next(
+        (p for p in _dist_candidates if (p / "index.html").is_file()),
+        _dist_candidates[0],
+    )
     react_index = react_dist / "index.html"
 
     if react_index.exists():

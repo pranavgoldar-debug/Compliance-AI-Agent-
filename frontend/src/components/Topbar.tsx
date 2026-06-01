@@ -96,7 +96,7 @@ function Breadcrumbs() {
 
 
 // ---------------------------------------------------------------------------
-// Mode badge — auto-flips to Live (Claude) when the server has the key set.
+// Mode badge — auto-flips to Live (Grok) when the server has the key set.
 // ---------------------------------------------------------------------------
 function ModeBadge() {
   const { data } = useQuery({
@@ -109,7 +109,7 @@ function ModeBadge() {
   const label = live
     ? data.backend === "openrouter"
       ? "Live (OpenRouter)"
-      : "Live (Claude)"
+      : "Live (Grok)"
     : "Mock mode";
   return (
     <Tooltip>
@@ -129,8 +129,8 @@ function ModeBadge() {
       <TooltipContent>
         {live
           ? data.backend === "openrouter"
-            ? "AI features call Claude via OpenRouter. Override the model with OPENROUTER_MODEL env var."
-            : "Ask Aspora + Add Rule from text use the real Claude API."
+            ? "AI features call Grok via OpenRouter. Override the model with OPENROUTER_MODEL env var."
+            : "Ask Aspora + Add Rule from text use the real Grok API."
           : "AI features run from curated mocks. Set COMPLIANCE_AGENT_LIVE=1 + ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) to switch."}
       </TooltipContent>
     </Tooltip>
