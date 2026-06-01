@@ -1441,31 +1441,38 @@ function GmailCard() {
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           <strong>On Render?</strong> Render blocks outbound SMTP ports, so smtp.gmail.com fails
-          with “Network is unreachable”. Use Resend (HTTPS) instead — it works on Render.
+          with “Network is unreachable”. Use an HTTPS email API (Brevo or Resend) instead.
         </div>
 
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
-          <div className="font-medium">Recommended: Resend (works on Render)</div>
+          <div className="font-medium">Fastest (email anyone, no DNS): Brevo</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
             <li>
-              Sign up at <span className="font-mono">resend.com</span> → API Keys → create one
-              (starts with <span className="font-mono">re_</span>).
+              Sign up at <span className="font-mono">brevo.com</span> (free: 300 emails/day).
             </li>
             <li>
-              Add &amp; verify your domain <span className="font-mono">aspora.com</span> in Resend
-              (Domains → add the DNS records). For a quick test you can skip this and send only to
-              your own inbox.
+              Senders &amp; IP → <strong>Senders</strong> → add{" "}
+              <span className="font-mono">compliance@aspora.com</span> → click the confirmation
+              link Brevo emails you. (No DNS needed — this single verified sender can email anyone.)
+            </li>
+            <li>
+              SMTP &amp; API → <strong>API Keys</strong> → create one (<span className="font-mono">xkeysib-…</span>).
             </li>
             <li>
               Set these env vars (Render → Environment), then redeploy:
               <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
-{`RESEND_API_KEY=re_xxxxxxxxxxxx
-RESEND_FROM="Aspora Compliance <compliance@aspora.com>"`}
+{`BREVO_API_KEY=xkeysib-xxxxxxxx
+BREVO_FROM=compliance@aspora.com
+BREVO_FROM_NAME=Aspora Compliance`}
               </pre>
-              (Before the domain is verified, use <span className="font-mono">onboarding@resend.dev</span> as the from.)
             </li>
           </ol>
-          <div className="font-medium pt-1">Alternative: SMTP (local / non-Render only)</div>
+          <div className="font-medium pt-1">Alternative: Resend (verify aspora.com domain via DNS)</div>
+          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
+{`RESEND_API_KEY=re_xxxxxxxx
+RESEND_FROM="Aspora Compliance <compliance@aspora.com>"`}
+          </pre>
+          <div className="font-medium pt-1">SMTP (local / non-Render only)</div>
           <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
 {`SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587

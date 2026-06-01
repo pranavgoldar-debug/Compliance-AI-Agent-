@@ -7,20 +7,20 @@ hosts use a transactional email HTTP API instead — set RESEND_API_KEY and
 we'll send over HTTPS (port 443), which isn't blocked.
 
 Config (env):
-  RESEND_API_KEY       — Resend API key (re_...). When set, used first.
-  RESEND_FROM          — From address for Resend (defaults to SMTP_FROM).
-                         Must be on a domain verified in Resend, or
-                         onboarding@resend.dev for testing to your own inbox.
-  SMTP_HOST            — e.g. smtp.gmail.com (only works where SMTP isn't blocked)
-  SMTP_PORT            — default 587
-  SMTP_USER            — SMTP username
-  SMTP_PASSWORD        — SMTP password
-  SMTP_FROM            — From address (defaults to SMTP_USER)
-  SMTP_TLS             — "1" to enable STARTTLS (default), "0" to disable
+  RESEND_API_KEY       — Resend API key (re_...). Used first when set.
+  RESEND_FROM          — From for Resend. Needs a domain verified in Resend
+                         to email anyone; onboarding@resend.dev only reaches
+                         your own Resend account inbox.
+  BREVO_API_KEY        — Brevo (Sendinblue) key (xkeysib-...). Used next.
+                         Brevo lets you verify a SINGLE sender email (click a
+                         link, no DNS) and then email anyone — fastest path.
+  BREVO_FROM           — Verified Brevo sender email (e.g. compliance@aspora.com).
+  BREVO_FROM_NAME      — Display name for Brevo sends (default "Aspora Compliance").
+  SMTP_HOST            — e.g. smtp.gmail.com (blocked on Render; local/self-host only)
+  SMTP_PORT / SMTP_USER / SMTP_PASSWORD / SMTP_FROM / SMTP_TLS
   COMPLIANCE_BASE_URL  — public base URL for the app (e.g. https://...onrender.com).
 
-When neither Resend nor SMTP is configured, OR sending fails, we fall back
-to logging the message to the server console. We never raise to the caller.
+Send order: Resend → Brevo → SMTP → console fallback. We never raise.
 """
 from __future__ import annotations
 
@@ -40,9 +40,13 @@ def base_url() -> str:
 
 
 def smtp_configured() -> bool:
-    """True when we have *any* usable email backend (Resend or SMTP). Kept
-    under the old name so existing call sites ('can we email?') still work."""
-    return bool(os.environ.get("RESEND_API_KEY") or os.environ.get("SMTP_HOST"))
+    """True when we have *any* usable email backend. Kept under the old name
+    so existing call sites ('can we email?') still work."""
+    return bool(
+        os.environ.get("RESEND_API_KEY")
+        or os.environ.get("BREVO_API_KEY")
+        or os.environ.get("SMTP_HOST")
+    )
 
 
 def _send_via_resend(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> bool:
@@ -74,12 +78,60 @@ def _send_via_resend(api_key: str, *, to: str, subject: str, text: str, html: Op
         return False
 
 
+def _send_via_brevo(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> bool:
+    """Send through Brevo's HTTPS API. Returns True on delivery. The sender
+    email must be a verified sender (or verified domain) in the Brevo account."""
+    sender_email = (
+        os.environ.get("BREVO_FROM")
+        or os.environ.get("SMTP_FROM")
+        or os.environ.get("SMTP_USER")
+        or "no-reply@aspora.com"
+    )
+    sender_name = os.environ.get("BREVO_FROM_NAME", "Aspora Compliance")
+    payload: dict = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": text,
+    }
+    if html:
+        payload["htmlContent"] = html
+    try:
+        import httpx
+
+        r = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "accept": "application/json",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=15.0,
+        )
+        if r.status_code in (200, 201):
+            logger.info("Sent email via Brevo to %s — subject=%r", to, subject)
+            return True
+        logger.warning("Brevo send failed: status=%s body=%r", r.status_code, r.text[:300])
+        return False
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Brevo send crashed: %s", e)
+        return False
+
+
 def send_email(*, to: str, subject: str, body_text: str, body_html: Optional[str] = None) -> bool:
     """Best-effort send. Returns True if delivered, False if we fell back
-    to console-only. Never raises. Prefers Resend (HTTPS) over SMTP."""
+    to console-only. Never raises. Prefers HTTPS APIs (Resend, Brevo) over
+    SMTP, since hosts like Render block outbound SMTP ports."""
     resend_key = os.environ.get("RESEND_API_KEY")
     if resend_key and _send_via_resend(
         resend_key, to=to, subject=subject, text=body_text, html=body_html
+    ):
+        return True
+
+    brevo_key = os.environ.get("BREVO_API_KEY")
+    if brevo_key and _send_via_brevo(
+        brevo_key, to=to, subject=subject, text=body_text, html=body_html
     ):
         return True
 
