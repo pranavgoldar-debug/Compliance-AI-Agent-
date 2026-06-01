@@ -409,6 +409,41 @@ async def clickup_webhook(request: Request) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Cron trigger — lets a free external scheduler (GitHub Actions, cron-job.org,
+# UptimeRobot, …) drive the weekly admin digest without a paid Render cron.
+# Protected by a shared CRON_TOKEN env var; disabled (404) when unset.
+# ---------------------------------------------------------------------------
+import hmac as _hmac
+import os as _os
+
+from fastapi import Query as _Query
+
+cron_router = APIRouter(prefix="/api/cron", tags=["cron"])
+
+
+@cron_router.api_route("/weekly-digest", methods=["GET", "POST"])
+def trigger_weekly_digest(token: str = _Query(..., description="Must equal CRON_TOKEN.")) -> dict:
+    expected = _os.environ.get("CRON_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=404, detail="Cron trigger not enabled.")
+    if not _hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Bad token.")
+
+    from compliance_agent.digest import send_admin_digest
+
+    res = send_admin_digest()
+    s = res.summary
+    return {
+        "ok": True,
+        "emails_sent": res.sent_emails,
+        "slack_sent": res.slack_sent,
+        "overdue": len(s.overdue),
+        "due_within_7d": len(s.upcoming),
+        "awaiting_signoff": len(s.pending_review),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Per-user notification prefs
 # ---------------------------------------------------------------------------
 class NotificationPrefsOut(BaseModel):

@@ -1,0 +1,29 @@
+name: Weekly compliance digest
+
+# Free alternative to a paid Render cron. Pings the app's token-gated
+# /api/cron/weekly-digest endpoint, which emails + Slacks every admin the
+# overdue list, filings due within 7 days, and items awaiting sign-off.
+#
+# Setup (one-time):
+#   1. On the web service set an env var CRON_TOKEN to a long random string.
+#   2. In this GitHub repo → Settings → Secrets and variables → Actions, add:
+#        APP_URL    = https://compliance-ai-agent.onrender.com   (no trailing slash)
+#        CRON_TOKEN = <the same value you set on the server>
+#
+# NOTE: GitHub only runs scheduled workflows from the repository's DEFAULT
+# branch. If this file isn't on the default branch, either merge it there or
+# use a free pinger (cron-job.org / UptimeRobot) hitting the same URL.
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"   # Every Monday 08:00 UTC
+  workflow_dispatch: {}    # Lets you run it on demand from the Actions tab
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly digest
+        run: |
+          curl -fsS -X POST \
+            "${{ secrets.APP_URL }}/api/cron/weekly-digest?token=${{ secrets.CRON_TOKEN }}"

@@ -12,6 +12,7 @@ from compliance_agent.api.entities import router as entities_router
 from compliance_agent.api.exports import router as exports_router
 from compliance_agent.api.integrations import (
     admin_router as integrations_admin_router,
+    cron_router as integrations_cron_router,
     me_router as integrations_me_router,
     webhook_router as integrations_webhook_router,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "entities_router",
     "exports_router",
     "integrations_admin_router",
+    "integrations_cron_router",
     "integrations_me_router",
     "integrations_webhook_router",
     "notifications_router",
