@@ -10,9 +10,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from compliance_agent.ai.llm_client import make_client
 from compliance_agent.db import Applicability, TaxType
 
 
@@ -92,7 +92,7 @@ def extract_rules_from_text(
             "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY set."
         )
 
-    client = anthropic.Anthropic()
+    client = make_client()
 
     user_content = document_text
     if jurisdiction_hint:

@@ -1,10 +1,10 @@
 """System info — small endpoint the UI polls to flip the mode badge."""
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter
 from pydantic import BaseModel
+
+from compliance_agent.ai.llm_client import active_backend, ai_available
 
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -13,15 +13,16 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 class SystemInfo(BaseModel):
     mode: str  # "live" or "mock"
     ai_available: bool
+    backend: str  # "anthropic" / "openrouter" / "mock"
     version: str
 
 
 @router.get("/info", response_model=SystemInfo)
 def system_info() -> SystemInfo:
-    live = os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
-    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    available = ai_available()
     return SystemInfo(
-        mode="live" if live and has_key else "mock",
-        ai_available=live and has_key,
+        mode="live" if available else "mock",
+        ai_available=available,
+        backend=active_backend(),
         version="0.6.0",
     )

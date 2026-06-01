@@ -145,9 +145,9 @@ Return ONLY the structured JSON via the provided tool.
 
 
 def _call_claude(text: str) -> DocumentExtractionSuggestion:
-    import anthropic
+    from compliance_agent.ai.llm_client import make_client
 
-    client = anthropic.Anthropic()
+    client = make_client()
     tool = {
         "name": "record_extraction",
         "description": "Record the extracted filing fields.",

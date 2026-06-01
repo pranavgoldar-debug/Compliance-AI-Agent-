@@ -162,9 +162,9 @@ or document by name. No fluff.
 
 
 def _call_claude(prompt: str) -> SecondOpinion:
-    import anthropic
+    from compliance_agent.ai.llm_client import make_client
 
-    client = anthropic.Anthropic()
+    client = make_client()
     tool = {
         "name": "record_opinion",
         "description": "Record the structured second-opinion verdict.",

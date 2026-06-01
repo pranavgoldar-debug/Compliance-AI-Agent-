@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union
-
-import anthropic
+from typing import Any, Optional, Union
 
 from compliance_agent.models import ExtractionResult
 
@@ -32,10 +30,12 @@ def read_document(source: Union[str, Path]) -> str:
 class ComplianceExtractor:
     def __init__(
         self,
-        client: Optional[anthropic.Anthropic] = None,
+        client: Optional[Any] = None,
         model: str = "claude-opus-4-7",
     ):
-        self.client = client or anthropic.Anthropic()
+        from compliance_agent.ai.llm_client import make_client
+
+        self.client = client or make_client()
         self.model = model
 
     def extract(self, document_text: str, *, framework_hint: Optional[str] = None) -> ExtractionResult:

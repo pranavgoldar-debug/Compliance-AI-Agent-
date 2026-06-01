@@ -5,17 +5,13 @@ Modules:
     second_opinion       — Reviewer-style assessment of a pending obligation.
     regulation_watcher   — Fetch a rule's source URL, snapshot, diff.
 
-Each module exposes a single `available()` predicate that checks the
-COMPLIANCE_AGENT_LIVE + ANTHROPIC_API_KEY env vars so the API layer can
-disable the corresponding endpoint cleanly when AI is off.
+`ai_available()` checks the COMPLIANCE_AGENT_LIVE env var plus either
+ANTHROPIC_API_KEY (direct Anthropic) or OPENROUTER_API_KEY (OpenRouter
+proxy), so the API layer can disable the corresponding endpoint cleanly
+when AI is off. The actual backend selection lives in `llm_client`.
 """
 from __future__ import annotations
 
-import os
+from compliance_agent.ai.llm_client import active_backend, ai_available, make_client
 
-
-def ai_available() -> bool:
-    """The Phase 4 gate: live mode + a usable API key."""
-    return os.environ.get("COMPLIANCE_AGENT_LIVE") == "1" and bool(
-        os.environ.get("ANTHROPIC_API_KEY")
-    )
+__all__ = ["ai_available", "active_backend", "make_client"]

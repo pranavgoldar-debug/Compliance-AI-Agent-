@@ -368,7 +368,9 @@ def chat(
         api_messages.append({"role": m.role, "content": m.content})
 
     try:
-        client = anthropic.Anthropic()
+        from compliance_agent.ai.llm_client import make_client
+
+        client = make_client()
         tool_call_count = 0
         max_iterations = 6
         for _ in range(max_iterations):
