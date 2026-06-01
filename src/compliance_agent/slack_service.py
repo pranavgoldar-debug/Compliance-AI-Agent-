@@ -146,7 +146,6 @@ def _ob_context_fields(obligation: Obligation) -> list[dict]:
     """The 4 facts that go inside every obligation-related card —
     rendered as a 2x2 grid of fields in Slack."""
     entity = obligation.entity.name if obligation.entity else "—"
-    band = (obligation.effort_band or EffortBand.w4).value
     from compliance_agent.api._helpers import days_remaining
 
     days = days_remaining(obligation.due_date)
@@ -159,7 +158,6 @@ def _ob_context_fields(obligation: Obligation) -> list[dict]:
         {"type": "mrkdwn", "text": f"*Entity*\n{entity}"},
         {"type": "mrkdwn", "text": f"*Due*\n{obligation.due_date.isoformat()} ({_days_word(days)})"},
         {"type": "mrkdwn", "text": f"*Assignee*\n{assignee}"},
-        {"type": "mrkdwn", "text": f"*Effort band*\n{band}"},
     ]
 
 

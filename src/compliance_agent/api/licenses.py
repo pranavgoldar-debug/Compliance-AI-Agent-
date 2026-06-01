@@ -693,7 +693,10 @@ def ai_extract_obligations(
     return LicenseAIExtractResponse(
         available=True,
         license_id=license_id,
-        jurisdiction_hint=result.jurisdiction_hint or lic.jurisdiction_code,
+        # Use the license's own short jurisdiction code (e.g. "uae"), NOT the
+        # model's free-text inference (e.g. "United Arab Emirates"), so the
+        # rules created from these candidates get a code that fits the column.
+        jurisdiction_hint=lic.jurisdiction_code,
         extracted_chars=len(text),
         candidates=[c.model_dump() for c in result.rules],
         notes=result.notes,

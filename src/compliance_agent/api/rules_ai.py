@@ -119,6 +119,11 @@ def bulk_create_rules(
     if not payload.rules:
         raise HTTPException(status_code=400, detail="Provide at least one rule to create.")
 
+    # Keep the jurisdiction code within the column width (a free-text AI hint
+    # like "United Arab Emirates" would otherwise blow up the insert with a
+    # 500). Normalise to lowercase + clamp to 16 chars.
+    juris_code = (payload.jurisdiction_code or "").strip().lower()[:16] or "xx"
+
     entities = []
     if payload.entity_ids:
         from sqlalchemy import select
@@ -133,7 +138,7 @@ def bulk_create_rules(
     for cand in payload.rules:
         rule = Rule(
             name=cand.name,
-            jurisdiction_code=payload.jurisdiction_code,
+            jurisdiction_code=juris_code,
             category=cand.category,
             area=cand.area,
             form_name=cand.form_name,
