@@ -997,8 +997,7 @@ function LicenseDetailDialog({
                   <div className="flex items-center gap-2">
                     {rulesQuery.data && (
                       <div className="text-xs text-muted-foreground">
-                        {rulesQuery.data.direct.length} direct ·{" "}
-                        {rulesQuery.data.entity_other.length} other for this entity
+                        {rulesQuery.data.direct.length} applicable to this license
                       </div>
                     )}
                     {isAdmin && license.has_file ? (
@@ -1028,8 +1027,7 @@ function LicenseDetailDialog({
                       <Skeleton key={i} className="h-14 w-full" />
                     ))}
                   </div>
-                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 &&
-                  rulesQuery.data.entity_other.length === 0 ? (
+                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? (
                   <div className="rounded-lg border border-border bg-secondary/30 px-3 py-3 text-sm text-muted-foreground">
                     No rules matched this license in the catalogue yet. Try
                     sharpening the authority or license type fields, or add a
@@ -1064,41 +1062,6 @@ function LicenseDetailDialog({
                               title={`Conditional / Sector-specific · ${optional.length}`}
                               subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
                               items={optional}
-                              tone="conditional"
-                              licenseId={license.id}
-                              isAdmin={isAdmin}
-                              onScheduled={() => rulesQuery.refetch()}
-                            />
-                          )}
-                        </>
-                      );
-                    })()}
-                    {rulesQuery.data.entity_other.length > 0 && (() => {
-                      const other = rulesQuery.data.entity_other;
-                      const otherMandatory = other.filter(
-                        (r) => r.applicability === "Mandatory",
-                      );
-                      const otherOptional = other.filter(
-                        (r) => r.applicability !== "Mandatory",
-                      );
-                      return (
-                        <>
-                          {otherMandatory.length > 0 && (
-                            <RuleGroup
-                              title={`Other entity rules — Mandatory · ${otherMandatory.length}`}
-                              subtitle="Linked to this entity via the rule catalogue, didn't match this license's keywords directly. Treat as required."
-                              items={otherMandatory}
-                              tone="mandatory"
-                              licenseId={license.id}
-                              isAdmin={isAdmin}
-                              onScheduled={() => rulesQuery.refetch()}
-                            />
-                          )}
-                          {otherOptional.length > 0 && (
-                            <RuleGroup
-                              title={`Other entity rules — Optional · ${otherOptional.length}`}
-                              subtitle="Linked to this entity but only file if your business actually triggers the conditions (turnover thresholds, sector activity, etc.)."
-                              items={otherOptional}
                               tone="conditional"
                               licenseId={license.id}
                               isAdmin={isAdmin}
