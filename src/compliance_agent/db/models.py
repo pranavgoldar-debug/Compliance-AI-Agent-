@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -67,6 +68,22 @@ class Applicability(str, enum.Enum):
     mandatory = "Mandatory"
     conditional = "Conditional"
     sector_specific = "Sector-specific"
+
+
+class TaxType(str, enum.Enum):
+    """Whether an obligation is a tax filing and, if so, which kind.
+
+    Direct tax  = levied on income/profits/wealth (Corporate/Income Tax, TDS,
+                  capital gains, advance tax, withholding on income, etc.).
+    Indirect tax = levied on goods/services/transactions and collected on
+                  behalf of the authority (GST/HST, VAT, Sales/Use Tax,
+                  Excise, Customs/Duty).
+    Not a tax   = everything else (AML/CFT, data protection, statutory filings,
+                  licensing renewals, regulatory returns, etc.).
+    """
+    direct = "Direct Tax"
+    indirect = "Indirect Tax"
+    not_tax = "Not a Tax"
 
 
 class EffortBand(str, enum.Enum):
@@ -139,7 +156,7 @@ class Entity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     legal_type: Mapped[str] = mapped_column(String(120), nullable=False, default="")  # e.g. Private Limited
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)  # india / uk / us / uae / sg / lt / ca / eu
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # india / uk / us / uae / singapore / lithuania / canada / eu
     # Short internal code from the tracker (VINC, RTUK, NESS, ...) — used
     # for cross-referencing rows in the Aspora Global Compliance Tracker.
     short_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
@@ -180,7 +197,7 @@ class Rule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     area: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     form_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -192,6 +209,11 @@ class Rule(Base):
         SAEnum(Applicability), nullable=False, default=Applicability.mandatory
     )
     applicability_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Direct / Indirect / Not-a-Tax classification — set by the AI extractor
+    # and editable by admins on the Rules page.
+    tax_type: Mapped[TaxType] = mapped_column(
+        SAEnum(TaxType), nullable=False, default=TaxType.not_tax, index=True
+    )
     status: Mapped[RuleStatus] = mapped_column(
         SAEnum(RuleStatus), nullable=False, default=RuleStatus.production, index=True
     )
@@ -267,6 +289,11 @@ class Obligation(Base):
     filing_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     payment_amount: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     payment_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # ClickUp two-way sync — set when a finance payment task is created in
+    # ClickUp; lets the webhook map a closed task back to this obligation.
+    clickup_task_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    clickup_task_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -498,6 +525,25 @@ class WorkspaceSetting(Base):
 
 
 # ---------------------------------------------------------------------------
+# File blobs — uploaded license PDFs + documents stored IN the database so
+# they survive redeploys. (Render's free tier has an ephemeral disk, so the
+# old filesystem storage lost every upload on each deploy.) Keyed by the same
+# `entity_<id>/<uuid>__<name>` path string the storage layer hands out, so
+# License.storage_path / Document.storage_path keep working unchanged.
+# ---------------------------------------------------------------------------
+class FileBlob(Base):
+    __tablename__ = "file_blobs"
+
+    path: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+
+# ---------------------------------------------------------------------------
 # Licenses
 #
 # A license is an authorisation an entity holds from a regulator (e.g. FCA
@@ -519,7 +565,7 @@ class License(Base):
     # "CBUAE SVF licence", "Lithuania EMI". Used for matching + display.
     license_type: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     authority: Mapped[str] = mapped_column(String(255), nullable=False)
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     license_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

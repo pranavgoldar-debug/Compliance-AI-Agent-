@@ -37,6 +37,7 @@ def _serialize_rule(rule: Rule) -> RuleOut:
         payment_rule=rule.payment_rule,
         applicability=rule.applicability,
         applicability_note=rule.applicability_note,
+        tax_type=rule.tax_type,
         status=rule.status,
         source_url=rule.source_url,
         source_text=rule.source_text,

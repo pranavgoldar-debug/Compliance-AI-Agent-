@@ -35,6 +35,7 @@ from compliance_agent import storage
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Department,
     Entity,
     License,
     Obligation,
@@ -259,13 +260,18 @@ def create_license(
     issue_date: Optional[str] = Form(None),
     expiry_date: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
+    file: UploadFile = File(...),
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),
 ) -> LicenseOut:
     entity = db.get(Entity, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found.")
+    if file is None or not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="A license file (PDF) is required.",
+        )
 
     lic = License(
         entity_id=entity_id,
@@ -280,14 +286,11 @@ def create_license(
         created_by_id=user.id,
     )
 
-    if file is not None and file.filename:
-        storage_path, size = storage.save_bytes(
-            entity_id, file.filename, file.file
-        )
-        lic.filename = file.filename
-        lic.storage_path = storage_path
-        lic.size_bytes = size
-        lic.content_type = file.content_type
+    storage_path, size = storage.save_bytes(entity_id, file.filename, file.file)
+    lic.filename = file.filename
+    lic.storage_path = storage_path
+    lic.size_bytes = size
+    lic.content_type = file.content_type
 
     db.add(lic)
     db.flush()
@@ -412,24 +415,155 @@ def _read_license_text(lic: License) -> str:
     pypdf; text-like uploads pass through. Returns '' if no file."""
     if not lic.storage_path:
         return ""
-    path = storage.absolute_path(lic.storage_path)
-    if not path.exists():
-        return ""
-    if path.stat().st_size > _MAX_EXTRACT_BYTES:
+    data = storage.read_bytes(lic.storage_path)
+    if not data or len(data) > _MAX_EXTRACT_BYTES:
         return ""
 
-    suffix = path.suffix.lower()
+    name = (lic.filename or lic.storage_path or "").lower()
     try:
-        if suffix == ".pdf":
+        if name.endswith(".pdf"):
+            import io
+
             from pypdf import PdfReader
 
-            reader = PdfReader(str(path))
+            reader = PdfReader(io.BytesIO(data))
             return "\n\n".join((p.extract_text() or "") for p in reader.pages)
         # Best-effort text read for .txt / .md / .csv etc. Binary files (e.g.
         # an image) will just return empty after decode-with-replace.
-        return path.read_text(encoding="utf-8", errors="ignore")
+        return data.decode("utf-8", errors="ignore")
     except Exception:  # noqa: BLE001
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Pre-fill the Add-License form by reading the uploaded PDF with Claude.
+# Stateless — nothing is saved; we just return suggested field values + a
+# best-guess entity match for the admin to review before creating.
+# ---------------------------------------------------------------------------
+class LicenseAnalyzeResponse(BaseModel):
+    available: bool
+    notes: Optional[str] = None
+    suggested_entity_id: Optional[int] = None
+    entity_name: Optional[str] = None
+    name: Optional[str] = None
+    license_type: Optional[str] = None
+    authority: Optional[str] = None
+    jurisdiction_code: Optional[str] = None
+    license_number: Optional[str] = None
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+
+
+def _extract_text_from_upload(filename: str, data: bytes) -> str:
+    """Pull plain text out of raw uploaded bytes (PDF via pypdf, else decode)."""
+    name = (filename or "").lower()
+    try:
+        if name.endswith(".pdf"):
+            import io
+
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(data))
+            return "\n\n".join((p.extract_text() or "") for p in reader.pages)
+        return data.decode("utf-8", errors="ignore")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _match_entity(db: Session, *, entity_name: Optional[str], jurisdiction_code: Optional[str]):
+    """Best-effort match an extracted licensee name to an existing entity."""
+    if not entity_name:
+        return None
+    name_lc = entity_name.strip().lower()
+    entities = (
+        db.execute(select(Entity).where(Entity.archived_at.is_(None))).scalars().all()
+    )
+
+    def score(e: Entity) -> int:
+        en = e.name.lower()
+        s = 0
+        if en == name_lc:
+            s += 100
+        elif name_lc in en or en in name_lc:
+            s += 50
+        else:
+            overlap = {t for t in name_lc.split() if len(t) > 2} & {
+                t for t in en.split() if len(t) > 2
+            }
+            s += 15 * len(overlap)
+        if jurisdiction_code and e.jurisdiction_code == jurisdiction_code:
+            s += 5
+        return s
+
+    best = max(entities, key=score, default=None)
+    return best if (best and score(best) >= 15) else None
+
+
+@router.post("/analyze", response_model=LicenseAnalyzeResponse)
+def analyze_license_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> LicenseAnalyzeResponse:
+    """Read an uploaded license PDF and return suggested form fields + a
+    best-guess entity match. Nothing is persisted."""
+    from compliance_agent.rule_extractor import (
+        RuleExtractorUnavailable,
+        extract_license_metadata,
+        is_live,
+    )
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
+    data = file.file.read()
+    if len(data) > _MAX_EXTRACT_BYTES:
+        return LicenseAnalyzeResponse(available=False, notes="File too large to read.")
+
+    text = _extract_text_from_upload(file.filename, data)
+    if len(text.strip()) < 120:
+        return LicenseAnalyzeResponse(
+            available=False,
+            notes=(
+                "Couldn't read text from this file (a scanned image?). "
+                "Fill the fields in manually."
+            ),
+        )
+    if not is_live():
+        return LicenseAnalyzeResponse(
+            available=False,
+            notes="AI reading is off in this deployment. Fill the fields manually.",
+        )
+
+    try:
+        meta = extract_license_metadata(text[:_MAX_PROMPT_CHARS])
+    except RuleExtractorUnavailable as exc:
+        return LicenseAnalyzeResponse(available=False, notes=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
+
+    code = (meta.jurisdiction_code or "").strip().lower() or None
+    ent = _match_entity(db, entity_name=meta.entity_name, jurisdiction_code=code)
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="license.ai_analyzed",
+        target_type="license",
+        payload={"matched_entity": ent.id if ent else None},
+    )
+    db.commit()
+    return LicenseAnalyzeResponse(
+        available=True,
+        suggested_entity_id=ent.id if ent else None,
+        entity_name=meta.entity_name,
+        name=meta.name,
+        license_type=meta.license_type,
+        authority=meta.authority,
+        jurisdiction_code=code or (ent.jurisdiction_code if ent else None),
+        license_number=meta.license_number,
+        issue_date=meta.issue_date,
+        expiry_date=meta.expiry_date,
+        notes=meta.notes,
+    )
 
 
 @router.post(
@@ -694,3 +828,105 @@ def applicable_rules(
         entity_other=entity_other,
         counts=counts,
     )
+
+
+# ---------------------------------------------------------------------------
+# Schedule an applicable rule straight from the license — attaches the rule to
+# the license's entity and creates the next upcoming obligation (deadline) on
+# the calendar, optionally assigned to someone. This is the "see what's needed
+# → assign it" loop, without going through the staging-rules promotion.
+# ---------------------------------------------------------------------------
+class ScheduleRuleRequest(BaseModel):
+    assignee_id: Optional[int] = None
+
+
+class ScheduleRuleResponse(BaseModel):
+    obligation_id: int
+    due_date: date
+    created: bool
+
+
+@router.post(
+    "/{license_id}/rules/{rule_id}/schedule", response_model=ScheduleRuleResponse
+)
+def schedule_rule(
+    license_id: int,
+    rule_id: int,
+    payload: ScheduleRuleRequest,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> ScheduleRuleResponse:
+    from datetime import timedelta
+
+    from compliance_agent.api._helpers import today
+    from compliance_agent.db.seed import (
+        _effort_band_for_frequency,
+        _offsets_for_frequency,
+        _period_label_for_frequency,
+    )
+
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found.")
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+    entity = lic.entity
+    if entity is None:
+        raise HTTPException(status_code=404, detail="License has no entity.")
+
+    # Attach the rule to the entity so it shows as tracked going forward.
+    if entity.id not in {e.id for e in rule.entities}:
+        rule.entities.append(entity)
+
+    # Next upcoming due date from the rule's cadence (fallback: ~30 days out).
+    future = sorted(o for o in _offsets_for_frequency(rule.frequency) if o > 0)
+    due = today() + timedelta(days=future[0] if future else 30)
+
+    existing = (
+        db.execute(
+            select(Obligation).where(
+                Obligation.rule_id == rule.id,
+                Obligation.entity_id == entity.id,
+                Obligation.due_date == due,
+                Obligation.department == Department.compliance,
+            )
+        )
+        .scalars()
+        .first()
+    )
+    created = existing is None
+    if existing is not None:
+        ob = existing
+    else:
+        ob = Obligation(
+            rule_id=rule.id,
+            entity_id=entity.id,
+            due_date=due,
+            period_label=_period_label_for_frequency(rule.frequency, due),
+            status=ObligationStatus.not_started,
+            department=Department.compliance,
+            effort_band=_effort_band_for_frequency(rule.frequency),
+        )
+        db.add(ob)
+        db.flush()
+
+    if payload.assignee_id:
+        assignee = db.get(User, payload.assignee_id)
+        if assignee is not None:
+            ob.assignee_id = assignee.id
+            db.flush()
+            from compliance_agent.api.notifications import emit_assignment
+
+            emit_assignment(db, assignee=assignee, obligation=ob, actor=user)
+
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="license.rule_scheduled",
+        target_type="obligation",
+        target_id=ob.id,
+        payload={"license_id": license_id, "rule_id": rule_id, "created": created},
+    )
+    db.commit()
+    return ScheduleRuleResponse(obligation_id=ob.id, due_date=ob.due_date, created=created)

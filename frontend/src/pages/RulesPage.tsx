@@ -2,7 +2,7 @@
 // obligations. Two tabs: Production (flat table) and Staging (side-by-side
 // review cards with confidence indicators).
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronDown,
@@ -12,6 +12,7 @@ import {
   CircleHelp,
   ExternalLink,
   FileText,
+  Loader2,
   RefreshCw,
   Search,
   Sparkles,
@@ -340,8 +341,55 @@ function ConfidenceDot({ level }: { level: Confidence }) {
 }
 
 
+const TAX_TYPE_OPTIONS = ["Direct Tax", "Indirect Tax", "Not a Tax"];
+const APPLICABILITY_OPTIONS = ["Mandatory", "Conditional", "Sector-specific"];
+
 function StagingCard({ rule }: { rule: Rule }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const queryClient = useQueryClient();
+
+  const initialDraft = () => ({
+    form_name: rule.form_name,
+    authority: rule.authority,
+    category: rule.category,
+    area: rule.area,
+    frequency: rule.frequency,
+    due_date_rule: rule.due_date_rule ?? "",
+    payment_rule: rule.payment_rule ?? "",
+    applicability: rule.applicability as string,
+    applicability_note: rule.applicability_note ?? "",
+    tax_type: rule.tax_type as string,
+  });
+  const [draft, setDraft] = useState(initialDraft);
+  const set = (k: keyof ReturnType<typeof initialDraft>, v: string) =>
+    setDraft((d) => ({ ...d, [k]: v }));
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["rules"] });
+    queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, draft),
+    onSuccess: () => {
+      setEditing(false);
+      refresh();
+    },
+  });
+  const promoteMutation = useMutation({
+    mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { status: "production" }),
+    onSuccess: refresh,
+  });
+  const rejectMutation = useMutation({
+    mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { status: "archived" }),
+    onSuccess: refresh,
+  });
+  const busy =
+    saveMutation.isPending || promoteMutation.isPending || rejectMutation.isPending;
+  const err =
+    saveMutation.error || promoteMutation.error || rejectMutation.error;
+
   return (
     <Card className="overflow-hidden">
       <button
@@ -373,33 +421,39 @@ function StagingCard({ rule }: { rule: Rule }) {
             {/* Left — editable extracted fields */}
             <div className="p-5 space-y-3">
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
-                AI-extracted fields
+                AI-extracted fields {editing && <span className="text-aspora-600">(editing)</span>}
               </div>
-              <ExtractedField label="Form name" value={rule.form_name} />
-              <ExtractedField label="Authority" value={rule.authority} />
-              <ExtractedField label="Category" value={rule.category} />
-              <ExtractedField label="Area / Sub-area" value={rule.area} />
-              <ExtractedField label="Frequency" value={rule.frequency} />
-              <ExtractedField label="Due-date rule" value={rule.due_date_rule} multiline />
-              <ExtractedField label="Payment rule" value={rule.payment_rule} multiline />
-              <ExtractedField
-                label="Applicability"
-                value={`${rule.applicability}${rule.applicability_note ? " — " + rule.applicability_note : ""}`}
-              />
+              <ExtractedField label="Form name" value={draft.form_name} editing={editing} onChange={(v) => set("form_name", v)} />
+              <ExtractedField label="Authority" value={draft.authority} editing={editing} onChange={(v) => set("authority", v)} />
+              <ExtractedField label="Category" value={draft.category} editing={editing} onChange={(v) => set("category", v)} />
+              <ExtractedField label="Area / Sub-area" value={draft.area} editing={editing} onChange={(v) => set("area", v)} />
+              <ExtractedField label="Frequency" value={draft.frequency} editing={editing} onChange={(v) => set("frequency", v)} />
+              <ExtractedField label="Due-date rule" value={draft.due_date_rule} multiline editing={editing} onChange={(v) => set("due_date_rule", v)} />
+              <ExtractedField label="Payment rule" value={draft.payment_rule} multiline editing={editing} onChange={(v) => set("payment_rule", v)} />
+              <ExtractedField label="Applicability" value={draft.applicability} options={APPLICABILITY_OPTIONS} editing={editing} onChange={(v) => set("applicability", v)} />
+              <ExtractedField label="Applicability note" value={draft.applicability_note} multiline editing={editing} onChange={(v) => set("applicability_note", v)} />
+              <ExtractedField label="Tax type" value={draft.tax_type} options={TAX_TYPE_OPTIONS} editing={editing} onChange={(v) => set("tax_type", v)} />
             </div>
 
             {/* Right — original source text proxy */}
             <div className="p-5 space-y-2 bg-secondary/20">
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium flex items-center justify-between mb-2">
                 <span>Source — original regulation</span>
-                <a
-                  href="#"
-                  onClick={(e) => e.preventDefault()}
-                  className="inline-flex items-center gap-1 text-xs text-aspora-700 hover:underline"
-                >
-                  Open in tab
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+                {rule.source_url ? (
+                  <a
+                    href={rule.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-aspora-700 hover:underline"
+                  >
+                    Open in tab
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60">
+                    No source URL
+                  </span>
+                )}
               </div>
               <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs leading-relaxed font-mono whitespace-pre-wrap text-muted-foreground max-h-[320px] overflow-auto scrollbar-thin">
                 {rule.due_date_rule || "—"}
@@ -415,22 +469,54 @@ function StagingCard({ rule }: { rule: Rule }) {
 
           {/* Action bar */}
           <div className="border-t border-border bg-secondary/30 px-5 py-3 flex items-center justify-between flex-wrap gap-2">
-            <div className="text-xs text-muted-foreground">
-              <span className="font-medium">Diff vs existing rule</span> — none detected
+            <div className="text-xs text-destructive">
+              {err ? (err as Error).message : ""}
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled>
-                Request more info
-              </Button>
-              <Button variant="outline" size="sm" disabled>
-                Edit
-              </Button>
-              <Button variant="outline" size="sm" disabled className="text-red-600">
-                Reject
-              </Button>
-              <Button size="sm" disabled>
-                Approve &amp; promote
-              </Button>
+              {editing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setDraft(initialDraft());
+                      setEditing(false);
+                      saveMutation.reset();
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button size="sm" disabled={busy} onClick={() => saveMutation.mutate()}>
+                    {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Save changes
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing(true)}>
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600"
+                    disabled={busy}
+                    onClick={() => {
+                      if (window.confirm("Reject this rule? It will be archived (not deleted).")) {
+                        rejectMutation.mutate();
+                      }
+                    }}
+                  >
+                    {rejectMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Reject
+                  </Button>
+                  <Button size="sm" disabled={busy} onClick={() => promoteMutation.mutate()}>
+                    {promoteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Approve &amp; promote
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </CardContent>
@@ -444,31 +530,56 @@ function ExtractedField({
   label,
   value,
   multiline = false,
+  editing = false,
+  onChange,
+  options,
 }: {
   label: string;
   value: string | null;
   multiline?: boolean;
+  editing?: boolean;
+  onChange?: (v: string) => void;
+  options?: string[];
 }) {
   const conf = pseudoConfidence(value);
+  const editable = editing && !!onChange;
+  const base = editable
+    ? "border-aspora-300 bg-background"
+    : "border-input bg-secondary/30 text-muted-foreground";
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
         <label className="text-[11px] font-medium text-muted-foreground">{label}</label>
         <ConfidenceDot level={conf} />
       </div>
-      {multiline ? (
+      {options ? (
+        <select
+          value={value ?? ""}
+          disabled={!editable}
+          onChange={(e) => onChange?.(e.target.value)}
+          className={cn("h-8 w-full rounded-md border px-2 text-sm", base)}
+        >
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      ) : multiline ? (
         <textarea
           rows={3}
-          defaultValue={value ?? ""}
-          className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm font-mono"
-          readOnly
+          value={value ?? ""}
+          readOnly={!editable}
+          onChange={(e) => onChange?.(e.target.value)}
+          className={cn("w-full rounded-md border px-2 py-1.5 text-sm font-mono", base)}
         />
       ) : (
         <input
           type="text"
-          defaultValue={value ?? ""}
-          className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-          readOnly
+          value={value ?? ""}
+          readOnly={!editable}
+          onChange={(e) => onChange?.(e.target.value)}
+          className={cn("h-8 w-full rounded-md border px-2 text-sm", base)}
         />
       )}
     </div>

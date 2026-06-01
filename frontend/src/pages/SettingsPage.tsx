@@ -952,11 +952,22 @@ interface SlackConfig {
   default_channel: string | null;
 }
 
+interface ClickUpConfig {
+  configured: boolean;
+  enabled: boolean;
+  has_token: boolean;
+  api_token_masked: string | null;
+  list_id: string | null;
+  done_status: string | null;
+  two_way_connected: boolean;
+}
+
 
 function IntegrationsTab() {
   return (
     <div className="space-y-4">
       <SlackCard />
+      <ClickUpCard />
       <GmailCard />
       <ComingSoonGrid />
     </div>
@@ -1152,6 +1163,250 @@ function SlackCard() {
 }
 
 
+function ClickUpCard() {
+  const queryClient = useQueryClient();
+  const { data: cfg, isLoading } = useQuery({
+    queryKey: ["integrations", "clickup"],
+    queryFn: () => api.get<ClickUpConfig>("/api/admin/integrations/clickup"),
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [token, setToken] = useState("");
+  const [listId, setListId] = useState("");
+  const [doneStatus, setDoneStatus] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
+
+  useEffect(() => {
+    if (cfg) {
+      setListId(cfg.list_id || "");
+      setDoneStatus(cfg.done_status || "");
+    }
+  }, [cfg]);
+
+  const saveMutation = useMutation({
+    mutationFn: (body: {
+      api_token?: string;
+      list_id?: string;
+      done_status?: string;
+      enabled?: boolean;
+    }) => api.post<ClickUpConfig>("/api/admin/integrations/clickup", body),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["integrations", "clickup"], fresh);
+      setEditing(false);
+      setToken("");
+      setResult(null);
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>("/api/admin/integrations/clickup/test"),
+    onSuccess: (r) => setResult(r),
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: () =>
+      api.post<ClickUpConfig>("/api/admin/integrations/clickup/connect-webhook"),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["integrations", "clickup"], fresh);
+      setResult({ ok: true, detail: "Two-way sync connected — ClickUp will now push status updates back." });
+    },
+    onError: (e: unknown) =>
+      setResult({ ok: false, detail: (e as Error).message }),
+  });
+
+  if (isLoading || !cfg) {
+    return <Card><CardContent className="p-4 text-sm text-muted-foreground">Loading ClickUp config…</CardContent></Card>;
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
+            <ListChecks className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold">ClickUp</div>
+              {cfg.configured && cfg.enabled ? (
+                <Badge variant="completed">
+                  <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                  Connected
+                </Badge>
+              ) : cfg.configured ? (
+                <Badge variant="alert">Paused</Badge>
+              ) : (
+                <Badge variant="neutral">Not connected</Badge>
+              )}
+              {cfg.two_way_connected && (
+                <Badge variant="default">Two-way sync</Badge>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              When compliance requests a payment, a task is created in your finance ClickUp list. Closing it there marks the obligation complete here.
+            </div>
+          </div>
+
+          {cfg.configured && !editing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending}
+            >
+              {testMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ListChecks className="h-3.5 w-3.5" />}
+              Test
+            </Button>
+          )}
+        </div>
+
+        {cfg.configured && !editing && (
+          <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">API token</span>
+              <span className="font-mono truncate">{cfg.api_token_masked}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">List ID</span>
+              <span className="font-mono">{cfg.list_id}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Done status</span>
+              <span className="font-mono">{cfg.done_status || "complete"}</span>
+            </div>
+          </div>
+        )}
+
+        {result && (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              result.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-destructive/30 bg-destructive/5 text-destructive",
+            )}
+          >
+            {result.detail}
+          </div>
+        )}
+
+        {!editing ? (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              {cfg.configured ? "Update" : "Connect"}
+            </Button>
+            {cfg.configured && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => connectMutation.mutate()}
+                  disabled={connectMutation.isPending}
+                >
+                  {connectMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {cfg.two_way_connected ? "Re-connect two-way sync" : "Enable two-way sync"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => saveMutation.mutate({ enabled: !cfg.enabled })}
+                  disabled={saveMutation.isPending}
+                >
+                  {cfg.enabled ? "Pause" : "Resume"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600"
+                  onClick={() => {
+                    if (window.confirm("Disconnect ClickUp? New payment requests won't create tasks.")) {
+                      saveMutation.mutate({ api_token: "" });
+                    }
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                ClickUp API token
+              </label>
+              <Input
+                autoFocus
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={cfg.has_token ? "•••• (leave blank to keep current)" : "pk_12345678_ABCDEF…"}
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                ClickUp → your avatar → Settings → Apps → Generate / copy your API token.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Finance list ID
+              </label>
+              <Input
+                value={listId}
+                onChange={(e) => setListId(e.target.value)}
+                placeholder="901100123456"
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Open the ClickUp list → ⋯ → Copy link. The number after /li/ (or /v/li/) is the List ID.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Done status (optional)
+              </label>
+              <Input
+                value={doneStatus}
+                onChange={(e) => setDoneStatus(e.target.value)}
+                placeholder="complete"
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                The list status that means "paid". Defaults to <code>complete</code>.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() =>
+                  saveMutation.mutate({
+                    api_token: token.trim() || undefined,
+                    list_id: listId.trim() || undefined,
+                    done_status: doneStatus.trim() || undefined,
+                    enabled: true,
+                  })
+                }
+                disabled={
+                  saveMutation.isPending ||
+                  (!token.trim() && !cfg.has_token) ||
+                  !listId.trim()
+                }
+              >
+                {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
 function GmailCard() {
   const [recipient, setRecipient] = useState("");
   const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
@@ -1174,38 +1429,86 @@ function GmailCard() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <div className="font-semibold">Email (Gmail / any SMTP)</div>
+              <div className="font-semibold">Email (Resend or SMTP)</div>
               <Badge variant="neutral">Config via .env</Badge>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
-              Sends password-reset emails today; assignment + overdue emails when notification
+              Sends password-reset, assignment, overdue + weekly-digest emails when notification
               prefs are on.
             </div>
           </div>
         </div>
 
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+          <strong>On Render?</strong> Render blocks outbound SMTP ports, so smtp.gmail.com fails
+          with “Network is unreachable”. Send over an HTTPS API instead (port 443 isn’t blocked).
+        </div>
+
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
-          <div className="font-medium">Connect Gmail in three steps</div>
+          <div className="font-medium">Your Gmail only, no third party: Gmail API</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
             <li>
-              Turn on 2-Step Verification on the Google account that will send the mail.
+              Google Cloud Console → new project → enable the <strong>Gmail API</strong>.
             </li>
             <li>
-              Visit <span className="font-mono">myaccount.google.com/apppasswords</span> →
-              generate an App Password for "Mail / Other → Aspora".
+              OAuth consent screen → add scope{" "}
+              <span className="font-mono">.../auth/gmail.send</span> → add your email as a test user.
             </li>
             <li>
-              Drop the password into your <span className="font-mono">.env</span>:
+              Credentials → <strong>OAuth client ID</strong> (Web app) → redirect URI{" "}
+              <span className="font-mono">https://developers.google.com/oauthplayground</span> →
+              copy the client id + secret.
+            </li>
+            <li>
+              At <span className="font-mono">developers.google.com/oauthplayground</span> → gear →
+              “Use your own credentials” → authorize the gmail.send scope → exchange for a{" "}
+              <strong>refresh token</strong>.
+            </li>
+            <li>
+              Set these env vars (Render → Environment), then redeploy:
               <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
+{`GMAIL_CLIENT_ID=xxxx.apps.googleusercontent.com
+GMAIL_CLIENT_SECRET=GOCSPX-xxxx
+GMAIL_REFRESH_TOKEN=1//xxxx
+GMAIL_SENDER=you@aspora.com`}
+              </pre>
+            </li>
+          </ol>
+          <div className="font-medium pt-1">Easiest (no DNS, email anyone): Brevo</div>
+          <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+            <li>
+              Sign up at <span className="font-mono">brevo.com</span> (free: 300 emails/day).
+            </li>
+            <li>
+              Senders &amp; IP → <strong>Senders</strong> → add{" "}
+              <span className="font-mono">compliance@aspora.com</span> → click the confirmation
+              link Brevo emails you. (No DNS needed — this single verified sender can email anyone.)
+            </li>
+            <li>
+              SMTP &amp; API → <strong>API Keys</strong> → create one (<span className="font-mono">xkeysib-…</span>).
+            </li>
+            <li>
+              Set these env vars (Render → Environment), then redeploy:
+              <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
+{`BREVO_API_KEY=xkeysib-xxxxxxxx
+BREVO_FROM=compliance@aspora.com
+BREVO_FROM_NAME=Aspora Compliance`}
+              </pre>
+            </li>
+          </ol>
+          <div className="font-medium pt-1">Alternative: Resend (verify aspora.com domain via DNS)</div>
+          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
+{`RESEND_API_KEY=re_xxxxxxxx
+RESEND_FROM="Aspora Compliance <compliance@aspora.com>"`}
+          </pre>
+          <div className="font-medium pt-1">SMTP (local / non-Render only)</div>
+          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
 {`SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=you@aspora.com
 SMTP_PASSWORD=<the 16-char app password>
 SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
-              </pre>
-              Restart the server. That's it.
-            </li>
-          </ol>
+          </pre>
         </div>
 
         <div className="flex items-end gap-2">
@@ -1249,11 +1552,6 @@ SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
 
 function ComingSoonGrid() {
   const items: { name: string; description: string; icon: React.ReactNode }[] = [
-    {
-      name: "ClickUp",
-      description: "Push obligations as tasks for execution by the ops team",
-      icon: <ListChecks className="h-5 w-5" />,
-    },
     {
       name: "Google Calendar",
       description: "Per-user OAuth — drops events on each due date",

@@ -13,6 +13,7 @@ from compliance_agent.db import (
     ObligationStatus,
     Role,
     RuleStatus,
+    TaxType,
 )
 
 
@@ -115,6 +116,7 @@ class RuleCreate(BaseModel):
     payment_rule: Optional[str] = None
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
+    tax_type: TaxType = TaxType.not_tax
     status: RuleStatus = RuleStatus.production
     source_url: Optional[str] = None
     source_text: Optional[str] = None
@@ -133,6 +135,7 @@ class RuleUpdate(BaseModel):
     payment_rule: Optional[str] = None
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
+    tax_type: Optional[TaxType] = None
     source_url: Optional[str] = None
     source_text: Optional[str] = None
     status: Optional[RuleStatus] = None
@@ -152,6 +155,7 @@ class RuleOut(_Base):
     payment_rule: Optional[str] = None
     applicability: Applicability
     applicability_note: Optional[str] = None
+    tax_type: TaxType = TaxType.not_tax
     status: RuleStatus
     source_url: Optional[str] = None
     source_text: Optional[str] = None
@@ -204,6 +208,7 @@ class ObligationOut(_Base):
     rule_form_name: str
     rule_authority: str
     rule_category: str
+    rule_tax_type: TaxType = TaxType.not_tax
     rule_frequency: str
     rule_due_date_rule: Optional[str] = None
     rule_source_url: Optional[str] = None
@@ -219,6 +224,7 @@ class ObligationOut(_Base):
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
+    clickup_task_url: Optional[str] = None
     is_awaiting_payment: bool = False
     notes: Optional[str] = None
     days_remaining: int = 0
@@ -302,6 +308,7 @@ class CalendarObligation(_Base):
     rule_form_name: str
     rule_authority: str
     rule_category: str
+    rule_tax_type: TaxType = TaxType.not_tax
     effort_band: EffortBand = EffortBand.w4
     assignee: Optional[UserBrief] = None
     is_overdue: bool

@@ -13,6 +13,8 @@ export type RuleStatus = "production" | "staging" | "archived";
 
 export type Applicability = "Mandatory" | "Conditional" | "Sector-specific";
 
+export type TaxType = "Direct Tax" | "Indirect Tax" | "Not a Tax";
+
 export type EffortBand = "1w" | "2w" | "4w" | "8w" | "12w";
 
 export interface UserBrief {
@@ -53,6 +55,7 @@ export interface Rule {
   payment_rule: string | null;
   applicability: Applicability;
   applicability_note: string | null;
+  tax_type: TaxType;
   status: RuleStatus;
   source_url: string | null;
   source_text: string | null;
@@ -70,6 +73,7 @@ export interface Obligation {
   rule_form_name: string;
   rule_authority: string;
   rule_category: string;
+  rule_tax_type: TaxType;
   rule_frequency: string;
   rule_due_date_rule: string | null;
   rule_source_url: string | null;
@@ -85,6 +89,7 @@ export interface Obligation {
   filing_reference: string | null;
   payment_amount: string | null;
   payment_reference: string | null;
+  clickup_task_url: string | null;
   is_awaiting_payment: boolean;
   notes: string | null;
   days_remaining: number;
@@ -106,6 +111,7 @@ export interface CalendarObligation {
   rule_form_name: string;
   rule_authority: string;
   rule_category: string;
+  rule_tax_type: TaxType;
   effort_band: EffortBand;
   assignee: UserBrief | null;
   is_overdue: boolean;

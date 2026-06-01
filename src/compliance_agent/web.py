@@ -32,7 +32,9 @@ from compliance_agent.api import (
     entities_router,
     exports_router,
     integrations_admin_router,
+    integrations_cron_router,
     integrations_me_router,
+    integrations_webhook_router,
     notifications_router,
     obligations_router,
     retention_router,
@@ -119,6 +121,8 @@ def create_app() -> FastAPI:
     app.include_router(retention_router)  # Phase 8 audit-log retention (admin)
     app.include_router(integrations_admin_router)  # Phase 9 Slack / email admin
     app.include_router(integrations_me_router)  # Phase 9 per-user notification prefs
+    app.include_router(integrations_webhook_router)  # ClickUp inbound webhook (signed, public)
+    app.include_router(integrations_cron_router)  # Token-gated weekly-digest trigger (free external cron)
     app.include_router(chat_router)  # Ask Aspora chat assistant
 
     static_dir = Path(str(files("compliance_agent.data").joinpath("static")))

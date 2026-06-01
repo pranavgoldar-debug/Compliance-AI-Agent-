@@ -160,6 +160,14 @@ def update_obligation(
             actor=user,
         )
 
+    # Two-way sync: completing in-app closes the linked ClickUp task.
+    # (The inbound webhook updates the ORM directly, not via this endpoint,
+    # so a ClickUp-driven completion won't bounce back here.) Best-effort.
+    if completed_now and obligation.clickup_task_id:
+        from compliance_agent import clickup_service
+
+        clickup_service.close_task(db, obligation.clickup_task_id)
+
     log_activity(
         db,
         actor_id=user.id,
@@ -356,13 +364,29 @@ def request_payment(
         )
         sent += 1
 
+    # 4. ClickUp two-way sync — create a finance task so the team can action
+    # the payment in ClickUp. Best-effort: never blocks the hand-off.
+    from compliance_agent import clickup_service
+    from compliance_agent.email_service import base_url as _app_base_url
+
+    if not obligation.clickup_task_id and clickup_service.is_configured(db):
+        created = clickup_service.create_payment_task(
+            db,
+            obligation,
+            amount=amount,
+            notes=payload.notes or "",
+            app_url=_app_base_url(),
+        )
+        if created:
+            obligation.clickup_task_id, obligation.clickup_task_url = created
+
     log_activity(
         db,
         actor_id=user.id,
         action="obligation.payment_requested",
         target_type="obligation",
         target_id=obligation_id,
-        payload={"amount": amount, "fanout": sent},
+        payload={"amount": amount, "fanout": sent, "clickup": bool(obligation.clickup_task_id)},
     )
     db.commit()
     db.refresh(obligation)
@@ -473,6 +497,7 @@ def calendar_range(
     jurisdiction_codes: Optional[list[str]] = Query(None),
     category: Optional[str] = Query(None),
     categories: Optional[list[str]] = Query(None),
+    tax_types: Optional[list[str]] = Query(None),
     assignee_id: Optional[int] = Query(None),
     assignee_ids: Optional[list[int]] = Query(None),
     status: Optional[ObligationStatus] = Query(None),
@@ -515,4 +540,10 @@ def calendar_range(
     if categories:
         cats = set(categories)
         items = [o for o in items if o.rule.category in cats]
+    if tax_types:
+        wanted = set(tax_types)
+        items = [
+            o for o in items
+            if o.rule.tax_type and o.rule.tax_type.value in wanted
+        ]
     return [serialize_calendar_obligation(o) for o in items]

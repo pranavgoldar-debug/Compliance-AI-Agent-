@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Any, Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
 from compliance_agent.models import (
@@ -59,10 +58,12 @@ class _ModelVerificationResult(BaseModel):
 class ComplianceVerifier:
     def __init__(
         self,
-        client: Optional[anthropic.Anthropic] = None,
+        client: Optional[Any] = None,
         model: str = "claude-opus-4-7",
     ):
-        self.client = client or anthropic.Anthropic()
+        from compliance_agent.ai.llm_client import make_client
+
+        self.client = client or make_client()
         self.model = model
 
     def verify(self, source_text: str, extraction: ExtractionResult) -> VerificationResult:

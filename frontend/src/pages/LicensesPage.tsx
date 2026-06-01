@@ -41,6 +41,7 @@ import type {
   License,
   LicenseExpiryStatus,
   LicenseRuleHit,
+  UserBrief,
 } from "@/types/api";
 
 function expiryBadgeVariant(
@@ -258,6 +259,20 @@ export function LicensesPage() {
 // ---------------------------------------------------------------------------
 // Upload dialog
 // ---------------------------------------------------------------------------
+interface LicenseAnalyze {
+  available: boolean;
+  notes: string | null;
+  suggested_entity_id: number | null;
+  entity_name: string | null;
+  name: string | null;
+  license_type: string | null;
+  authority: string | null;
+  jurisdiction_code: string | null;
+  license_number: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+}
+
 function UploadDialog({
   open,
   onOpenChange,
@@ -268,6 +283,7 @@ function UploadDialog({
   onUploaded: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [aiNote, setAiNote] = useState<string | null>(null);
 
   const { data: entities = [] } = useQuery({
     queryKey: ["entities", "for-license-upload"],
@@ -305,8 +321,43 @@ function UploadDialog({
     setExpiryDate("");
     setNotes("");
     setFile(null);
+    setAiNote(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     uploadMutation.reset();
+    analyzeMutation.reset();
+  }
+
+  // Claude reads the uploaded PDF and pre-fills the form fields below.
+  const analyzeMutation = useMutation({
+    mutationFn: async (f: File) => {
+      const form = new FormData();
+      form.append("file", f);
+      return api.upload<LicenseAnalyze>("/api/licenses/analyze", form);
+    },
+    onSuccess: (r) => {
+      if (!r.available) {
+        setAiNote(r.notes || "Couldn't auto-read the file — fill the fields manually.");
+        return;
+      }
+      setAiNote("Claude pre-filled these from the PDF — review and edit before saving.");
+      if (r.suggested_entity_id) pickEntity(r.suggested_entity_id);
+      if (r.name) setName(r.name);
+      if (r.license_type) setLicenseType(r.license_type);
+      if (r.authority) setAuthority(r.authority);
+      if (r.jurisdiction_code) setJurisdictionCode(r.jurisdiction_code);
+      if (r.license_number) setLicenseNumber(r.license_number);
+      if (r.issue_date) setIssueDate(r.issue_date);
+      if (r.expiry_date) setExpiryDate(r.expiry_date);
+    },
+    onError: (e) => setAiNote((e as Error).message),
+  });
+
+  function handleFile(f: File | null) {
+    setFile(f);
+    setAiNote(null);
+    if (f && f.name.toLowerCase().endsWith(".pdf")) {
+      analyzeMutation.mutate(f);
+    }
   }
 
   const uploadMutation = useMutation({
@@ -337,7 +388,9 @@ function UploadDialog({
     name.trim() &&
     authority.trim() &&
     jurisdictionCode &&
-    !uploadMutation.isPending;
+    file !== null &&
+    !uploadMutation.isPending &&
+    !analyzeMutation.isPending;
 
   return (
     <Dialog
@@ -354,8 +407,9 @@ function UploadDialog({
             Upload license
           </DialogTitle>
           <DialogDescription>
-            Pin a regulator + jurisdiction to one of your entities. Once saved,
-            open the license to see which compliance rules apply.
+            Upload the license PDF — Claude reads it and fills the fields below.
+            Review, pick the entity, and save. Then open the license to extract
+            the compliance rules it triggers.
           </DialogDescription>
         </DialogHeader>
 
@@ -460,33 +514,42 @@ function UploadDialog({
             />
           </Field>
 
-          <Field label="License file (optional)">
+          <Field label="License file (PDF) *">
             <label
               className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-2 cursor-pointer hover:border-aspora-400 hover:bg-aspora-50/40"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                const f = e.dataTransfer.files?.[0] ?? null;
-                setFile(f);
+                handleFile(e.dataTransfer.files?.[0] ?? null);
               }}
             >
               <input
                 ref={fileInputRef}
                 type="file"
+                accept=".pdf,application/pdf"
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               />
-              <Upload className="h-4 w-4 text-muted-foreground" />
+              {analyzeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin text-aspora-600" />
+              ) : (
+                <Upload className="h-4 w-4 text-muted-foreground" />
+              )}
               <span className="text-sm">
-                {file ? file.name : "Drop a PDF/image or click to browse"}
+                {analyzeMutation.isPending
+                  ? "Claude is reading the PDF…"
+                  : file
+                    ? file.name
+                    : "Drop the license PDF or click to browse"}
               </span>
-              {file && (
+              {file && !analyzeMutation.isPending && (
                 <button
                   type="button"
                   className="ml-auto text-xs text-muted-foreground hover:text-foreground"
                   onClick={(e) => {
                     e.preventDefault();
                     setFile(null);
+                    setAiNote(null);
                     if (fileInputRef.current) fileInputRef.current.value = "";
                   }}
                 >
@@ -494,6 +557,12 @@ function UploadDialog({
                 </button>
               )}
             </label>
+            {aiNote && (
+              <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                <Sparkles className="h-3 w-3 mt-0.5 shrink-0 text-aspora-600" />
+                <span>{aiNote}</span>
+              </div>
+            )}
           </Field>
 
           {uploadMutation.error && (
@@ -558,6 +627,7 @@ interface CandidateRule {
   payment_rule: string | null;
   applicability: string;
   applicability_note: string | null;
+  tax_type: string;
 }
 
 interface AIExtractResponse {
@@ -726,13 +796,25 @@ function AIExtractDialog({
                           </div>
                         )}
                       </div>
-                      <Badge
-                        variant={
-                          r.applicability === "Mandatory" ? "alert" : "neutral"
-                        }
-                      >
-                        {r.applicability}
-                      </Badge>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <Badge
+                          variant={
+                            r.applicability === "Mandatory" ? "alert" : "neutral"
+                          }
+                        >
+                          {r.applicability}
+                        </Badge>
+                        {(r.tax_type === "Direct Tax" ||
+                          r.tax_type === "Indirect Tax") && (
+                          <Badge
+                            variant={
+                              r.tax_type === "Direct Tax" ? "progress" : "review"
+                            }
+                          >
+                            {r.tax_type}
+                          </Badge>
+                        )}
+                      </div>
                     </label>
                   );
                 })}
@@ -802,6 +884,7 @@ function LicenseDetailDialog({
 }) {
   const open = license !== null;
   const [aiOpen, setAiOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const rulesQuery = useQuery({
     queryKey: ["license-rules", license?.id],
@@ -811,6 +894,18 @@ function LicenseDetailDialog({
       ),
     enabled: open,
   });
+
+  const { data: users = [] } = useQuery({
+    queryKey: ["users", "for-schedule"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    enabled: open && isAdmin,
+  });
+
+  const onScheduled = () => {
+    rulesQuery.refetch();
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  };
 
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/licenses/${license!.id}`),
@@ -952,6 +1047,10 @@ function LicenseDetailDialog({
                               subtitle="You MUST file these — non-compliance is a regulatory breach."
                               items={mandatory}
                               tone="mandatory"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              users={users}
+                              onScheduled={onScheduled}
                             />
                           )}
                           {optional.length > 0 && (
@@ -960,6 +1059,10 @@ function LicenseDetailDialog({
                               subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
                               items={optional}
                               tone="conditional"
+                              licenseId={license.id}
+                              isAdmin={isAdmin}
+                              users={users}
+                              onScheduled={onScheduled}
                             />
                           )}
                         </>
@@ -970,6 +1073,10 @@ function LicenseDetailDialog({
                         title="Other obligations for this entity"
                         subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
                         items={rulesQuery.data.entity_other}
+                        licenseId={license.id}
+                        isAdmin={isAdmin}
+                        users={users}
+                        onScheduled={onScheduled}
                       />
                     )}
                   </div>
@@ -1090,11 +1197,19 @@ function RuleGroup({
   subtitle,
   items,
   tone,
+  licenseId,
+  isAdmin,
+  users,
+  onScheduled,
 }: {
   title: string;
   subtitle: string;
   items: LicenseRuleHit[];
   tone?: "mandatory" | "conditional";
+  licenseId: number;
+  isAdmin: boolean;
+  users: UserBrief[];
+  onScheduled: () => void;
 }) {
   const headingClass =
     tone === "mandatory"
@@ -1120,83 +1235,134 @@ function RuleGroup({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {items.map((r) => {
-              const assignee = r.next_assignee;
-              const daysOut = r.days_to_next;
-              return (
-                <tr
-                  key={r.id}
-                  className="hover:bg-secondary/20 cursor-pointer"
-                  onClick={(e) => {
-                    if (r.next_obligation_id) {
-                      e.stopPropagation();
-                      window.location.href = `/obligations/${r.next_obligation_id}`;
-                    }
-                  }}
-                >
-                  <td className="px-3 py-2 align-top">
-                    <div className="font-medium text-sm">{r.form_name}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {r.authority} · {r.category}
-                      {r.area ? ` · ${r.area}` : ""}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
-                      <Badge variant="neutral">{r.frequency}</Badge>
-                      {r.match_reason && (
-                        <span className="text-aspora-700">{r.match_reason}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge variant={statusBadgeVariant(r.next_status)}>
-                      {statusLabel(r.next_status)}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top text-sm">
-                    {assignee ? (
-                      <div>
-                        <div className="text-sm">
-                          {assignee.full_name || assignee.email}
-                        </div>
-                        {assignee.full_name && (
-                          <div className="text-[11px] text-muted-foreground">
-                            {assignee.email}
-                          </div>
-                        )}
-                      </div>
-                    ) : r.next_obligation_id ? (
-                      <span className="text-xs text-amber-700">Unassigned</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top text-sm">
-                    {r.next_due_date ? (
-                      <div>
-                        <div>{r.next_due_date}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {daysOut !== null && daysOut !== undefined
-                            ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
-                            : ""}
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">
-                        {r.due_date_rule}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right">
-                    {r.next_obligation_id && (
-                      <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {items.map((r) => (
+              <RuleRow
+                key={r.id}
+                r={r}
+                licenseId={licenseId}
+                isAdmin={isAdmin}
+                users={users}
+                onScheduled={onScheduled}
+              />
+            ))}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+function RuleRow({
+  r,
+  licenseId,
+  isAdmin,
+  users,
+  onScheduled,
+}: {
+  r: LicenseRuleHit;
+  licenseId: number;
+  isAdmin: boolean;
+  users: UserBrief[];
+  onScheduled: () => void;
+}) {
+  const assignee = r.next_assignee;
+  const daysOut = r.days_to_next;
+  const [assigneeId, setAssigneeId] = useState<number | "">("");
+  const scheduled = !!r.next_obligation_id;
+
+  const scheduleMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/licenses/${licenseId}/rules/${r.id}/schedule`, {
+        assignee_id: assigneeId === "" ? null : assigneeId,
+      }),
+    onSuccess: () => onScheduled(),
+  });
+
+  return (
+    <tr
+      className={scheduled ? "hover:bg-secondary/20 cursor-pointer" : ""}
+      onClick={() => {
+        if (scheduled) window.location.href = `/obligations/${r.next_obligation_id}`;
+      }}
+    >
+      <td className="px-3 py-2 align-top">
+        <div className="font-medium text-sm">{r.form_name}</div>
+        <div className="text-[11px] text-muted-foreground">
+          {r.authority} · {r.category}
+          {r.area ? ` · ${r.area}` : ""}
+        </div>
+        <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
+          <Badge variant="neutral">{r.frequency}</Badge>
+          {r.match_reason && <span className="text-aspora-700">{r.match_reason}</span>}
+        </div>
+      </td>
+      <td className="px-3 py-2 align-top">
+        <Badge variant={statusBadgeVariant(r.next_status)}>
+          {statusLabel(r.next_status)}
+        </Badge>
+      </td>
+      <td className="px-3 py-2 align-top text-sm">
+        {assignee ? (
+          <div>
+            <div className="text-sm">{assignee.full_name || assignee.email}</div>
+            {assignee.full_name && (
+              <div className="text-[11px] text-muted-foreground">{assignee.email}</div>
+            )}
+          </div>
+        ) : scheduled ? (
+          <span className="text-xs text-amber-700">Unassigned</span>
+        ) : isAdmin ? (
+          <select
+            value={assigneeId}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              setAssigneeId(e.target.value ? Number(e.target.value) : "")
+            }
+            className="h-7 w-full rounded border border-input bg-background px-1.5 text-xs"
+          >
+            <option value="">Unassigned</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name || u.email}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2 align-top text-sm">
+        {r.next_due_date ? (
+          <div>
+            <div>{r.next_due_date}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {daysOut !== null && daysOut !== undefined
+                ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+                : ""}
+            </div>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground italic">{r.due_date_rule}</span>
+        )}
+      </td>
+      <td className="px-3 py-2 align-top text-right">
+        {scheduled ? (
+          <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
+        ) : isAdmin ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={scheduleMutation.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              scheduleMutation.mutate();
+            }}
+          >
+            {scheduleMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+            Schedule
+          </Button>
+        ) : null}
+      </td>
+    </tr>
   );
 }
