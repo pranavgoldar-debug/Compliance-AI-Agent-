@@ -410,6 +410,91 @@ async def clickup_webhook(request: Request) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Slack interactivity — status buttons on the Slack cards. Requires a Slack
+# App with Interactivity enabled (Request URL = this endpoint) and the app's
+# Signing Secret in SLACK_SIGNING_SECRET. Public, signature-verified.
+# ---------------------------------------------------------------------------
+def _slack_ack(response_url: Optional[str], text: str) -> None:
+    if not response_url:
+        return
+    try:
+        import httpx
+
+        httpx.post(
+            response_url,
+            json={"text": text, "response_type": "ephemeral"},
+            timeout=8.0,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@webhook_router.post("/slack/interactivity")
+async def slack_interactivity(request: Request) -> dict:
+    import os
+    from urllib.parse import parse_qs
+
+    raw = await request.body()
+    secret = os.environ.get("SLACK_SIGNING_SECRET", "")
+    ts = request.headers.get("X-Slack-Request-Timestamp", "")
+    sig = request.headers.get("X-Slack-Signature", "")
+    if not slack_service.verify_slack_signature(secret, ts, raw, sig):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature.")
+
+    form = parse_qs(raw.decode("utf-8"))
+    try:
+        data = json.loads((form.get("payload") or ["{}"])[0])
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Bad payload.")
+
+    actions = data.get("actions") or []
+    if not actions:
+        return {}
+    value = actions[0].get("value", "")
+    try:
+        oid_s, status_s = value.split(":", 1)
+        oid = int(oid_s)
+        new_status = ObligationStatus(status_s)
+    except (ValueError, KeyError):
+        return {}
+
+    slack_user = (data.get("user") or {}).get("id")
+    response_url = data.get("response_url")
+
+    with session_scope() as db:
+        ob = db.get(Obligation, oid)
+        if ob is None:
+            _slack_ack(response_url, ":warning: That item no longer exists.")
+            return {}
+        actor = None
+        if slack_user:
+            actor = (
+                db.execute(select(User).where(User.slack_user_id == slack_user))
+                .scalars()
+                .first()
+            )
+        ob.status = new_status
+        if new_status == ObligationStatus.completed and ob.completed_at is None:
+            ob.completed_at = datetime.now(tz=timezone.utc)
+            if actor:
+                ob.completed_by_id = actor.id
+        elif new_status != ObligationStatus.completed:
+            ob.completed_at = None
+        log_activity(
+            db,
+            actor_id=actor.id if actor else None,
+            action="obligation.status_via_slack",
+            target_type="obligation",
+            target_id=ob.id,
+            payload={"status": status_s, "slack_user": slack_user},
+        )
+        form_name = ob.rule.form_name if ob.rule else "Compliance item"
+
+    _slack_ack(response_url, f":white_check_mark: *{form_name}* → {status_s.replace('_', ' ')}")
+    return {}
+
+
+# ---------------------------------------------------------------------------
 # Cron trigger — lets a free external scheduler (GitHub Actions, cron-job.org,
 # UptimeRobot, …) drive the weekly admin digest without a paid Render cron.
 # Protected by a shared CRON_TOKEN env var; disabled (404) when unset.

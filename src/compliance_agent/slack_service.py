@@ -164,17 +164,60 @@ def _ob_context_fields(obligation: Obligation) -> list[dict]:
 
 
 def _view_button(obligation: Obligation, label: str = "View in Aspora") -> dict:
+    """Action row: a 'View' link plus interactive status buttons. The status
+    buttons fire the Slack interactivity endpoint (needs a Slack App with
+    Interactivity enabled + SLACK_SIGNING_SECRET set); the link always works."""
+    oid = obligation.id
     return {
         "type": "actions",
+        "block_id": f"ob_{oid}",
         "elements": [
             {
                 "type": "button",
                 "text": {"type": "plain_text", "text": label},
                 "url": _obligation_link(obligation),
                 "style": "primary",
-            }
+            },
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "▶ In progress"},
+                "action_id": "st_in_progress",
+                "value": f"{oid}:in_progress",
+            },
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "👀 For review"},
+                "action_id": "st_pending_review",
+                "value": f"{oid}:pending_review",
+            },
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "✅ Filed"},
+                "action_id": "st_completed",
+                "value": f"{oid}:completed",
+            },
         ],
     }
+
+
+def verify_slack_signature(signing_secret: str, timestamp: str, raw_body: bytes, signature: str) -> bool:
+    """Verify a Slack request: HMAC-SHA256 of 'v0:{ts}:{body}' with the app's
+    signing secret, compared to the X-Slack-Signature header ('v0=...')."""
+    import hashlib
+    import hmac as _hmac
+    import time as _time
+
+    if not signing_secret or not signature or not timestamp:
+        return False
+    try:
+        # Reject stale requests (replay protection) — 5 min window.
+        if abs(_time.time() - int(timestamp)) > 300:
+            return False
+    except ValueError:
+        return False
+    base = b"v0:" + timestamp.encode() + b":" + raw_body
+    digest = "v0=" + _hmac.new(signing_secret.encode(), base, hashlib.sha256).hexdigest()
+    return _hmac.compare_digest(digest, signature.strip())
 
 
 def assignment_blocks(
