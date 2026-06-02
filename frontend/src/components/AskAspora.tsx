@@ -174,6 +174,43 @@ export function AskAspora() {
   );
 }
 
+// Render inline `**bold**` as real bold and drop any stray asterisks the
+// model emits, so raw markdown markers never leak into the chat bubble.
+function renderInline(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
+    const m = /^\*\*([^*]+)\*\*$/.exec(part);
+    if (m) return <strong key={i}>{m[1]}</strong>;
+    return <span key={i}>{part.replace(/\*\*/g, "")}</span>;
+  });
+}
+
+// Lightweight markdown: handles bold, `#` headings and `-`/`*` bullets.
+// Avoids pulling in a full markdown dependency for short chat answers.
+function RichText({ content }: { content: string }) {
+  return (
+    <>
+      {content.split("\n").map((line, i) => {
+        const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
+        if (heading)
+          return (
+            <div key={i} className="font-semibold mt-1.5 first:mt-0">
+              {renderInline(heading[1])}
+            </div>
+          );
+        const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+        if (bullet)
+          return (
+            <div key={i} className="flex gap-1.5">
+              <span className="opacity-60">•</span>
+              <span>{renderInline(bullet[1])}</span>
+            </div>
+          );
+        return <div key={i}>{line ? renderInline(line) : <br />}</div>;
+      })}
+    </>
+  );
+}
+
 function Bubble({
   role,
   content,
@@ -188,7 +225,8 @@ function Bubble({
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[85%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap",
+          "max-w-[85%] rounded-2xl px-3.5 py-2 text-sm",
+          isUser ? "whitespace-pre-wrap" : "space-y-0.5",
           isUser
             ? "bg-aspora-600 text-white"
             : isError
@@ -196,7 +234,7 @@ function Bubble({
               : "bg-secondary text-foreground",
         )}
       >
-        {content}
+        {isUser ? content : <RichText content={content} />}
       </div>
     </div>
   );
