@@ -980,3 +980,92 @@ def schedule_rule_for_license(
         due_date=obligation.due_date,
         assignee_id=obligation.assignee_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Schedule EVERY applicable filing for a license → fills the calendar at once
+# ---------------------------------------------------------------------------
+class ScheduleAllResponse(BaseModel):
+    scheduled: int
+    skipped_existing: int
+    applicable: int
+
+
+@router.post(
+    "/{license_id}/schedule-all",
+    response_model=ScheduleAllResponse,
+    status_code=201,
+)
+def schedule_all_for_license(
+    license_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ScheduleAllResponse:
+    """Schedule an obligation for every rule directly applicable to this
+    license's entity, so all its filings show up on the calendar in one go.
+    Uses the same authority/type matching as the applicable-rules view and
+    skips any filing that already has an obligation on the computed due date."""
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found.")
+
+    pool = (
+        db.execute(
+            select(Rule).where(
+                Rule.jurisdiction_code == lic.jurisdiction_code,
+                Rule.status == RuleStatus.production,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    license_tokens = _tokens(lic.authority, lic.license_type, lic.name)
+
+    today_d = date.today()
+    scheduled = 0
+    skipped = 0
+    applicable = 0
+    for rule in pool:
+        rule_tokens = _tokens(rule.authority, rule.category, rule.area)
+        if not (license_tokens & rule_tokens):
+            continue
+        applicable += 1
+        due = _next_due_for_rule(rule, today_d)
+        existing = db.execute(
+            select(Obligation).where(
+                Obligation.rule_id == rule.id,
+                Obligation.entity_id == lic.entity_id,
+                Obligation.due_date == due,
+                Obligation.department == Department.compliance,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            skipped += 1
+            continue
+        db.add(
+            Obligation(
+                rule_id=rule.id,
+                entity_id=lic.entity_id,
+                due_date=due,
+                status=ObligationStatus.not_started,
+                department=Department.compliance,
+            )
+        )
+        scheduled += 1
+
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="license.scheduled_all",
+        target_type="license",
+        target_id=license_id,
+        payload={
+            "scheduled": scheduled,
+            "skipped_existing": skipped,
+            "applicable": applicable,
+        },
+    )
+    db.commit()
+    return ScheduleAllResponse(
+        scheduled=scheduled, skipped_existing=skipped, applicable=applicable
+    )

@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  CalendarPlus,
   Trash2,
   Upload,
   X,
@@ -944,6 +945,7 @@ function LicenseDetailDialog({
 }) {
   const open = license !== null;
   const [aiOpen, setAiOpen] = useState(false);
+  const detailQueryClient = useQueryClient();
 
   const rulesQuery = useQuery({
     queryKey: ["license-rules", license?.id],
@@ -952,6 +954,25 @@ function LicenseDetailDialog({
         `/api/licenses/${license!.id}/applicable-rules`,
       ),
     enabled: open,
+  });
+
+  const scheduleAllMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ scheduled: number; skipped_existing: number; applicable: number }>(
+        `/api/licenses/${license!.id}/schedule-all`,
+      ),
+    onSuccess: (r) => {
+      rulesQuery.refetch();
+      detailQueryClient.invalidateQueries({ queryKey: ["calendar"] });
+      detailQueryClient.invalidateQueries({ queryKey: ["obligations"] });
+      detailQueryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        `Scheduled ${r.scheduled} filing(s) onto the calendar.\n` +
+          `Already on the calendar: ${r.skipped_existing}\n` +
+          `Total applicable to this license: ${r.applicable}`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
   const deleteMutation = useMutation({
@@ -1062,6 +1083,30 @@ function LicenseDetailDialog({
                         Extract with AI
                       </Button>
                     )}
+                    {isAdmin &&
+                      rulesQuery.data &&
+                      rulesQuery.data.direct.length > 0 && (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Schedule all ${rulesQuery.data!.direct.length} applicable filing(s) for this license onto the calendar? Filings already scheduled are skipped.`,
+                              )
+                            ) {
+                              scheduleAllMutation.mutate();
+                            }
+                          }}
+                          disabled={scheduleAllMutation.isPending}
+                          title="Create an obligation for every applicable filing so they all appear on the calendar"
+                        >
+                          {scheduleAllMutation.isPending && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          <CalendarPlus className="h-3.5 w-3.5" />
+                          Schedule all on calendar
+                        </Button>
+                      )}
                   </div>
                 </div>
 
