@@ -526,11 +526,24 @@ function StagingCard({ rule }: { rule: Rule }) {
 
       {open && (
         <CardContent className="p-0 border-t border-border">
-          <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
-            {/* Left — editable extracted fields */}
+          <div>
+            {/* Editable extracted fields (full width) */}
             <div className="p-5 space-y-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
-                AI-extracted fields {editing && <span className="text-aspora-600">(editing)</span>}
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2 flex items-center justify-between">
+                <span>
+                  AI-extracted fields {editing && <span className="text-aspora-600">(editing)</span>}
+                </span>
+                {rule.source_url && (
+                  <a
+                    href={rule.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-aspora-700 hover:underline normal-case tracking-normal"
+                  >
+                    View original regulation
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
               </div>
               <ExtractedField label="Form name" value={draft.form_name} editing={editing} onChange={(v) => set("form_name", v)} />
               <ExtractedField label="Authority" value={draft.authority} editing={editing} onChange={(v) => set("authority", v)} />
@@ -542,37 +555,6 @@ function StagingCard({ rule }: { rule: Rule }) {
               <ExtractedField label="Applicability" value={draft.applicability} options={APPLICABILITY_OPTIONS} editing={editing} onChange={(v) => set("applicability", v)} />
               <ExtractedField label="Applicability note" value={draft.applicability_note} multiline editing={editing} onChange={(v) => set("applicability_note", v)} />
               <ExtractedField label="Tax type" value={draft.tax_type} options={TAX_TYPE_OPTIONS} editing={editing} onChange={(v) => set("tax_type", v)} />
-            </div>
-
-            {/* Right — original source text proxy */}
-            <div className="p-5 space-y-2 bg-secondary/20">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium flex items-center justify-between mb-2">
-                <span>Source — original regulation</span>
-                {rule.source_url ? (
-                  <a
-                    href={rule.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-aspora-700 hover:underline"
-                  >
-                    Open in tab
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60">
-                    No source URL
-                  </span>
-                )}
-              </div>
-              <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs leading-relaxed font-mono whitespace-pre-wrap text-muted-foreground max-h-[320px] overflow-auto scrollbar-thin">
-                {rule.due_date_rule || "—"}
-                {"\n\n"}
-                {rule.applicability_note || "(no applicability note)"}
-                {"\n\n"}
-                <span className="italic text-muted-foreground/70">
-                  When this rule was extracted by Claude, the full source text was the regulatory excerpt above. Per-field provenance + side-by-side diff vs an existing rule lands in Phase 5.
-                </span>
-              </div>
             </div>
           </div>
 
