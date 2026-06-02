@@ -54,7 +54,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { InlineStatusMenu } from "@/components/InlineStatusMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { JURISDICTIONS, fmtDate } from "@/lib/format";
+import { JURISDICTIONS, fmtDate, cleanFilingName } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
 import type {
@@ -735,7 +735,7 @@ function HeatmapView({
                             key={ob.id}
                             className="text-[10px] leading-tight truncate text-muted-foreground"
                           >
-                            {ob.entity_name.replace(/^Aspora\s+/, "")} · {ob.rule_form_name}
+                            {ob.entity_name.replace(/^Aspora\s+/, "")} · {cleanFilingName(ob.rule_form_name)}
                           </div>
                         ))}
                         {items.length > 2 && (
@@ -751,7 +751,7 @@ function HeatmapView({
                       <div className="font-semibold mb-1">{format(day, "EEE, d MMM")}</div>
                       {items.slice(0, 5).map((ob) => (
                         <div key={ob.id} className="opacity-90">
-                          • {ob.entity_name} — {ob.rule_form_name}
+                          • {ob.entity_name} — {cleanFilingName(ob.rule_form_name)}
                         </div>
                       ))}
                       {items.length > 5 && (
@@ -802,7 +802,7 @@ function DayDetailPanel({ date, items }: { date: Date; items: CalendarObligation
                 <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
                 <span className="truncate">{ob.entity_name}</span>
               </div>
-              <div className="font-medium text-sm leading-tight truncate">{ob.rule_form_name}</div>
+              <div className="font-medium text-sm leading-tight truncate">{cleanFilingName(ob.rule_form_name)}</div>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 <Badge
                   variant={
@@ -957,7 +957,7 @@ function ListView({
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <div className="font-medium">{ob.rule_form_name}</div>
+                      <div className="font-medium">{cleanFilingName(ob.rule_form_name)}</div>
                       <div className="text-xs text-muted-foreground truncate">{ob.rule_authority}</div>
                     </td>
                     <td className="px-3 py-2.5">

@@ -54,6 +54,7 @@ import {
   EFFORT_BANDS,
   effortBandLabel,
   leadTimeDays,
+  cleanFilingName,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
@@ -344,7 +345,7 @@ function Header({
               variant === "drawer" ? "text-lg" : "text-2xl",
             )}
           >
-            {obligation.rule_form_name}
+            {cleanFilingName(obligation.rule_form_name)}
           </h1>
           <Link
             to={`/entities/${obligation.entity_id}`}
