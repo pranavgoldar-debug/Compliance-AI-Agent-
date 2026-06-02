@@ -1,18 +1,23 @@
 """Rule CRUD endpoints (admin-managed)."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.orm import Session
 
 from compliance_agent.api._helpers import log_activity, serialize_user
 from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleSnapshotOut, RuleUpdate
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Comment,
+    Document,
     Entity,
+    Notification,
+    Obligation,
     Rule,
     RuleSnapshot,
     RuleStatus,
@@ -119,18 +124,133 @@ def update_rule(
     rule = db.get(Rule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found.")
+    old_status = rule.status
     data = payload.model_dump(exclude_unset=True)
     entity_ids = data.pop("entity_ids", None)
     for field, value in data.items():
         setattr(rule, field, value)
     if entity_ids is not None:
         _attach_entities(rule, entity_ids, db)
+
+    # A staging → production transition is a meaningful milestone — log it
+    # distinctly so it shows clearly in the activity feed.
+    promoted = (
+        old_status != RuleStatus.production
+        and rule.status == RuleStatus.production
+    )
     log_activity(
-        db, actor_id=user.id, action="rule.updated", target_type="rule", target_id=rule.id
+        db,
+        actor_id=user.id,
+        action="rule.promoted" if promoted else "rule.updated",
+        target_type="rule",
+        target_id=rule.id,
+        payload={"form_name": rule.form_name, "from": old_status.value, "to": rule.status.value}
+        if promoted
+        else None,
     )
     db.commit()
     db.refresh(rule)
     return _serialize_rule(rule)
+
+
+# ---------------------------------------------------------------------------
+# Delete — hard-remove a rule and everything that hangs off it.
+# ---------------------------------------------------------------------------
+def _delete_rule_cascade(db: Session, rule: Rule) -> int:
+    """Delete a rule plus its obligations (and their comments/notifications),
+    keeping any uploaded proof documents (just unlinked). rule_entities and
+    rule snapshots are cleared explicitly so it works even where the legacy
+    production FKs predate ON DELETE clauses. Returns the obligation count
+    that was removed."""
+    ob_ids = [
+        oid
+        for (oid,) in db.execute(
+            select(Obligation.id).where(Obligation.rule_id == rule.id)
+        ).all()
+    ]
+    if ob_ids:
+        db.execute(
+            sa_update(Document)
+            .where(Document.obligation_id.in_(ob_ids))
+            .values(obligation_id=None)
+        )
+        db.execute(sa_delete(Notification).where(Notification.obligation_id.in_(ob_ids)))
+        db.execute(sa_delete(Comment).where(Comment.obligation_id.in_(ob_ids)))
+        db.execute(sa_delete(Obligation).where(Obligation.id.in_(ob_ids)))
+
+    db.execute(sa_delete(RuleSnapshot).where(RuleSnapshot.rule_id == rule.id))
+    # rule_entities is the secondary link table — clear the associations.
+    rule.entities = []
+    db.flush()
+    db.delete(rule)
+    return len(ob_ids)
+
+
+@router.delete("/{rule_id}", status_code=204)
+def delete_rule(
+    rule_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> Response:
+    """Admin-only: permanently delete a rule (staging or production) and any
+    filings scheduled from it. Proof documents are kept (unlinked)."""
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+    form_name = rule.form_name
+    removed = _delete_rule_cascade(db, rule)
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="rule.deleted",
+        target_type="rule",
+        target_id=rule_id,
+        payload={"form_name": form_name, "obligations_removed": removed},
+    )
+    db.commit()
+    return Response(status_code=204)
+
+
+class CleanupRecentResult(BaseModel):
+    deleted_rules: int
+    deleted_obligations: int
+
+
+@router.post("/cleanup-recent-production", response_model=CleanupRecentResult)
+def cleanup_recent_production(
+    hours: int = Query(24, ge=1, le=168),
+    mine_only: bool = Query(True),
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> CleanupRecentResult:
+    """Admin-only cleanup: delete production rules created in the last N hours
+    (default 24). By default limited to rules the calling admin created, so one
+    admin can't wipe another's work by accident. Also removes any filings
+    scheduled from those rules; proof documents are kept (unlinked)."""
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=hours)
+    conds = [Rule.status == RuleStatus.production, Rule.created_at >= cutoff]
+    if mine_only:
+        conds.append(Rule.created_by_id == actor.id)
+
+    rules = db.execute(select(Rule).where(*conds)).scalars().all()
+    total_obs = 0
+    for r in rules:
+        total_obs += _delete_rule_cascade(db, r)
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="rules.cleanup_recent_production",
+        target_type="rule",
+        target_id=None,
+        payload={
+            "hours": hours,
+            "mine_only": mine_only,
+            "deleted_rules": len(rules),
+            "deleted_obligations": total_obs,
+        },
+    )
+    db.commit()
+    return CleanupRecentResult(deleted_rules=len(rules), deleted_obligations=total_obs)
 
 
 # ---------------------------------------------------------------------------

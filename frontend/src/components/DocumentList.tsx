@@ -11,12 +11,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   FileText,
+  Link2,
   Loader2,
   MoreHorizontal,
   Pencil,
   Sparkles,
   Trash2,
   Upload,
+  ExternalLink,
   File as FileIcon,
   FileImage,
   FileSpreadsheet,
@@ -159,7 +161,44 @@ export function DocumentList({
     onError: (e) => setUploadError(e instanceof ApiError ? e.message : String(e)),
   });
 
+  // Add a "link" document — a template / portal URL instead of a file.
+  const linkMutation = useMutation({
+    mutationFn: async ({ url, title }: { url: string; title: string }) => {
+      const body: Record<string, string> = { url };
+      if (title) body.title = title;
+      if (defaultCategory) body.category = defaultCategory;
+      if (scope.kind === "obligation") {
+        return api.post<DocumentOut>(
+          `/api/obligations/${scope.obligationId}/document-links`,
+          body,
+        );
+      }
+      if (scope.kind === "entity") {
+        return api.post<DocumentOut>(
+          `/api/entities/${scope.entityId}/document-links`,
+          body,
+        );
+      }
+      throw new Error("Open an entity or obligation first to add a link.");
+    },
+    onSuccess: () => {
+      setUploadError(null);
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: (e) => setUploadError(e instanceof ApiError ? e.message : String(e)),
+  });
+
   const canUpload = scope.kind === "entity" || scope.kind === "obligation";
+
+  function addLink() {
+    const url = window.prompt(
+      "Paste the filing template / regulator portal URL:",
+    );
+    if (!url || !url.trim()) return;
+    const title =
+      window.prompt("Label for this link (optional):", "") || "";
+    linkMutation.mutate({ url: url.trim(), title: title.trim() });
+  }
 
   function pickFiles() {
     fileInputRef.current?.click();
@@ -195,14 +234,30 @@ export function DocumentList({
                 className="hidden"
                 onChange={(e) => handleFiles(e.target.files)}
               />
-              <Button size="sm" onClick={pickFiles} disabled={uploadMutation.isPending}>
-                {uploadMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Upload className="h-3.5 w-3.5" />
-                )}
-                Upload
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addLink}
+                  disabled={linkMutation.isPending}
+                  title="Add a template / portal URL instead of a file"
+                >
+                  {linkMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Link2 className="h-3.5 w-3.5" />
+                  )}
+                  Add link
+                </Button>
+                <Button size="sm" onClick={pickFiles} disabled={uploadMutation.isPending}>
+                  {uploadMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Upload
+                </Button>
+              </div>
             </>
           )}
         </div>
@@ -347,12 +402,14 @@ function DocumentRow({
   showEntityColumn: boolean;
   obligationId: number | null;
 }) {
-  const Icon = iconFor(doc.filename);
+  const isLink = !!doc.url;
+  const Icon = isLink ? ExternalLink : iconFor(doc.filename);
   return (
     <tr className="hover:bg-secondary/30">
       <td className="px-3 py-2.5">
         <a
-          href={`/api/documents/${doc.id}/download`}
+          href={doc.url || `/api/documents/${doc.id}/download`}
+          {...(isLink ? { target: "_blank", rel: "noreferrer" } : {})}
           className="inline-flex items-center gap-2 min-w-0 hover:text-aspora-700"
         >
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -385,7 +442,7 @@ function DocumentRow({
         </div>
       </td>
       <td className="px-3 py-2.5 text-right text-xs tabular-nums text-muted-foreground">
-        {fmtSize(doc.size_bytes)}
+        {isLink ? "Link" : fmtSize(doc.size_bytes)}
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center justify-end gap-0.5">

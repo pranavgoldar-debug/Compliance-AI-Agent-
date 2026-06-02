@@ -21,6 +21,7 @@ import {
 import { RuleChangeCheckDialog } from "@/components/RuleChangeCheckDialog";
 import { ImportRulesDialog } from "@/components/ImportRulesDialog";
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -229,8 +230,53 @@ export function RulesPage() {
 function ProductionTable({ rules }: { rules: Rule[] }) {
   const [checking, setChecking] = useState<Rule | null>(null);
   const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
+  const cleanupMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ deleted_rules: number; deleted_obligations: number }>(
+        "/api/rules/cleanup-recent-production?hours=24&mine_only=true",
+      ),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        `Removed ${r.deleted_rules} rule(s) and ${r.deleted_obligations} filing(s) you added in the last 24 hours.`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <Card className="overflow-hidden">
+      {isAdmin && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-secondary/20">
+          <span className="text-xs text-muted-foreground">
+            Added some production rules by mistake? Clean up the ones you created recently.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+            disabled={cleanupMutation.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Delete ALL production rules you created in the last 24 hours (and any filings scheduled from them)? Uploaded documents are kept. This can't be undone.",
+                )
+              ) {
+                cleanupMutation.mutate();
+              }
+            }}
+          >
+            {cleanupMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Clean up rules I added (last 24h)
+          </Button>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[1200px]">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -408,10 +454,20 @@ function StagingCard({ rule }: { rule: Rule }) {
     mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { status: "archived" }),
     onSuccess: refresh,
   });
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/api/rules/${rule.id}`),
+    onSuccess: refresh,
+  });
   const busy =
-    saveMutation.isPending || promoteMutation.isPending || rejectMutation.isPending;
+    saveMutation.isPending ||
+    promoteMutation.isPending ||
+    rejectMutation.isPending ||
+    deleteMutation.isPending;
   const err =
-    saveMutation.error || promoteMutation.error || rejectMutation.error;
+    saveMutation.error ||
+    promoteMutation.error ||
+    rejectMutation.error ||
+    deleteMutation.error;
 
   return (
     <Card className="overflow-hidden">
@@ -533,6 +589,24 @@ function StagingCard({ rule }: { rule: Rule }) {
                   >
                     {rejectMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     Reject
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Permanently delete "${rule.form_name}"?\n\nThis also removes any filings scheduled from it. Uploaded documents are kept. This can't be undone.`,
+                        )
+                      ) {
+                        deleteMutation.mutate();
+                      }
+                    }}
+                  >
+                    {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Delete
                   </Button>
                   <Button size="sm" disabled={busy} onClick={() => promoteMutation.mutate()}>
                     {promoteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

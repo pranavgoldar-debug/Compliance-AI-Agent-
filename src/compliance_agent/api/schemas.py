@@ -285,12 +285,22 @@ class DocumentOut(_Base):
     size_bytes: int
     category: DocumentCategory
     tags: Optional[str] = None
+    # Set for "link" documents (a template/portal URL rather than an uploaded
+    # file). None for normal file uploads.
+    url: Optional[str] = None
     uploaded_by: Optional[UserBrief] = None
     created_at: datetime
 
 
 class DocumentUpdate(BaseModel):
     filename: Optional[str] = None
+    category: Optional[DocumentCategory] = None
+    tags: Optional[str] = None
+
+
+class DocumentLinkCreate(BaseModel):
+    url: str
+    title: Optional[str] = None
     category: Optional[DocumentCategory] = None
     tags: Optional[str] = None
 

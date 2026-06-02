@@ -186,6 +186,7 @@ export interface DocumentOut {
   size_bytes: number;
   category: DocumentCategory;
   tags: string | null;
+  url: string | null;
   uploaded_by: UserBrief | null;
   created_at: string;
 }

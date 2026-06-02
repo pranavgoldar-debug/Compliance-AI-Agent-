@@ -17,13 +17,13 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
 from compliance_agent.api._helpers import log_activity, serialize_user
-from compliance_agent.api.schemas import DocumentOut, DocumentUpdate
+from compliance_agent.api.schemas import DocumentLinkCreate, DocumentOut, DocumentUpdate
 from compliance_agent.auth import get_current_user
 from compliance_agent.db import (
     Document,
@@ -33,6 +33,11 @@ from compliance_agent.db import (
     User,
     get_session,
 )
+
+
+# Sentinel content_type marking a "link" document — a template/portal URL the
+# admin pasted instead of uploading a file. The URL lives in storage_path.
+LINK_CONTENT_TYPE = "link"
 
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -55,6 +60,7 @@ def _serialize(doc: Document) -> DocumentOut:
         size_bytes=doc.size_bytes,
         category=doc.category,
         tags=doc.tags,
+        url=doc.storage_path if doc.content_type == LINK_CONTENT_TYPE else None,
         uploaded_by=serialize_user(doc.uploaded_by),
         created_at=doc.created_at,
     )
@@ -117,6 +123,9 @@ def download_document(
     doc = db.get(Document, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found.")
+    # Link documents have no file on disk — just send the browser to the URL.
+    if doc.content_type == LINK_CONTENT_TYPE:
+        return RedirectResponse(doc.storage_path)
     try:
         stream = storage.open_read(doc.storage_path)
     except (FileNotFoundError, ValueError):
@@ -291,3 +300,82 @@ def upload_to_obligation(
         db, user, file, obligation.entity_id, obligation_id, category, tags
     )
     return _serialize(doc)
+
+
+# ---------------------------------------------------------------------------
+# Link documents — a template / portal URL instead of an uploaded file.
+# ---------------------------------------------------------------------------
+def _normalize_url(raw: str) -> str:
+    u = (raw or "").strip()
+    if not u:
+        raise HTTPException(status_code=400, detail="A URL is required.")
+    if not u.lower().startswith(("http://", "https://")):
+        u = f"https://{u}"
+    return u
+
+
+def _persist_link(
+    db: Session,
+    user: User,
+    entity_id: int,
+    obligation_id: Optional[int],
+    payload: DocumentLinkCreate,
+) -> Document:
+    entity = db.get(Entity, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found.")
+    url = _normalize_url(payload.url)
+    title = (payload.title or "").strip() or url
+
+    doc = Document(
+        entity_id=entity_id,
+        obligation_id=obligation_id,
+        filename=title,
+        storage_path=url,
+        content_type=LINK_CONTENT_TYPE,
+        size_bytes=0,
+        category=payload.category or DocumentCategory.other,
+        tags=payload.tags,
+        uploaded_by_id=user.id,
+    )
+    db.add(doc)
+    db.flush()
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="document.link_added",
+        target_type="document",
+        target_id=doc.id,
+        payload={"title": title, "url": url, "entity_id": entity_id, "obligation_id": obligation_id},
+    )
+    db.commit()
+    return db.execute(
+        select(Document).where(Document.id == doc.id).options(*_eager())
+    ).scalars().unique().one()
+
+
+@entity_uploads.post("/{entity_id}/document-links", response_model=DocumentOut, status_code=201)
+def add_link_to_entity(
+    entity_id: int,
+    payload: DocumentLinkCreate,
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> DocumentOut:
+    return _serialize(_persist_link(db, user, entity_id, None, payload))
+
+
+@obligation_uploads.post(
+    "/{obligation_id}/document-links", response_model=DocumentOut, status_code=201
+)
+def add_link_to_obligation(
+    obligation_id: int,
+    payload: DocumentLinkCreate,
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> DocumentOut:
+    obligation = db.get(Obligation, obligation_id)
+    if obligation is None:
+        raise HTTPException(status_code=404, detail="Obligation not found.")
+    return _serialize(
+        _persist_link(db, user, obligation.entity_id, obligation_id, payload)
+    )
