@@ -244,7 +244,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       window.alert(
-        `Removed ${r.deleted_rules} rule(s) and ${r.deleted_obligations} filing(s) you added in the last 24 hours.`,
+        `Removed ${r.deleted_rules} draft rule(s) and ${r.deleted_obligations} filing(s) you added in the last 24 hours. Production catalogue rules were left untouched.`,
       );
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
@@ -328,7 +328,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               onClick={() => {
                 if (
                   window.confirm(
-                    "Delete ALL production rules you created in the last 24 hours (and any filings scheduled from them)? Uploaded documents are kept. This can't be undone.",
+                    "Delete the DRAFT (staging / AI-extracted) rules you created in the last 24 hours, and any filings scheduled from them? Production catalogue rules are NOT touched. Uploaded documents are kept. This can't be undone.",
                   )
                 ) {
                   cleanupMutation.mutate();
@@ -336,7 +336,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               }}
             >
               {cleanupMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Clean up rules I added (last 24h)
+              Clean up draft rules I added (last 24h)
             </Button>
           </div>
         </div>

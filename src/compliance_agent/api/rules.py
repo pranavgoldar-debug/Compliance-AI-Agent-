@@ -223,14 +223,15 @@ def cleanup_recent_production(
     db: Session = Depends(get_session),
     actor: User = Depends(require_admin),
 ) -> CleanupRecentResult:
-    """Admin-only cleanup: delete production rules created in the last N hours
-    (default 24). By default limited to rules the calling admin created, so one
-    admin can't wipe another's work by accident. Also removes any filings
-    scheduled from those rules; proof documents are kept (unlinked)."""
+    """Admin-only cleanup: delete STAGING (draft / AI-extracted) rules created
+    in the last N hours (default 24). Production catalogue rules are NEVER
+    touched here, so an experiment can't wipe the live catalogue. By default
+    limited to rules the calling admin created. Also removes any filings
+    scheduled from those draft rules; proof documents are kept (unlinked)."""
     # created_at is stored naive (server now()), so compare against a naive
     # UTC cutoff to avoid tz-offset surprises on Postgres.
     cutoff = datetime.now(tz=timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
-    conds = [Rule.status == RuleStatus.production, Rule.created_at >= cutoff]
+    conds = [Rule.status == RuleStatus.staging, Rule.created_at >= cutoff]
     if mine_only:
         conds.append(Rule.created_by_id == actor.id)
 
