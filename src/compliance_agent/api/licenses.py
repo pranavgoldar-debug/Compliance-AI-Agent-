@@ -679,6 +679,22 @@ def ai_extract_obligations(
         )
 
     from_document = len(text.strip()) >= 200
+    # Shared instruction: the licensee is also an operating company, so the
+    # extract must be a SUPERSET — the licence's own obligations PLUS the
+    # standard finance/tax/accounting filings any company in the jurisdiction
+    # owes. This keeps the AI extract (source of truth) broader than the
+    # finance-only website view, rather than narrower.
+    finance_addendum = (
+        f"\n\nIMPORTANT — also include the standard ongoing FINANCIAL, TAX and "
+        f"ACCOUNTING obligations any operating company in "
+        f"{lic.jurisdiction_code.upper()} owes, even though they sit with a "
+        f"different authority than this licence's regulator: corporate / income "
+        f"tax returns, VAT / GST / sales-tax returns, annual financial "
+        f"statements and audit filing, payroll & social-security / withholding "
+        f"returns, transfer pricing, and economic-substance filings where "
+        f"applicable. The licensee IS such a company, so these apply. Label "
+        f"their function/category as Finance/Tax accordingly."
+    )
     if from_document:
         # Document-grounded: read the actual license text.
         primer = (
@@ -689,7 +705,9 @@ def ai_extract_obligations(
             f"as a result of HOLDING this license: filings, returns, fees, "
             f"reporting, periodic confirmations, change notifications, AML "
             f"obligations. Ignore one-off pre-licensing steps that have "
-            f"already happened.\n\n--- LICENSE TEXT BEGINS ---\n\n"
+            f"already happened."
+            f"{finance_addendum}"
+            f"\n\n--- LICENSE TEXT BEGINS ---\n\n"
         )
         truncated = text[: max(0, _MAX_PROMPT_CHARS - len(primer))]
         payload_text = primer + truncated
@@ -707,9 +725,9 @@ def ai_extract_obligations(
             f"license typically owes the regulator: periodic returns, filings, "
             f"fees, reports, periodic confirmations, change notifications, AML/"
             f"CFT obligations, renewals. For each, note whether it is mandatory "
-            f"or conditional, and its usual frequency. Base this on the named "
-            f"authority and license type; do not invent obligations for a "
-            f"different regulator. If you are unsure, mark applicability "
+            f"or conditional, and its usual frequency."
+            f"{finance_addendum}"
+            f" If you are unsure, mark applicability "
             f"accordingly rather than omitting it."
         )
 
