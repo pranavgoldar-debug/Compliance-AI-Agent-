@@ -366,7 +366,6 @@ function Header({
             />
             <Badge variant="neutral">Due {fmtDate(obligation.due_date)}</Badge>
             {obligation.period_label && <Badge variant="neutral">{obligation.period_label}</Badge>}
-            <EffortBandBadge band={obligation.effort_band} showLabel />
           </div>
         </div>
 
@@ -423,9 +422,16 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
   // payment_reference filled-or-not is NOT a reliable proxy — finance
   // sometimes submits an item for admin sign-off without a UTR (refund
   // case, internal transfer, etc).
-  const isFinanceLeg =
-    obligation.department === "finance" ||
-    (obligation.assignee?.department ?? "") === "finance";
+  // "Finance leg" = the PAYMENT leg, which the admin hands off to explicitly
+  // (department -> finance). It is NOT inferred from the assignee, so a
+  // finance-function filing that finance PREPARES still starts at step 1.
+  const isFinanceLeg = obligation.department === "finance";
+
+  // Which team prepares/files this — Finance for VAT/tax filings, Legal for
+  // corporate/registry, else Compliance. Same pipeline, just the right name.
+  const fn = (obligation.rule_responsible_function || "").toLowerCase();
+  const prepareTeam =
+    fn === "finance" ? "Finance" : fn === "legal" ? "Legal" : "Compliance";
 
   // Which step is "active right now"?
   let activeStep: 1 | 2 | 3 | 4 | 5 = 1; // 5 = done
@@ -448,7 +454,7 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
     {
       n: 1,
       title: "Prepare filing",
-      team: "Compliance",
+      team: prepareTeam,
       action: "Fill the filing reference + supporting docs, then Submit for review.",
     },
     {
@@ -1239,12 +1245,6 @@ function Sidebar({
               } as Partial<Obligation>)
             }
             isAdmin={isAdmin}
-          />
-
-          <EffortBandRow
-            current={obligation.effort_band}
-            reason={obligation.effort_band_reason}
-            onChange={(band, reason) => onPatch({ effort_band: band, effort_band_reason: reason || null })}
           />
 
           <AlertScheduleCard obligation={obligation} />

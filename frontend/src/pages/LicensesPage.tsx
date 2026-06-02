@@ -118,6 +118,17 @@ export function LicensesPage() {
     queryClient.invalidateQueries({ queryKey: ["licenses"] });
   }
 
+  const clearAllLicenses = useMutation({
+    mutationFn: () =>
+      api.post<{ deleted: number }>("/api/licenses/clear-all"),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["licenses"] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      window.alert(`Deleted ${r.deleted} license(s). You can re-upload now.`);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -125,10 +136,31 @@ export function LicensesPage() {
         description="Authorisations each entity holds from regulators. Upload one to see which filings apply to it."
         actions={
           isAdmin && (
-            <Button onClick={() => setUploadOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Upload license
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={clearAllLicenses.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Delete ALL licenses (and their files)? Obligations already on the calendar stay. You'll re-upload licenses manually. This can't be undone.",
+                    )
+                  ) {
+                    clearAllLicenses.mutate();
+                  }
+                }}
+              >
+                {clearAllLicenses.isPending && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Delete all licenses
+              </Button>
+              <Button onClick={() => setUploadOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Upload license
+              </Button>
+            </div>
           )
         }
       />

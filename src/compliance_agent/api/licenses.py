@@ -397,7 +397,34 @@ def delete_license(
             pass
 
 
-@router.get("/{license_id}/download")
+@router.post("/clear-all")
+def clear_all_licenses(
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> dict:
+    """Admin-only: delete EVERY license (rows + files) so the admin can
+    re-upload from scratch. Does not touch obligations already on the
+    calendar."""
+    lics = db.execute(select(License)).scalars().all()
+    paths = [l.storage_path for l in lics if l.storage_path]
+    count = len(lics)
+    for l in lics:
+        db.delete(l)
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="licenses.cleared_all",
+        target_type="license",
+        target_id=None,
+        payload={"deleted": count},
+    )
+    db.commit()
+    for p in paths:
+        try:
+            storage.delete(p)
+        except Exception:  # noqa: BLE001
+            pass
+    return {"deleted": count}
 def download_license_file(
     license_id: int,
     db: Session = Depends(get_session),
@@ -1038,11 +1065,15 @@ def schedule_rules_for_license(
 
     today_d = date.today()
     scheduled = skipped = 0
+    # Every obligation starts on the generic "preparing" leg (compliance).
+    # Who actually prepares it (Finance for VAT/tax, etc.) is shown by the
+    # rule's function in the workflow + assign dropdown; the payment leg
+    # (department -> finance) is set later by the admin hand-off.
+    dept = Department.compliance
     for rid in payload.rule_ids:
         rule = db.get(Rule, rid)
         if rule is None:
             continue
-        dept = _dept_for_rule(rule)
         due = _next_due_for_rule(rule, today_d)
         existing = db.execute(
             select(Obligation).where(
