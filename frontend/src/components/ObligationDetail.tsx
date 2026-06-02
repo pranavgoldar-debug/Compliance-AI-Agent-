@@ -905,11 +905,6 @@ function Body({
       <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
         <MainContent obligation={obligation} />
         <SecondOpinionPanel obligationId={obligation.id} />
-        <FilingFields
-          obligation={obligation}
-          onPatch={onPatch}
-          currentUser={currentUser}
-        />
         {/* Comments live HIGH in the drawer scroll so they're discoverable.
             Sidebar (assignee + effort + alert) is below since those are
             already in the action bar at the top. */}
@@ -924,11 +919,6 @@ function Body({
       <div className="space-y-6 min-w-0">
         <MainContent obligation={obligation} />
         <SecondOpinionPanel obligationId={obligation.id} />
-        <FilingFields
-          obligation={obligation}
-          onPatch={onPatch}
-          currentUser={currentUser}
-        />
         <CommentsSection obligationId={obligation.id} />
         <ActivityFeed obligationId={obligation.id} />
       </div>
