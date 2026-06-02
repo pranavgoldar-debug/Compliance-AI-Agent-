@@ -32,7 +32,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
-from compliance_agent.classification import derive_function, keep_function
+from compliance_agent.classification import FINANCE_ONLY, derive_function, keep_function
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
@@ -890,11 +890,13 @@ def applicable_rules(
     direct: list[LicenseRuleHit] = []
     entity_other: list[LicenseRuleHit] = []
 
-    # License-specific: a rule is "directly applicable" only when its authority
-    # / type token-matches the licence (e.g. an FCA licence surfaces FCA rules,
-    # a DIFC licence surfaces DIFC-registrar rules) — not the whole country.
-    # Rules already attached to the entity but not token-matched fall under
-    # "other obligations".
+    # License-specific: a rule is "directly applicable" when its authority /
+    # type token-matches the licence (e.g. an FCA licence surfaces FCA rules).
+    # In FINANCE_ONLY mode the pool is already just Finance filings (tax / VAT
+    # / CT etc.) — those apply to the entity by virtue of operating in the
+    # jurisdiction, not via this licence's authority — so surface them all
+    # rather than showing an empty list when the authority doesn't match.
+    juris_label = lic.jurisdiction_code.upper()
     for rule in pool:
         rule_tokens = _tokens(rule.authority, rule.category, rule.area)
         shared = license_tokens & rule_tokens
@@ -904,6 +906,14 @@ def applicable_rules(
                     rule,
                     relevance="direct",
                     match_reason=f"matched on: {', '.join(sorted(shared))}",
+                )
+            )
+        elif FINANCE_ONLY:
+            direct.append(
+                _hit(
+                    rule,
+                    relevance="direct",
+                    match_reason=f"Finance filing in {juris_label}",
                 )
             )
         elif rule.id in entity_rule_ids:
