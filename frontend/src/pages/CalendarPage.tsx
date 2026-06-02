@@ -90,6 +90,7 @@ interface Filters {
   taxTypes: string[];
   applicabilities: string[];
   authorities: string[];
+  categories: string[];
   statuses: ObligationStatus[];
   assigneeIds: number[];
 }
@@ -102,6 +103,7 @@ function emptyFilters(): Filters {
     taxTypes: [],
     applicabilities: [],
     authorities: [],
+    categories: [],
     statuses: [],
     assigneeIds: [],
   };
@@ -179,20 +181,27 @@ export function CalendarPage() {
     filters.taxTypes.length +
     filters.applicabilities.length +
     filters.authorities.length +
+    filters.categories.length +
     filters.statuses.length +
     filters.assigneeIds.length;
 
-  // Distinct authorities/regulators present in the loaded range — drives the
-  // Authority filter options. Derived from the server-fetched items (before
-  // client-side filtering) so options never disappear as you select.
+  // Distinct authorities + categories present in the loaded range — drive the
+  // Authority / Category filter options. Derived from the server-fetched items
+  // (before client-side filtering) so options never disappear as you select.
   const authorityOptions = useMemo(() => {
     const set = new Set<string>();
     for (const o of items) if (o.rule_authority) set.add(o.rule_authority);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [items]);
 
-  // Applicability (Mandatory / Conditional / Sector-specific) + Authority
-  // filters, applied client-side on already-loaded data. Empty = show all.
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of items) if (o.rule_category) set.add(o.rule_category);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  // Applicability + Authority + Category filters, applied client-side on
+  // already-loaded data. Empty = show all.
   const filteredItems = useMemo(() => {
     let out = items;
     if (filters.applicabilities.length > 0) {
@@ -203,8 +212,12 @@ export function CalendarPage() {
       const set = new Set(filters.authorities);
       out = out.filter((o) => set.has(o.rule_authority));
     }
+    if (filters.categories.length > 0) {
+      const set = new Set(filters.categories);
+      out = out.filter((o) => set.has(o.rule_category));
+    }
     return out;
-  }, [items, filters.applicabilities, filters.authorities]);
+  }, [items, filters.applicabilities, filters.authorities, filters.categories]);
 
   // Build a date -> obligations map for the heatmap.
   const byDate = useMemo(() => {
@@ -312,6 +325,13 @@ export function CalendarPage() {
             options={authorityOptions.map((a) => ({ value: a, label: a }))}
             selected={filters.authorities}
             onChange={(vals) => setFilters((f) => ({ ...f, authorities: vals }))}
+            searchable
+          />
+          <MultiSelectFilter
+            label="Category"
+            options={categoryOptions.map((c) => ({ value: c, label: c }))}
+            selected={filters.categories}
+            onChange={(vals) => setFilters((f) => ({ ...f, categories: vals }))}
             searchable
           />
           <MultiSelectFilter

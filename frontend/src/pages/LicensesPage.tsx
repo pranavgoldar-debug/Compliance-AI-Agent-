@@ -738,6 +738,7 @@ function AIExtractDialog({
 }) {
   const [response, setResponse] = useState<AIExtractResponse | null>(null);
   const [kept, setKept] = useState<Set<number>>(new Set());
+  const [candSearch, setCandSearch] = useState("");
 
   const extractMutation = useMutation({
     mutationFn: () =>
@@ -865,8 +866,26 @@ function AIExtractDialog({
                   {response.notes}
                 </div>
               )}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={candSearch}
+                  onChange={(e) => setCandSearch(e.target.value)}
+                  placeholder="Search filings by name, authority, category…"
+                  className="pl-8 h-9 text-sm"
+                />
+              </div>
               <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
-                {response.candidates.map((r, i) => {
+                {response.candidates
+                  .map((r, i) => ({ r, i }))
+                  .filter(({ r }) => {
+                    const q = candSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return `${r.form_name} ${r.authority} ${r.category} ${r.frequency}`
+                      .toLowerCase()
+                      .includes(q);
+                  })
+                  .map(({ r, i }) => {
                   const isKept = kept.has(i);
                   return (
                     <label
@@ -990,6 +1009,7 @@ function LicenseDetailDialog({
 }) {
   const open = license !== null;
   const [aiOpen, setAiOpen] = useState(false);
+  const [ruleSearch, setRuleSearch] = useState("");
   const detailQueryClient = useQueryClient();
 
   const rulesQuery = useQuery({
@@ -1170,8 +1190,24 @@ function LicenseDetailDialog({
                 ) : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
                     <TrackingCounts counts={rulesQuery.data.counts} />
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        value={ruleSearch}
+                        onChange={(e) => setRuleSearch(e.target.value)}
+                        placeholder="Search filings by name, authority, category…"
+                        className="pl-8 h-9 text-sm"
+                      />
+                    </div>
                     {(() => {
-                      const direct = rulesQuery.data.direct;
+                      const q = ruleSearch.trim().toLowerCase();
+                      const direct = q
+                        ? rulesQuery.data.direct.filter((r) =>
+                            `${r.form_name} ${r.name} ${r.authority} ${r.category} ${r.area} ${r.frequency}`
+                              .toLowerCase()
+                              .includes(q),
+                          )
+                        : rulesQuery.data.direct;
                       const mandatory = direct.filter(
                         (r) => r.applicability === "Mandatory",
                       );
