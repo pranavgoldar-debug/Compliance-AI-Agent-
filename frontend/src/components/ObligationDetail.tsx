@@ -957,12 +957,25 @@ interface PageSummaryResponse {
   error: string | null;
 }
 
+// Stored URLs sometimes lack a scheme (e.g. "www.difc.ae"); without it the
+// browser treats href as a relative path and the link breaks. Force https.
+function withScheme(u?: string | null): string | undefined {
+  const t = u?.trim();
+  if (!t) return undefined;
+  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+}
+
 function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const source = obligation.rule_source_url?.trim();
   const submission = obligation.rule_submission_url?.trim();
-  const sameUrl = source && submission && source === submission;
+  const sourceHref = withScheme(source);
+  const submissionHref = withScheme(submission);
+  // Admins always get a "submit / pay" affordance: the dedicated submission
+  // portal if one's set, otherwise fall back to the regulation/source page
+  // (for many filings that page IS the e-filing portal).
+  const submitHref = submissionHref || sourceHref;
   const [aiSummary, setAiSummary] = useState<PageSummaryResponse | null>(null);
   const aiSummaryMutation = useMutation({
     mutationFn: () =>
@@ -1005,9 +1018,9 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
         Regulator portal
       </h3>
       <div className="flex flex-wrap gap-2">
-        {source && (
+        {sourceHref && (
           <a
-            href={source}
+            href={sourceHref}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-2 rounded-lg border border-aspora-300 bg-aspora-50 hover:bg-aspora-100 px-3 py-2 text-sm font-medium text-aspora-800"
@@ -1017,28 +1030,25 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
             View regulation & template
           </a>
         )}
-        {isAdmin && submission && !sameUrl && (
+        {isAdmin && submitHref && (
           <a
-            href={submission}
+            href={submitHref}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 text-sm font-medium text-emerald-800"
-            title="Admin-only: the e-filing portal where you actually submit"
+            title="Admin: submit the filing and make the payment on the regulator's portal"
           >
             <ExternalLink className="h-4 w-4" />
-            Submit on regulator's portal →
+            Submit &amp; pay on regulator's portal →
           </a>
-        )}
-        {isAdmin && submission && sameUrl && (
-          <span className="text-[11px] text-muted-foreground self-center italic">
-            Submission portal = same URL. Admin can split them on Compliance Rules → edit row.
-          </span>
         )}
       </div>
       <div className="text-[11px] text-muted-foreground mt-1.5">
         {isAdmin
-          ? "Everyone can see the regulation page. Only admins see the submission link."
-          : "Read the regulation and grab the template. Admin handles the actual submission."}
+          ? submissionHref
+            ? "Everyone sees the regulation page. The green button is the e-filing portal where you submit + pay."
+            : "Everyone sees the regulation page. The green button opens it as the submission/payment portal (no separate portal URL set — add one on Compliance Rules → edit row)."
+          : "Read the regulation and grab the template. Admin handles the actual submission + payment."}
       </div>
 
       {source && (

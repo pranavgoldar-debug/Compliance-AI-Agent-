@@ -24,8 +24,11 @@ from compliance_agent import clickup_service, slack_service
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Notification,
+    NotificationKind,
     Obligation,
     ObligationStatus,
+    Role,
     User,
     get_session,
     session_scope,
@@ -392,21 +395,54 @@ async def clickup_webhook(request: Request) -> dict:
         ).scalars().first()
         if ob is None:
             return {"ok": True, "ignored": "unmatched"}
-        if ob.status == ObligationStatus.completed:
-            return {"ok": True, "ignored": "already-complete"}
+        if ob.status in (ObligationStatus.completed, ObligationStatus.pending_review):
+            return {"ok": True, "ignored": "already-submitted"}
 
-        ob.status = ObligationStatus.completed
-        ob.completed_at = datetime.now(tz=timezone.utc)
+        # Finance marked the payment done in ClickUp. We DON'T auto-complete —
+        # the website reflects it and routes it to admin for final sign-off.
+        ob.status = ObligationStatus.pending_review
+        ob.completed_at = None
         log_activity(
             db,
             actor_id=None,
-            action="obligation.completed_via_clickup",
+            action="obligation.payment_done_via_clickup",
             target_type="obligation",
             target_id=ob.id,
             payload={"clickup_task_id": task_id},
         )
+
+        # Ping every admin so it lands in their final-approval queue.
+        admins = (
+            db.execute(select(User).where(User.role == Role.admin, User.is_active.is_(True)))
+            .scalars()
+            .all()
+        )
+        form = ob.rule.form_name if ob.rule else "A filing"
+        entity = ob.entity.name if ob.entity else "—"
+        link = f"{app_base_url().rstrip('/')}/obligations/{ob.id}"
+        for admin in admins:
+            db.add(
+                Notification(
+                    user_id=admin.id,
+                    kind=NotificationKind.status_change,
+                    title=f"Payment completed in ClickUp — needs final sign-off",
+                    body=f"{form} — {entity}. Verify the payment and approve & close.",
+                    obligation_id=ob.id,
+                    link_url=link,
+                )
+            )
+
+        # Best-effort Slack heads-up to the workspace channel.
+        try:
+            slack_service.post(
+                f":heavy_dollar_sign: Payment marked complete in ClickUp — "
+                f"*{form}* ({entity}) is awaiting admin final sign-off. <{link}|Open it>"
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
         # session_scope commits on exit.
-        return {"ok": True, "obligation_id": ob.id}
+        return {"ok": True, "obligation_id": ob.id, "status": "pending_review"}
 
 
 # ---------------------------------------------------------------------------

@@ -70,13 +70,13 @@ def review(db: Session, obligation_id: int) -> SecondOpinionResult:
         select(Document).where(Document.obligation_id == obligation_id)
     ).scalars().all()
 
-    prompt = _build_prompt(obligation, comments, documents)
-
     try:
+        prompt = _build_prompt(obligation, comments, documents)
         opinion = _call_claude(prompt)
         return SecondOpinionResult(available=True, opinion=opinion)
     except Exception as e:
-        return SecondOpinionResult(available=True, error=f"Claude call failed: {e}")
+        # Never bubble up as a 500 — surface it inline on the card instead.
+        return SecondOpinionResult(available=True, error=f"Second opinion failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -124,9 +124,11 @@ def _build_prompt(
         parts.append("(none)")
     else:
         for d in documents:
-            parts.append(
-                f"- {d.filename}  ({d.category.value}, {d.size_bytes // 1024} KB)"
-            )
+            # category / size can be NULL on legacy rows — stay defensive so
+            # prompt assembly never throws (used to surface as a 500).
+            cat = d.category.value if d.category is not None else "other"
+            size_kb = (d.size_bytes or 0) // 1024
+            parts.append(f"- {d.filename}  ({cat}, {size_kb} KB)")
 
     parts.append("\n# Comments (chronological)")
     if not comments:
