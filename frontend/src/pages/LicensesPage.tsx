@@ -683,6 +683,7 @@ function Field({
 // ---------------------------------------------------------------------------
 interface CandidateRule {
   name: string;
+  plain_description?: string | null;
   category: string;
   area: string;
   form_name: string;
@@ -910,6 +911,11 @@ function AIExtractDialog({
                             <Badge variant="alert">Missing from your list</Badge>
                           )}
                         </div>
+                        {r.plain_description && (
+                          <div className="text-xs text-foreground/80 mt-0.5">
+                            {r.plain_description}
+                          </div>
+                        )}
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {r.authority} · {r.category} · {r.frequency}
                         </div>

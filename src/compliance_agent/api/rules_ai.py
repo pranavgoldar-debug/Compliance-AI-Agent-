@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from compliance_agent.api._helpers import log_activity
+from compliance_agent.classification import derive_function
 from compliance_agent.api.rules import _serialize_rule
 from compliance_agent.api.schemas import RuleOut
 from compliance_agent.auth import require_admin
@@ -149,6 +150,8 @@ def bulk_create_rules(
             applicability=cand.applicability,
             applicability_note=cand.applicability_note,
             tax_type=cand.tax_type,
+            plain_description=cand.plain_description,
+            responsible_function=derive_function(cand.category, cand.area),
             status=payload.status,
             created_by_id=user.id,
         )

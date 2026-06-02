@@ -26,6 +26,7 @@ For each obligation you extract:
 - `payment_rule` (optional) — fee amounts, payable taxes, percentages, late-fee structure where the source mentions them. Leave null when there's no payment.
 - `applicability` — Mandatory by default; Conditional or Sector-specific only when the source signals a trigger.
 - `applicability_note` — when Conditional/Sector-specific, write a short note explaining what triggers it.
+- `plain_description` — ALWAYS provide one plain-English sentence explaining what the filing is and who must do it, in language a non-specialist understands. No jargon or form codes.
 - `tax_type` — classify the obligation:
     - "Direct Tax" when it is a tax levied on income, profits, gains or wealth (Corporate/Income Tax returns, TDS/withholding on income, advance tax, capital gains, dividend distribution tax, etc.).
     - "Indirect Tax" when it is a tax on goods, services or transactions that is collected and remitted on the authority's behalf (GST/HST, VAT, Sales/Use Tax, Excise, Customs/Import Duty).
@@ -45,6 +46,14 @@ If the document is too short, ambiguous, or doesn't describe filing obligations 
 
 class CandidateRule(BaseModel):
     name: str = Field(description="Short human-readable name for the obligation (≤100 chars).")
+    plain_description: Optional[str] = Field(
+        default=None,
+        description=(
+            "One plain-English sentence a non-expert can understand explaining "
+            "what this filing is and who must do it. No jargon, no form codes — "
+            "e.g. 'Quarterly sales-tax return reporting VAT collected and paid.'"
+        ),
+    )
     category: str
     area: str = Field(description="Sub-area within the category.")
     form_name: str
