@@ -6,6 +6,14 @@ editable afterwards — so we keep it keyword-based rather than calling an LLM.
 """
 from __future__ import annotations
 
+import os
+
+# Single app-wide switch. When on, every surface (license obligations, AI
+# extract, rules/filings catalog, calendar, dashboard) shows ONLY Finance-
+# function obligations — Compliance / Legal are hidden, not deleted. Flip the
+# env var to "0" to bring the full set back.
+FINANCE_ONLY = os.getenv("COMPLIANCE_AGENT_FINANCE_ONLY", "1") == "1"
+
 # Checked in priority order: a match in an earlier bucket wins.
 _COMPLIANCE = (
     "aml", "cft", "ctf", "financial regulation", "consumer protection",
@@ -41,3 +49,22 @@ def derive_function(category: str = "", area: str = "") -> str:
         if kw in text:
             return "Legal"
     return "Compliance"
+
+
+def is_finance(
+    category: str = "", area: str = "", responsible_function: str | None = None
+) -> bool:
+    """True when this rule belongs to the Finance function (using its stored
+    function if set, else the keyword classifier)."""
+    fn = responsible_function or derive_function(category, area) or ""
+    return fn.strip().lower() == "finance"
+
+
+def keep_function(
+    category: str = "", area: str = "", responsible_function: str | None = None
+) -> bool:
+    """Filter predicate for the FINANCE_ONLY switch. When the switch is off
+    everything passes; when on, only Finance-function rules pass."""
+    if not FINANCE_ONLY:
+        return True
+    return is_finance(category, area, responsible_function)

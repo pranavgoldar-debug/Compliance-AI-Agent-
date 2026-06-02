@@ -32,6 +32,7 @@ from compliance_agent.api.schemas import (
     ObligationUpdate,
 )
 from compliance_agent.auth import get_current_user, require_admin
+from compliance_agent.classification import keep_function
 from compliance_agent.db import (
     Comment,
     Department,
@@ -92,6 +93,13 @@ def list_obligations(
         items = [o for o in items if o.rule.jurisdiction_code == jurisdiction_code]
     if category:
         items = [o for o in items if o.rule.category == category]
+    # FINANCE_ONLY switch: hide non-Finance obligations from lists / calendar.
+    items = [
+        o
+        for o in items
+        if o.rule is None
+        or keep_function(o.rule.category, o.rule.area, o.rule.responsible_function)
+    ]
 
     return [serialize_obligation(o) for o in items]
 

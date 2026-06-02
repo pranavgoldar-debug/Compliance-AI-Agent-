@@ -14,11 +14,13 @@ from compliance_agent.api._helpers import (
 )
 from compliance_agent.api.schemas import DashboardStats
 from compliance_agent.auth import get_current_user
+from compliance_agent.classification import FINANCE_ONLY, keep_function
 from compliance_agent.db import (
     Entity,
     License,
     Obligation,
     ObligationStatus,
+    Rule,
     User,
     get_session,
 )
@@ -42,10 +44,23 @@ def dashboard(
 ) -> DashboardStats:
     open_statuses = [ObligationStatus.not_started, ObligationStatus.in_progress, ObligationStatus.pending_review]
 
+    # FINANCE_ONLY switch: every counter / list below is scoped to obligations
+    # whose rule belongs to the Finance function. `fin` is an extra WHERE
+    # clause (empty when the switch is off, so the full set shows).
+    fin: list = []
+    if FINANCE_ONLY:
+        allowed_rule_ids = [
+            r.id
+            for r in db.execute(select(Rule)).scalars().all()
+            if keep_function(r.category, r.area, r.responsible_function)
+        ]
+        fin = [Obligation.rule_id.in_(allowed_rule_ids)]
+
     overdue = db.execute(
         select(func.count(Obligation.id)).where(
             Obligation.due_date < today(),
             Obligation.status.in_(open_statuses),
+            *fin,
         )
     ).scalar_one()
 
@@ -54,6 +69,7 @@ def dashboard(
             Obligation.due_date >= today(),
             Obligation.due_date <= today() + timedelta(days=ALERT_WINDOW_DAYS),
             Obligation.status.in_(open_statuses),
+            *fin,
         )
     ).scalar_one()
 
@@ -61,6 +77,7 @@ def dashboard(
         select(func.count(Obligation.id)).where(
             Obligation.due_date > today() + timedelta(days=ALERT_WINDOW_DAYS),
             Obligation.status.in_(open_statuses),
+            *fin,
         )
     ).scalar_one()
 
@@ -69,6 +86,7 @@ def dashboard(
         select(func.count(Obligation.id)).where(
             Obligation.status == ObligationStatus.completed,
             Obligation.completed_at >= first_of_month,
+            *fin,
         )
     ).scalar_one()
 
@@ -78,6 +96,7 @@ def dashboard(
             Obligation.due_date >= today(),
             Obligation.due_date <= week_end_d,
             Obligation.status.in_(open_statuses),
+            *fin,
         )
     ).scalar_one()
 
@@ -92,6 +111,7 @@ def dashboard(
             Obligation.due_date >= today(),
             Obligation.due_date <= month_end,
             Obligation.status.in_(open_statuses),
+            *fin,
         )
     ).scalar_one()
 
@@ -99,6 +119,7 @@ def dashboard(
         select(func.count(Obligation.id)).where(
             Obligation.assignee_id.is_(None),
             Obligation.status.in_(open_statuses),
+            *fin,
         )
     ).scalar_one()
 
@@ -114,7 +135,8 @@ def dashboard(
     # drives the "Awaiting your review" affordance for admins.
     awaiting_review = db.execute(
         select(func.count(Obligation.id)).where(
-            Obligation.status == ObligationStatus.pending_review
+            Obligation.status == ObligationStatus.pending_review,
+            *fin,
         )
     ).scalar_one()
 
@@ -123,7 +145,7 @@ def dashboard(
     # a text column that's expensive to express as a single SQL aggregate.
     completed_with_payment_rule = db.execute(
         select(Obligation)
-        .where(Obligation.status == ObligationStatus.completed)
+        .where(Obligation.status == ObligationStatus.completed, *fin)
         .options(joinedload(Obligation.rule))
     ).scalars().unique().all()
     awaiting_payment = sum(
@@ -136,7 +158,7 @@ def dashboard(
 
     open_tasks = db.execute(
         select(Obligation)
-        .where(Obligation.assignee_id == user.id, Obligation.status.in_(open_statuses))
+        .where(Obligation.assignee_id == user.id, Obligation.status.in_(open_statuses), *fin)
         .options(*_eager())
         .order_by(Obligation.due_date.asc())
         .limit(20)
@@ -148,6 +170,7 @@ def dashboard(
             Obligation.due_date >= today(),
             Obligation.due_date <= today() + timedelta(days=ALERT_WINDOW_DAYS),
             Obligation.status.in_(open_statuses),
+            *fin,
         )
         .options(*_eager())
         .order_by(Obligation.due_date.asc())
@@ -157,7 +180,7 @@ def dashboard(
     week_end = today() + timedelta(days=7)
     this_week = db.execute(
         select(Obligation)
-        .where(Obligation.due_date >= today(), Obligation.due_date <= week_end)
+        .where(Obligation.due_date >= today(), Obligation.due_date <= week_end, *fin)
         .options(*_eager())
         .order_by(Obligation.due_date.asc())
     ).scalars().unique().all()

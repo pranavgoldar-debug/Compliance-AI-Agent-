@@ -32,7 +32,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
-from compliance_agent.classification import derive_function
+from compliance_agent.classification import derive_function, keep_function
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
@@ -755,6 +755,17 @@ def ai_extract_obligations(
     )
     combined_notes = " ".join(n for n in (extra_note, result.notes) if n) or None
 
+    # FINANCE_ONLY switch: surface only Finance-function candidates.
+    candidates = [
+        c
+        for c in result.rules
+        if keep_function(
+            getattr(c, "category", ""),
+            getattr(c, "area", ""),
+            getattr(c, "responsible_function", None),
+        )
+    ]
+
     return LicenseAIExtractResponse(
         available=True,
         license_id=license_id,
@@ -764,7 +775,7 @@ def ai_extract_obligations(
         # rules created from these candidates get a code that fits the column.
         jurisdiction_hint=lic.jurisdiction_code,
         extracted_chars=len(text),
-        candidates=[c.model_dump() for c in result.rules],
+        candidates=[c.model_dump() for c in candidates],
         notes=combined_notes,
     )
 
@@ -783,8 +794,10 @@ def applicable_rules(
         raise HTTPException(status_code=404, detail="License not found.")
 
     # 1. Candidate pool: production rules in this jurisdiction.
-    pool = (
-        db.execute(
+    #    FINANCE_ONLY switch: keep only Finance-function rules.
+    pool = [
+        r
+        for r in db.execute(
             select(Rule)
             .where(
                 Rule.jurisdiction_code == lic.jurisdiction_code,
@@ -794,7 +807,8 @@ def applicable_rules(
         )
         .scalars()
         .all()
-    )
+        if keep_function(r.category, r.area, r.responsible_function)
+    ]
 
     license_tokens = _tokens(lic.authority, lic.license_type, lic.name)
 
@@ -1130,8 +1144,9 @@ def _schedule_filings_for_license(
     licence's jurisdiction (the whole country set is applicable). Skips any
     that already have an obligation on the computed due date. Returns
     (scheduled, skipped_existing, applicable). Does NOT commit."""
-    pool = (
-        db.execute(
+    pool = [
+        r
+        for r in db.execute(
             select(Rule).where(
                 Rule.jurisdiction_code == lic.jurisdiction_code,
                 Rule.status == RuleStatus.production,
@@ -1139,7 +1154,8 @@ def _schedule_filings_for_license(
         )
         .scalars()
         .all()
-    )
+        if keep_function(r.category, r.area, r.responsible_function)
+    ]
     today_d = date.today()
     scheduled = skipped = applicable = 0
     for rule in pool:

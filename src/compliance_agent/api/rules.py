@@ -10,6 +10,7 @@ from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.orm import Session
 
 from compliance_agent.api._helpers import log_activity, serialize_user
+from compliance_agent.classification import keep_function
 from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleSnapshotOut, RuleUpdate
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
@@ -71,7 +72,10 @@ def list_rules(
     if status:
         stmt = stmt.where(Rule.status == status)
     stmt = stmt.order_by(Rule.jurisdiction_code, Rule.category, Rule.name)
-    return [_serialize_rule(r) for r in db.execute(stmt).scalars().all()]
+    rows = db.execute(stmt).scalars().all()
+    # FINANCE_ONLY switch: hide non-Finance rules from the catalog.
+    rows = [r for r in rows if keep_function(r.category, r.area, r.responsible_function)]
+    return [_serialize_rule(r) for r in rows]
 
 
 @router.get("/{rule_id}", response_model=RuleOut)

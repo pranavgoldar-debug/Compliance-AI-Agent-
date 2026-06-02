@@ -967,7 +967,6 @@ function AIExtractDialog({
                 );
                 return (
                   <div className="flex flex-wrap gap-2">
-                    {sel(candFn, setCandFn, ["Finance", "Compliance", "Legal"], "functions")}
                     {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
                     {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
                     {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
@@ -1636,8 +1635,8 @@ function RegulationsTable({
       {isAdmin && (
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-xs text-muted-foreground">
-            Filter by function / regulator / category, then schedule the
-            selection onto the calendar.
+            Showing Finance obligations only. Filter by regulator / category,
+            then schedule the selection onto the calendar.
           </div>
           <Button
             size="sm"
@@ -1667,7 +1666,9 @@ function RegulationsTable({
           <tr>
             <th className="px-3 py-2 text-left font-medium w-[110px]">
               Function
-              <Sel value={fn} onChange={setFn} opts={fnOpts} label="" />
+              <div className="mt-1 text-xs font-normal normal-case text-foreground">
+                Finance
+              </div>
             </th>
             <th className="px-3 py-2 text-left font-medium w-[150px]">
               Regulator
