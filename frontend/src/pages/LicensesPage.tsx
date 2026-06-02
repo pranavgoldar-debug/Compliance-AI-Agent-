@@ -11,6 +11,7 @@ import {
   ExternalLink,
   FileBadge,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -1104,6 +1105,55 @@ export function LicenseDetailBody({
     onSuccess: () => onChanged(),
   });
 
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    license_type: "",
+    authority: "",
+    jurisdiction_code: "",
+    license_number: "",
+    issue_date: "",
+    expiry_date: "",
+    notes: "",
+  });
+  const openEdit = () => {
+    setForm({
+      name: license.name ?? "",
+      license_type: license.license_type ?? "",
+      authority: license.authority ?? "",
+      jurisdiction_code: license.jurisdiction_code ?? "",
+      license_number: license.license_number ?? "",
+      issue_date: license.issue_date ?? "",
+      expiry_date: license.expiry_date ?? "",
+      notes: license.notes ?? "",
+    });
+    setEditing(true);
+  };
+  const editMutation = useMutation({
+    mutationFn: () =>
+      api.patch(`/api/licenses/${license.id}`, {
+        name: form.name.trim(),
+        license_type: form.license_type.trim(),
+        authority: form.authority.trim(),
+        jurisdiction_code: form.jurisdiction_code.trim().toLowerCase(),
+        license_number: form.license_number.trim() || null,
+        issue_date: form.issue_date || null,
+        expiry_date: form.expiry_date || null,
+        notes: form.notes.trim() || null,
+      }),
+    onSuccess: () => {
+      onChanged();
+      detailQueryClient.invalidateQueries({ queryKey: ["licenses"] });
+      setEditing(false);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const fld = (k: keyof typeof form) => ({
+    value: form[k],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value })),
+  });
+
   return (
     <Card>
       <CardContent className="p-6">
@@ -1119,30 +1169,65 @@ export function LicenseDetailBody({
               </div>
             </div>
             {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => {
-                  if (
-                    confirm(
-                      `Delete license "${license.name}"? This also removes its uploaded file.`,
-                    )
-                  ) {
-                    deleteMutation.mutate();
-                  }
-                }}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-                Delete
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={openEdit}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Delete license "${license.name}"? This also removes its uploaded file.`,
+                      )
+                    ) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  {deleteMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Delete
+                </Button>
+              </div>
             )}
           </div>
+
+          {editing && (
+            <div className="rounded-lg border border-aspora-300 bg-aspora-50/30 p-4 space-y-3">
+              <div className="text-sm font-semibold">Edit license</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Name"><Input {...fld("name")} /></Field>
+                <Field label="License type"><Input {...fld("license_type")} /></Field>
+                <Field label="Authority"><Input {...fld("authority")} /></Field>
+                <Field label="Jurisdiction code"><Input {...fld("jurisdiction_code")} placeholder="uae / uk / us…" /></Field>
+                <Field label="License number"><Input {...fld("license_number")} /></Field>
+                <Field label="Issue date"><Input type="date" {...fld("issue_date")} /></Field>
+                <Field label="Expiry date"><Input type="date" {...fld("expiry_date")} /></Field>
+                <Field label="Notes"><Input {...fld("notes")} /></Field>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => editMutation.mutate()}
+                  disabled={editMutation.isPending}
+                >
+                  {editMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div>
               {/* Summary grid */}
