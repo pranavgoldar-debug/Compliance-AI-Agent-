@@ -99,3 +99,42 @@ def archive_entity(
     db.commit()
     db.refresh(entity)
     return serialize_entity(entity, db)
+
+
+@router.post("/archive-org-chart-extras")
+def archive_org_chart_extras(
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> dict:
+    """Admin-only: archive the entities the org-chart import added that aren't
+    in the Excel/seed entity list (e.g. UAB Hokodo, the Australia/IFSC cos), so
+    the workspace is back to the Excel's entity set. Only touches those extras."""
+    from datetime import datetime, timezone
+
+    from compliance_agent.data.org_chart import ORG_ENTITIES, _norm
+    from compliance_agent.db.seed import DEMO_ENTITIES
+
+    keep = {_norm(e["name"]) for e in DEMO_ENTITIES}
+    extras = {_norm(e["name"]) for e in ORG_ENTITIES} - keep
+
+    rows = (
+        db.execute(select(Entity).where(Entity.archived_at.is_(None)))
+        .scalars()
+        .all()
+    )
+    archived: list[str] = []
+    now = datetime.now(tz=timezone.utc)
+    for e in rows:
+        if _norm(e.name) in extras:
+            e.archived_at = now
+            archived.append(e.name)
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="entities.archived_org_chart_extras",
+        target_type="entity",
+        target_id=None,
+        payload={"archived": archived},
+    )
+    db.commit()
+    return {"archived": len(archived), "names": archived}

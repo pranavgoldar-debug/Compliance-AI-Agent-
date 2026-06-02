@@ -1,7 +1,7 @@
 // Entities — every Aspora legal entity. Table + Card grid toggle, multi-select
 // filters, search by name/type/reg #.
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   ChevronDown,
@@ -37,6 +37,22 @@ type ViewMode = "table" | "grid";
 export function EntitiesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
+  const removeExtras = useMutation({
+    mutationFn: () =>
+      api.post<{ archived: number; names: string[] }>(
+        "/api/entities/archive-org-chart-extras",
+      ),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      window.alert(
+        r.archived === 0
+          ? "Nothing to remove — already matches the Excel entity list."
+          : `Removed ${r.archived} org-chart entity(ies):\n${r.names.join("\n")}`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
   const [q, setQ] = useState("");
   const [jurisdictions, setJurisdictions] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
@@ -85,6 +101,25 @@ export function EntitiesPage() {
         description="Every Aspora legal entity, with active obligation counts and country leads."
         actions={
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={removeExtras.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Remove the org-chart entities that aren't in the Excel list (Australia, UAB Hokodo, the IFSC/UK extras)? Their licenses stay in the system; only the entity is archived.",
+                    )
+                  ) {
+                    removeExtras.mutate();
+                  }
+                }}
+                title="Archive entities the org-chart import added that aren't in the Excel entity list"
+              >
+                Keep only Excel entities
+              </Button>
+            )}
             <ExportMenu
               kind="entities"
               params={{
