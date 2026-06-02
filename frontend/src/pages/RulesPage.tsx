@@ -731,11 +731,13 @@ function EditRuleUrlDialog({
 }) {
   const queryClient = useQueryClient();
   const [url, setUrl] = useState(rule.source_url ?? "");
+  const [submitUrl, setSubmitUrl] = useState(rule.submission_url ?? "");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setUrl(rule.source_url ?? "");
+      setSubmitUrl(rule.submission_url ?? "");
       setError(null);
     }
   }, [open, rule]);
@@ -744,32 +746,35 @@ function EditRuleUrlDialog({
     mutationFn: () =>
       api.patch<Rule>(`/api/rules/${rule.id}`, {
         source_url: url.trim() || null,
+        submission_url: submitUrl.trim() || null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
       onOpenChange(false);
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
 
-  const valid = !url.trim() || /^https?:\/\//i.test(url.trim());
+  const okUrl = (v: string) => !v.trim() || /^https?:\/\//i.test(v.trim());
+  const valid = okUrl(url) && okUrl(submitUrl);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="md">
         <DialogHeader>
-          <DialogTitle>Regulator portal URL</DialogTitle>
+          <DialogTitle>Regulator links for {rule.form_name}</DialogTitle>
         </DialogHeader>
-        <div className="p-6 space-y-3">
+        <div className="p-6 space-y-4">
           <div className="text-sm text-muted-foreground">
-            Where the team actually files <strong>{rule.form_name}</strong>{" "}
-            with <strong>{rule.authority}</strong>. The team will see this
-            as a "Submit on regulator's portal →" button on every
-            obligation generated from this rule. The filing template
-            usually lives there too.
+            These two links appear on every obligation generated from this
+            rule (filed with <strong>{rule.authority}</strong>).
           </div>
+
           <div className="space-y-1">
-            <label className="text-xs font-medium">URL</label>
+            <label className="text-xs font-medium">
+              Regulation / template page
+            </label>
             <Input
               autoFocus
               value={url}
@@ -777,17 +782,39 @@ function EditRuleUrlDialog({
               placeholder="https://www.incometax.gov.in/iec/foportal/"
               className="font-mono text-xs"
             />
-            {!valid && (
+            {!okUrl(url) && (
               <div className="text-[11px] text-red-700">
                 URL must start with http:// or https://
               </div>
             )}
             <p className="text-[11px] text-muted-foreground">
-              Leave empty to clear it. Once set, the refresh icon on the
-              right of this rule checks whether the regulator changed
-              the page.
+              Everyone sees this as <strong>“View regulation &amp; template”</strong>.
+              Read the rules + grab the filing template here.
             </p>
           </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium">
+              Government submission portal (where you actually file + pay)
+            </label>
+            <Input
+              value={submitUrl}
+              onChange={(e) => setSubmitUrl(e.target.value)}
+              placeholder="https://eportal.incometax.gov.in/iec/foservices/"
+              className="font-mono text-xs"
+            />
+            {!okUrl(submitUrl) && (
+              <div className="text-[11px] text-red-700">
+                URL must start with http:// or https://
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Admins see this as <strong>“Submit &amp; pay on regulator’s portal →”</strong>.
+              This is your actual government e-filing link. Leave empty and the
+              submit button falls back to the regulation page above.
+            </p>
+          </div>
+
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {error}
@@ -803,7 +830,7 @@ function EditRuleUrlDialog({
             disabled={mutation.isPending || !valid}
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save URL
+            Save links
           </Button>
         </DialogFooter>
       </DialogContent>

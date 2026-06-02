@@ -417,6 +417,7 @@ class LicenseAIExtractResponse(BaseModel):
     license_id: int
     jurisdiction_hint: Optional[str] = None
     extracted_chars: int = 0
+    from_document: bool = True
     candidates: list = []  # list[CandidateRule] — typed late to avoid cycle
     notes: Optional[str] = None
 
@@ -607,18 +608,6 @@ def ai_extract_obligations(
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
 
-    if not lic.storage_path:
-        return LicenseAIExtractResponse(
-            available=False,
-            license_id=license_id,
-            jurisdiction_hint=lic.jurisdiction_code,
-            notes=(
-                "No license file attached. Upload the regulator's license / "
-                "authorisation letter (PDF works best) then click "
-                "Extract obligations again."
-            ),
-        )
-
     if not is_live():
         return LicenseAIExtractResponse(
             available=False,
@@ -632,7 +621,11 @@ def ai_extract_obligations(
         )
 
     text = _read_license_text(lic)
-    if len(text.strip()) < 200:
+    has_file = bool(lic.storage_path)
+
+    # A file is attached but we couldn't pull readable text — that's a scanned
+    # PDF / image. Don't silently fall back to knowledge-mode; tell the admin.
+    if has_file and len(text.strip()) < 200:
         return LicenseAIExtractResponse(
             available=False,
             license_id=license_id,
@@ -646,19 +639,40 @@ def ai_extract_obligations(
             ),
         )
 
-    # Prepend a short context line so Claude knows what this document is.
-    primer = (
-        f"This is a regulator-issued license / authorisation document for "
-        f"jurisdiction {lic.jurisdiction_code.upper()}, issued by "
-        f"{lic.authority}. The license name is: {lic.name}. "
-        f"Extract every ongoing compliance obligation the LICENSEE owes "
-        f"as a result of HOLDING this license: filings, returns, fees, "
-        f"reporting, periodic confirmations, change notifications, AML "
-        f"obligations. Ignore one-off pre-licensing steps that have "
-        f"already happened.\n\n--- LICENSE TEXT BEGINS ---\n\n"
-    )
-    truncated = text[: max(0, _MAX_PROMPT_CHARS - len(primer))]
-    payload_text = primer + truncated
+    from_document = len(text.strip()) >= 200
+    if from_document:
+        # Document-grounded: read the actual license text.
+        primer = (
+            f"This is a regulator-issued license / authorisation document for "
+            f"jurisdiction {lic.jurisdiction_code.upper()}, issued by "
+            f"{lic.authority}. The license name is: {lic.name}. "
+            f"Extract every ongoing compliance obligation the LICENSEE owes "
+            f"as a result of HOLDING this license: filings, returns, fees, "
+            f"reporting, periodic confirmations, change notifications, AML "
+            f"obligations. Ignore one-off pre-licensing steps that have "
+            f"already happened.\n\n--- LICENSE TEXT BEGINS ---\n\n"
+        )
+        truncated = text[: max(0, _MAX_PROMPT_CHARS - len(primer))]
+        payload_text = primer + truncated
+    else:
+        # No file attached — ask Claude from its regulatory knowledge so the
+        # admin still gets a list to cross-check against the curated rules.
+        payload_text = (
+            f"No license document is available — work from your knowledge of "
+            f"the regulator's regime.\n\n"
+            f"Jurisdiction: {lic.jurisdiction_code.upper()}\n"
+            f"Issuing authority / regulator: {lic.authority}\n"
+            f"License name: {lic.name}\n"
+            f"License type: {lic.license_type or '(not specified)'}\n\n"
+            f"List every ONGOING compliance obligation a holder of this kind of "
+            f"license typically owes the regulator: periodic returns, filings, "
+            f"fees, reports, periodic confirmations, change notifications, AML/"
+            f"CFT obligations, renewals. For each, note whether it is mandatory "
+            f"or conditional, and its usual frequency. Base this on the named "
+            f"authority and license type; do not invent obligations for a "
+            f"different regulator. If you are unsure, mark applicability "
+            f"accordingly rather than omitting it."
+        )
 
     try:
         result = extract_rules_from_text(
@@ -686,20 +700,33 @@ def ai_extract_obligations(
         payload={
             "candidates": len(result.rules),
             "chars": len(text),
+            "from_document": from_document,
         },
     )
     db.commit()
 
+    extra_note = (
+        None
+        if from_document
+        else (
+            "No license PDF attached — this list is Claude's best estimate from "
+            "the regulator + license type, not read from a document. Use it to "
+            "cross-check your tracked filings; verify before creating rules."
+        )
+    )
+    combined_notes = " ".join(n for n in (extra_note, result.notes) if n) or None
+
     return LicenseAIExtractResponse(
         available=True,
         license_id=license_id,
+        from_document=from_document,
         # Use the license's own short jurisdiction code (e.g. "uae"), NOT the
         # model's free-text inference (e.g. "United Arab Emirates"), so the
         # rules created from these candidates get a code that fits the column.
         jurisdiction_hint=lic.jurisdiction_code,
         extracted_chars=len(text),
         candidates=[c.model_dump() for c in result.rules],
-        notes=result.notes,
+        notes=combined_notes,
     )
 
 
