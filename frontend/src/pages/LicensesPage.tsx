@@ -967,6 +967,7 @@ function AIExtractDialog({
                 );
                 return (
                   <div className="flex flex-wrap gap-2">
+                    {sel(candFn, setCandFn, ["Finance", "Compliance", "Legal"], "functions")}
                     {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
                     {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
                     {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
