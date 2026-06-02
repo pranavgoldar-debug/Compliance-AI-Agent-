@@ -23,6 +23,23 @@ export const JURISDICTIONS: Record<
   australia: { name: "Australia", flag: "🇦🇺", iso2: "au" },
 };
 
+// Strip jurisdiction codes/suffixes that AI extraction sometimes appends to
+// filing names ("VAT_CA", "VAT (CA)", "VAT — DIFC") so the UI shows the plain
+// name ("VAT"). Conservative: only removes a trailing country/zone token.
+const _JUR_SUFFIX =
+  /[\s_\-—]*(?:[\(\[]\s*)?(?:CA|UK|US|USA|UAE|SG|SGP|LT|LTU|EU|IN|IND|DIFC|ADGM|GIFT|IFSC)(?:\s*[\)\]])?\s*$/i;
+
+export function cleanFilingName(name: string | null | undefined): string {
+  let s = (name ?? "").trim();
+  // Strip up to two trailing jurisdiction tokens (e.g. "VAT_CA", "X — DIFC").
+  for (let i = 0; i < 2; i++) {
+    const next = s.replace(_JUR_SUFFIX, "").trim();
+    if (next === s || next.length < 2) break;
+    s = next;
+  }
+  return s || (name ?? "");
+}
+
 export function jurisdiction(code: string): {
   name: string;
   flag: string;

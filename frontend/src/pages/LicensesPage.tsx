@@ -40,7 +40,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, JURISDICTIONS } from "@/lib/format";
+import { fmtDate, JURISDICTIONS, cleanFilingName } from "@/lib/format";
 import type {
   ApplicableRulesResponse,
   Entity,
@@ -903,7 +903,7 @@ function AIExtractDialog({
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{r.form_name}</span>
+                          <span className="font-medium">{cleanFilingName(r.form_name)}</span>
                           {isTracked(r.form_name, existingForms) ? (
                             <Badge variant="neutral">Already tracked</Badge>
                           ) : (
@@ -1515,11 +1515,11 @@ function RegulationsTable({
                 </td>
                 <td className="px-3 py-2 align-top">
                   <div className="font-medium">
-                    {r.plain_description || r.form_name}
+                    {r.plain_description || cleanFilingName(r.form_name)}
                   </div>
                   {r.plain_description && (
                     <div className="text-[11px] text-muted-foreground">
-                      {r.form_name}
+                      {cleanFilingName(r.form_name)}
                     </div>
                   )}
                   <div className="text-[11px] text-muted-foreground italic">
