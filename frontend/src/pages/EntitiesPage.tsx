@@ -39,9 +39,13 @@ export function EntitiesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const queryClient = useQueryClient();
-  const deleteOne = useMutation({
-    mutationFn: (id: number) => api.delete(`/api/entities/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entities"] }),
+  const deleteMany = useMutation({
+    mutationFn: (ids: number[]) =>
+      Promise.all(ids.map((id) => api.delete(`/api/entities/${id}`))),
+    onSuccess: (_r, ids) => {
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      window.alert(`Deleted ${ids.length} entity(ies).`);
+    },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
   const [q, setQ] = useState("");
@@ -200,14 +204,14 @@ export function EntitiesPage() {
         <TableView
           entities={filtered}
           isAdmin={isAdmin}
-          deleting={deleteOne.isPending}
-          onDelete={(id, name) => {
+          deleting={deleteMany.isPending}
+          onDeleteMany={(ids) => {
             if (
               window.confirm(
-                `Permanently delete "${name}" and everything tied to it (licenses, filings)? This can't be undone.`,
+                `Permanently delete ${ids.length} selected entity(ies) and everything tied to them (licenses, filings)? This can't be undone.`,
               )
             ) {
-              deleteOne.mutate(id);
+              deleteMany.mutate(ids);
             }
           }}
         />
@@ -223,19 +227,56 @@ function TableView({
   entities,
   isAdmin,
   deleting,
-  onDelete,
+  onDeleteMany,
 }: {
   entities: Entity[];
   isAdmin: boolean;
   deleting: boolean;
-  onDelete: (id: number, name: string) => void;
+  onDeleteMany: (ids: number[]) => void;
 }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const toggle = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const allSelected = entities.length > 0 && entities.every((e) => selected.has(e.id));
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(entities.map((e) => e.id)));
+  const selectedIds = entities.filter((e) => selected.has(e.id)).map((e) => e.id);
+
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {isAdmin && selectedIds.length > 0 && (
+        <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border bg-secondary/30">
+          <span className="text-sm">{selectedIds.length} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            disabled={deleting}
+            onClick={() => onDeleteMany(selectedIds)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete selected
+          </Button>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[1000px]">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
+              {isAdmin && (
+                <th className="px-3 py-2.5 w-8">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="accent-aspora-600"
+                  />
+                </th>
+              )}
               <th className="px-4 py-2.5 text-left font-medium">Entity</th>
               <th className="px-4 py-2.5 text-left font-medium">Type</th>
               <th className="px-4 py-2.5 text-left font-medium">Jurisdiction</th>
@@ -245,7 +286,6 @@ function TableView({
               <th className="px-4 py-2.5 text-right font-medium">Overdue</th>
               <th className="px-4 py-2.5 text-right font-medium">In alert</th>
               <th className="px-4 py-2.5 text-left font-medium">Last activity</th>
-              {isAdmin && <th className="px-4 py-2.5"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -257,6 +297,19 @@ function TableView({
                   window.location.href = `/entities/${e.id}`;
                 }}
               >
+                {isAdmin && (
+                  <td
+                    className="px-3 py-2.5"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(e.id)}
+                      onChange={() => toggle(e.id)}
+                      className="accent-aspora-600"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-2.5">
                   <Link
                     to={`/entities/${e.id}`}
@@ -314,21 +367,6 @@ function TableView({
                 <td className="px-4 py-2.5 text-xs text-muted-foreground">
                   {e.last_filed_at ? fmtRelative(e.last_filed_at) : "No filings yet"}
                 </td>
-                {isAdmin && (
-                  <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        onDelete(e.id, e.name);
-                      }}
-                      disabled={deleting}
-                      title="Delete this entity"
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                )}
               </tr>
             ))}
           </tbody>
