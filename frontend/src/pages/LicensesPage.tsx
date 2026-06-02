@@ -115,6 +115,30 @@ export function LicensesPage() {
     queryClient.invalidateQueries({ queryKey: ["licenses"] });
   }
 
+  const importOrgChart = useMutation({
+    mutationFn: () =>
+      api.post<{
+        created_entities: number;
+        backfilled_entities: number;
+        created_licenses: number;
+        skipped_licenses: number;
+      }>("/api/licenses/import-org-chart"),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["licenses"] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      queryClient.invalidateQueries({ queryKey: ["license-rules"] });
+      window.alert(
+        `Imported from org chart.\n` +
+          `New licenses added: ${r.created_licenses}\n` +
+          `Already present (skipped): ${r.skipped_licenses}\n` +
+          `New entities added: ${r.created_entities}\n` +
+          `Entities backfilled: ${r.backfilled_entities}\n\n` +
+          `Everything is editable — open any license/entity to adjust.`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -122,10 +146,31 @@ export function LicensesPage() {
         description="Authorisations each entity holds from regulators. Upload one to see which filings apply to it."
         actions={
           isAdmin && (
-            <Button onClick={() => setUploadOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Upload license
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={importOrgChart.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Import all entities + licenses from the Vance Inc. org chart? Existing ones (matched by name / license number) are skipped — only missing ones are added, and each stays fully editable.",
+                    )
+                  ) {
+                    importOrgChart.mutate();
+                  }
+                }}
+                title="Idempotently add every org-chart entity + license that isn't already in the system"
+              >
+                {importOrgChart.isPending && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Import from org chart
+              </Button>
+              <Button onClick={() => setUploadOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Upload license
+              </Button>
+            </div>
           )
         }
       />

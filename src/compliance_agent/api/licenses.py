@@ -1069,3 +1069,37 @@ def schedule_all_for_license(
     return ScheduleAllResponse(
         scheduled=scheduled, skipped_existing=skipped, applicable=applicable
     )
+
+
+# ---------------------------------------------------------------------------
+# Import entities + licences from the Vance Inc. org-chart data
+# ---------------------------------------------------------------------------
+class ImportOrgChartResult(BaseModel):
+    created_entities: int
+    backfilled_entities: int
+    created_licenses: int
+    skipped_licenses: int
+
+
+@router.post("/import-org-chart", response_model=ImportOrgChartResult)
+def import_org_chart(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ImportOrgChartResult:
+    """Admin-only: idempotently create every entity + licence from the Vance
+    Inc. legal-entity org chart. Existing entities/licences (matched by name /
+    licence number) are skipped — only missing ones are added, and each is a
+    fully-editable row. Shareholding is not imported."""
+    from compliance_agent.data.org_chart import sync_org_chart
+
+    summary = sync_org_chart()
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="licenses.import_org_chart",
+        target_type="license",
+        target_id=None,
+        payload=summary,
+    )
+    db.commit()
+    return ImportOrgChartResult(**summary)

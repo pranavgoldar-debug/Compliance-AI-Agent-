@@ -20,6 +20,7 @@ export const JURISDICTIONS: Record<
   singapore: { name: "Singapore", flag: "🇸🇬", iso2: "sg" },
   canada: { name: "Canada", flag: "🇨🇦", iso2: "ca" },
   lithuania: { name: "Lithuania", flag: "🇱🇹", iso2: "lt" },
+  australia: { name: "Australia", flag: "🇦🇺", iso2: "au" },
 };
 
 export function jurisdiction(code: string): {
