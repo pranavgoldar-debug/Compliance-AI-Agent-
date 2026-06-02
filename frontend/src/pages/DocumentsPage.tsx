@@ -3,7 +3,8 @@
 // Right: file list (or grid) for the current selection.
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   ChevronDown,
   ChevronRight,
@@ -14,6 +15,7 @@ import {
   Search,
   Building2,
   FileStack,
+  Loader2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
@@ -51,6 +53,19 @@ export function DocumentsPage() {
   const [layout, setLayout] = useState<"rows" | "grid">("rows");
   const [q, setQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | DocumentCategory>("all");
+
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
+
+  const clearAll = useMutation({
+    mutationFn: () => api.post<{ deleted: number }>("/api/documents/clear-all"),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      window.alert(`Removed ${r.deleted} document(s). The workspace is clean.`);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
   // Eager-loaded entity list — fuels the left tree.
   const { data: entities = [] } = useQuery({
@@ -97,6 +112,27 @@ export function DocumentsPage() {
         title="Documents"
         description="Filings, certificates, and audit artifacts. Pick an entity in the sidebar to upload — files always live under one entity."
         actions={
+          <div className="flex items-center gap-2">
+          {isAdmin && allDocs.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={clearAll.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Delete ALL ${allDocs.length} stored document(s) and their files? This resets Documents to a clean slate and can't be undone.`,
+                  )
+                ) {
+                  clearAll.mutate();
+                }
+              }}
+            >
+              {clearAll.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Clear all documents
+            </Button>
+          )}
           <div className="inline-flex rounded-lg border border-input overflow-hidden">
             <button
               onClick={() => setLayout("rows")}
@@ -118,6 +154,7 @@ export function DocumentsPage() {
               <LayoutGrid className="h-3.5 w-3.5" />
               Grid
             </button>
+          </div>
           </div>
         }
       />

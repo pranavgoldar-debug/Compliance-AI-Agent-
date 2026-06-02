@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, joinedload
 from compliance_agent import storage
 from compliance_agent.api._helpers import log_activity, serialize_user
 from compliance_agent.api.schemas import DocumentLinkCreate, DocumentOut, DocumentUpdate
-from compliance_agent.auth import get_current_user
+from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
     Document,
     DocumentCategory,
@@ -205,6 +205,36 @@ def delete_document(
         storage.delete(path)
     except Exception:
         pass
+
+
+@router.post("/clear-all")
+def clear_all_documents(
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> dict:
+    """Admin-only: delete EVERY stored document (rows + files). Used to reset
+    the workspace to a clean slate. Cannot be undone."""
+    docs = db.execute(select(Document)).scalars().all()
+    paths = [d.storage_path for d in docs if d.storage_path]
+    count = len(docs)
+    for d in docs:
+        db.delete(d)
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="documents.cleared_all",
+        target_type="document",
+        target_id=None,
+        payload={"deleted": count},
+    )
+    db.commit()
+    # Best-effort storage cleanup — rows are already gone.
+    for p in paths:
+        try:
+            storage.delete(p)
+        except Exception:  # noqa: BLE001
+            pass
+    return {"deleted": count}
 
 
 # ---------------------------------------------------------------------------
