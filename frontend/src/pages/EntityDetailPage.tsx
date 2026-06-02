@@ -91,6 +91,13 @@ export function EntityDetailPage() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: entityLicenses = [] } = useQuery({
+    queryKey: ["entity-licenses", entityId],
+    queryFn: () => api.get<License[]>(`/api/licenses?entity_id=${entityId}`),
+    enabled: !!entityId,
+    refetchInterval: 30_000,
+  });
+
   if (loadingEntity) {
     return (
       <div className="space-y-6">
@@ -136,14 +143,25 @@ export function EntityDetailPage() {
               {obligations?.length ?? 0}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="licenses">Licenses</TabsTrigger>
+          <TabsTrigger value="licenses">
+            Licenses
+            {entityLicenses.length > 0 && (
+              <Badge variant="neutral" className="ml-1">
+                {entityLicenses.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="people">Key Persons</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
-          <OverviewTab entity={entity} obligations={obligations ?? []} />
+          <OverviewTab
+            entity={entity}
+            obligations={obligations ?? []}
+            licenses={entityLicenses}
+          />
         </TabsContent>
 
         <TabsContent value="registrations">
@@ -457,9 +475,11 @@ function EditEntityDialog({
 function OverviewTab({
   entity,
   obligations,
+  licenses,
 }: {
   entity: Entity;
   obligations: Obligation[];
+  licenses: License[];
 }) {
   // Recent 5 obligation changes — fake "recent activity" feed sourced from
   // updated_at on this entity's obligations. Real activity feed lands in P5.
@@ -519,6 +539,44 @@ function OverviewTab({
             <div className="text-xs text-muted-foreground pt-2 border-t border-border">
               Backup: <span className="italic">Unassigned</span>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Licenses held
+              </h3>
+              <Link to="/licenses" className="text-xs text-aspora-700 hover:underline">
+                Manage
+              </Link>
+            </div>
+            {licenses.length === 0 ? (
+              <div className="text-sm text-muted-foreground italic">
+                No licenses on record.
+              </div>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {licenses.map((l) => (
+                  <li
+                    key={l.id}
+                    className="flex items-start justify-between gap-2 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{l.name}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {l.authority}
+                        {l.license_number ? ` · ${l.license_number}` : ""}
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                      {l.expiry_date || "No expiry"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
 
