@@ -227,7 +227,9 @@ def cleanup_recent_production(
     (default 24). By default limited to rules the calling admin created, so one
     admin can't wipe another's work by accident. Also removes any filings
     scheduled from those rules; proof documents are kept (unlinked)."""
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=hours)
+    # created_at is stored naive (server now()), so compare against a naive
+    # UTC cutoff to avoid tz-offset surprises on Postgres.
+    cutoff = datetime.now(tz=timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     conds = [Rule.status == RuleStatus.production, Rule.created_at >= cutoff]
     if mine_only:
         conds.append(Rule.created_by_id == actor.id)
