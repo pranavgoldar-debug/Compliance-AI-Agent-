@@ -1009,11 +1009,6 @@ class ScheduleAllResponse(BaseModel):
     applicable: int
 
 
-@router.post(
-    "/{license_id}/schedule-all",
-    response_model=ScheduleAllResponse,
-    status_code=201,
-)
 def _schedule_filings_for_license(
     db: Session, lic: License, *, mandatory_only: bool
 ) -> tuple[int, int, int]:
@@ -1062,6 +1057,11 @@ def _schedule_filings_for_license(
     return scheduled, skipped, applicable
 
 
+@router.post(
+    "/{license_id}/schedule-all",
+    response_model=ScheduleAllResponse,
+    status_code=201,
+)
 def schedule_all_for_license(
     license_id: int,
     db: Session = Depends(get_session),
