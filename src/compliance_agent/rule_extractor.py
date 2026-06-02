@@ -19,7 +19,7 @@ from compliance_agent.db import Applicability, TaxType
 SYSTEM_PROMPT = """You convert raw regulatory text into a list of recurring or event-based filing obligations.
 
 For each obligation you extract:
-- Use the official form/report name where one exists (GSTR-3B, Form 1120, CT600, SAR, etc.). If there is no formal form, name the deliverable concisely (e.g. "PSP authorization renewal" or "Breach notification to supervisory authority"). Use the plain name only — do NOT append jurisdiction codes or suffixes like "VAT_CA", "VAT (UK)", "Return — DIFC". Keep it human-readable.
+- Use the official form/report name where one exists (GSTR-3B, Form 1120, CT600, SAR, etc.). If there is no formal form, name the deliverable concisely (e.g. "PSP authorization renewal" or "Breach notification to supervisory authority"). Use the plain name only — do NOT append jurisdiction codes/suffixes ("VAT_CA", "VAT (UK)", "Return — DIFC") and do NOT add parenthetical explanations or asides in the name ("AGM (not a filing, but a statutory meeting)"). Just the name ("AGM"); put any explanation in `plain_description`.
 - The authority who receives it (RBI, FCA, FinCEN, MAS, CBUAE, etc.).
 - The frequency the source describes (Monthly / Quarterly / Annual / Half-Yearly / Event-based / Continuous / One-time / Bi-annual).
 - A `due_date_rule` describing exactly when it must be filed for a calendar-year company. Include the date or day-of-month/quarter. Cite the rule's section if visible.

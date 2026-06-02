@@ -734,6 +734,10 @@ function AIExtractDialog({
   const [response, setResponse] = useState<AIExtractResponse | null>(null);
   const [kept, setKept] = useState<Set<number>>(new Set());
   const [candSearch, setCandSearch] = useState("");
+  const [candReg, setCandReg] = useState("");
+  const [candCat, setCandCat] = useState("");
+  const [candFreq, setCandFreq] = useState("");
+  const [candAppl, setCandAppl] = useState("");
 
   const extractMutation = useMutation({
     mutationFn: () =>
@@ -772,29 +776,36 @@ function AIExtractDialog({
     createMutation.reset();
   }
 
+  if (!open) return null;
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!v) reset();
-        onOpenChange(v);
-      }}
-    >
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-aspora-600" />
-            Extract obligations from this license
-          </DialogTitle>
-          <DialogDescription>
-            Claude reads the uploaded license file and pulls out every ongoing
-            compliance obligation the licensee owes. You review, tick the ones
-            to keep, and they're created as Staging rules attached to{" "}
-            <strong>{license.entity_name}</strong>.
-          </DialogDescription>
-        </DialogHeader>
+    <Card className="border-aspora-300 bg-aspora-50/20">
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-aspora-600" />
+              Extract obligations from this license
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Claude reads the uploaded license file and pulls out every ongoing
+              compliance obligation the licensee owes. Review, tick the ones to
+              keep, and they're created as Staging rules attached to{" "}
+              <strong>{license.entity_name}</strong>.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              reset();
+              onOpenChange(false);
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
 
-        <div className="p-6 space-y-4">
+        <div className="space-y-4">
           {!response ? (
             <div className="text-sm text-muted-foreground space-y-3">
               <p>
@@ -870,15 +881,54 @@ function AIExtractDialog({
                   className="pl-8 h-9 text-sm"
                 />
               </div>
+              {(() => {
+                const uniq = (vals: string[]) =>
+                  Array.from(new Set(vals.filter(Boolean))).sort((a, b) =>
+                    a.localeCompare(b),
+                  );
+                const sel = (
+                  value: string,
+                  set: (v: string) => void,
+                  opts: string[],
+                  label: string,
+                ) => (
+                  <select
+                    value={value}
+                    onChange={(e) => set(e.target.value)}
+                    className="h-8 rounded border border-input bg-background px-2 text-xs"
+                  >
+                    <option value="">All {label}</option>
+                    {opts.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                );
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
+                    {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
+                    {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
+                    {sel(candAppl, setCandAppl, ["Mandatory", "Conditional", "Sector-specific"], "status")}
+                  </div>
+                );
+              })()}
               <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
                 {response.candidates
                   .map((r, i) => ({ r, i }))
                   .filter(({ r }) => {
                     const q = candSearch.trim().toLowerCase();
-                    if (!q) return true;
-                    return `${r.form_name} ${r.authority} ${r.category} ${r.frequency}`
-                      .toLowerCase()
-                      .includes(q);
+                    if (q &&
+                      !`${r.form_name} ${r.plain_description ?? ""} ${r.authority} ${r.category} ${r.frequency}`
+                        .toLowerCase()
+                        .includes(q))
+                      return false;
+                    if (candReg && r.authority !== candReg) return false;
+                    if (candCat && r.category !== candCat) return false;
+                    if (candFreq && r.frequency !== candFreq) return false;
+                    if (candAppl && r.applicability !== candAppl) return false;
+                    return true;
                   })
                   .map(({ r, i }) => {
                   const isKept = kept.has(i);
@@ -954,7 +1004,7 @@ function AIExtractDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <div className="flex justify-end gap-2 pt-1">
           {!response ? (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -989,9 +1039,9 @@ function AIExtractDialog({
               )}
             </>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

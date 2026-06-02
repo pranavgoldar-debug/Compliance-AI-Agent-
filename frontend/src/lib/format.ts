@@ -31,6 +31,13 @@ const _JUR_SUFFIX =
 
 export function cleanFilingName(name: string | null | undefined): string {
   let s = (name ?? "").trim();
+  // Drop trailing parenthetical explanations: "AGM (not a filing, …)" -> "AGM",
+  // "Corporation Tax return (CT600)" -> "Corporation Tax return".
+  for (let i = 0; i < 3; i++) {
+    const next = s.replace(/\s*[\(\[][^()\[\]]*[\)\]]\s*$/, "").trim();
+    if (next === s || next.length < 2) break;
+    s = next;
+  }
   // Strip up to two trailing jurisdiction tokens (e.g. "VAT_CA", "X — DIFC").
   for (let i = 0; i < 2; i++) {
     const next = s.replace(_JUR_SUFFIX, "").trim();
