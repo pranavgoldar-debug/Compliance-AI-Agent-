@@ -11,6 +11,7 @@ import {
   Plus,
   Search,
   Building2,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
@@ -51,6 +52,11 @@ export function EntitiesPage() {
           : `Removed ${r.archived} org-chart entity(ies):\n${r.names.join("\n")}`,
       );
     },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const deleteOne = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/entities/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entities"] }),
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
   const [q, setQ] = useState("");
@@ -225,7 +231,20 @@ export function EntitiesPage() {
           }
         />
       ) : view === "table" ? (
-        <TableView entities={filtered} />
+        <TableView
+          entities={filtered}
+          isAdmin={isAdmin}
+          deleting={deleteOne.isPending}
+          onDelete={(id, name) => {
+            if (
+              window.confirm(
+                `Permanently delete "${name}" and everything tied to it (licenses, filings)? This can't be undone.`,
+              )
+            ) {
+              deleteOne.mutate(id);
+            }
+          }}
+        />
       ) : (
         <GridView entities={filtered} />
       )}
@@ -234,7 +253,17 @@ export function EntitiesPage() {
 }
 
 
-function TableView({ entities }: { entities: Entity[] }) {
+function TableView({
+  entities,
+  isAdmin,
+  deleting,
+  onDelete,
+}: {
+  entities: Entity[];
+  isAdmin: boolean;
+  deleting: boolean;
+  onDelete: (id: number, name: string) => void;
+}) {
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="overflow-x-auto">
@@ -250,6 +279,7 @@ function TableView({ entities }: { entities: Entity[] }) {
               <th className="px-4 py-2.5 text-right font-medium">Overdue</th>
               <th className="px-4 py-2.5 text-right font-medium">In alert</th>
               <th className="px-4 py-2.5 text-left font-medium">Last activity</th>
+              {isAdmin && <th className="px-4 py-2.5"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -318,6 +348,21 @@ function TableView({ entities }: { entities: Entity[] }) {
                 <td className="px-4 py-2.5 text-xs text-muted-foreground">
                   {e.last_filed_at ? fmtRelative(e.last_filed_at) : "No filings yet"}
                 </td>
+                {isAdmin && (
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        onDelete(e.id, e.name);
+                      }}
+                      disabled={deleting}
+                      title="Delete this entity"
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

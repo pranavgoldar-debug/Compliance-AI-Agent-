@@ -183,3 +183,78 @@ def archive_org_chart_extras(
         except Exception:  # noqa: BLE001
             pass
     return {"archived": len(removed), "names": removed}
+
+
+def _hard_delete_entity(db: Session, e: Entity) -> list[str]:
+    """Delete an entity + everything that hangs off it (licences, documents,
+    obligations and their comments/notifications, rule links). Returns the
+    storage paths to sweep. Does NOT commit."""
+    from sqlalchemy import delete as sa_delete
+
+    from compliance_agent.db import (
+        Comment,
+        Document,
+        License,
+        Notification,
+        Obligation,
+    )
+
+    paths: list[str] = []
+    obs = (
+        db.execute(select(Obligation).where(Obligation.entity_id == e.id))
+        .scalars()
+        .all()
+    )
+    for ob in obs:
+        db.execute(sa_delete(Comment).where(Comment.obligation_id == ob.id))
+        db.execute(sa_delete(Notification).where(Notification.obligation_id == ob.id))
+        db.execute(sa_delete(Document).where(Document.obligation_id == ob.id))
+        db.delete(ob)
+    for lic in (
+        db.execute(select(License).where(License.entity_id == e.id)).scalars().all()
+    ):
+        if lic.storage_path:
+            paths.append(lic.storage_path)
+        db.delete(lic)
+    for doc in (
+        db.execute(select(Document).where(Document.entity_id == e.id)).scalars().all()
+    ):
+        if doc.storage_path:
+            paths.append(doc.storage_path)
+        db.delete(doc)
+    e.rules = []
+    db.flush()
+    db.delete(e)
+    return paths
+
+
+@router.delete("/{entity_id}", status_code=204)
+def delete_entity(
+    entity_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """Admin-only: permanently delete one entity and everything tied to it."""
+    from compliance_agent import storage
+    from fastapi import Response
+
+    entity = db.get(Entity, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found.")
+    name = entity.name
+    paths = _hard_delete_entity(db, entity)
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="entity.deleted",
+        target_type="entity",
+        target_id=entity_id,
+        payload={"name": name},
+    )
+    db.commit()
+    for p in paths:
+        try:
+            storage.delete(p)
+        except Exception:  # noqa: BLE001
+            pass
+    return Response(status_code=204)
