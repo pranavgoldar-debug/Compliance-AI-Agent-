@@ -1763,13 +1763,22 @@ function RegulationsTable({
                   </Badge>
                 </td>
                 <td className="px-3 py-2 align-top" onClick={(e) => e.stopPropagation()}>
-                  {!r.next_obligation_id && isAdmin && (
+                  {r.next_obligation_id ? (
+                    <a
+                      href={`/obligations/${r.next_obligation_id}`}
+                      className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                      title="Already scheduled — open it on the calendar"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      On calendar
+                    </a>
+                  ) : isAdmin ? (
                     <ScheduleRuleButton
                       licenseId={licenseId}
                       ruleId={r.id}
                       onScheduled={onScheduled}
                     />
-                  )}
+                  ) : null}
                 </td>
               </tr>
             ))
