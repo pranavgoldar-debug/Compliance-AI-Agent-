@@ -36,6 +36,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, JURISDICTIONS } from "@/lib/format";
@@ -73,11 +75,11 @@ export function LicensesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [q, setQ] = useState("");
   const [jurisdiction, setJurisdiction] = useState<string>("");
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [activeLicense, setActiveLicense] = useState<License | null>(null);
   // Brief check-mark flash after a successful manual refresh so the user
   // gets visual confirmation even when no new data arrived.
   const [justRefreshed, setJustRefreshed] = useState(false);
@@ -262,7 +264,7 @@ export function LicensesPage() {
                 <tr
                   key={lic.id}
                   className="border-t border-border hover:bg-secondary/20 cursor-pointer"
-                  onClick={() => setActiveLicense(lic)}
+                  onClick={() => navigate(`/licenses/${lic.id}`)}
                 >
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
@@ -316,15 +318,6 @@ export function LicensesPage() {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onUploaded={invalidate}
-      />
-      <LicenseDetailDialog
-        license={activeLicense}
-        onClose={() => setActiveLicense(null)}
-        isAdmin={isAdmin}
-        onChanged={() => {
-          invalidate();
-          setActiveLicense(null);
-        }}
       />
     </div>
   );
@@ -997,35 +990,34 @@ function AIExtractDialog({
 }
 
 
-function LicenseDetailDialog({
+// Full-page license detail body (revamp Phase 5 — moved out of the pop-up).
+// Renders the summary, the hierarchical applicable-regulations table, AI
+// extract + schedule-all actions, and delete. Used by LicenseDetailPage.
+export function LicenseDetailBody({
   license,
-  onClose,
   isAdmin,
   onChanged,
 }: {
-  license: License | null;
-  onClose: () => void;
+  license: License;
   isAdmin: boolean;
   onChanged: () => void;
 }) {
-  const open = license !== null;
   const [aiOpen, setAiOpen] = useState(false);
   const [ruleSearch, setRuleSearch] = useState("");
   const detailQueryClient = useQueryClient();
 
   const rulesQuery = useQuery({
-    queryKey: ["license-rules", license?.id],
+    queryKey: ["license-rules", license.id],
     queryFn: () =>
       api.get<ApplicableRulesResponse>(
-        `/api/licenses/${license!.id}/applicable-rules`,
+        `/api/licenses/${license.id}/applicable-rules`,
       ),
-    enabled: open,
   });
 
   const scheduleAllMutation = useMutation({
     mutationFn: () =>
       api.post<{ scheduled: number; skipped_existing: number; applicable: number }>(
-        `/api/licenses/${license!.id}/schedule-all`,
+        `/api/licenses/${license.id}/schedule-all`,
       ),
     onSuccess: (r) => {
       rulesQuery.refetch();
@@ -1042,26 +1034,51 @@ function LicenseDetailDialog({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => api.delete(`/api/licenses/${license!.id}`),
+    mutationFn: () => api.delete(`/api/licenses/${license.id}`),
     onSuccess: () => onChanged(),
   });
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent size="xl">
-        {license && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+    <Card>
+      <CardContent className="p-6">
+        <div className="space-y-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
                 <FileBadge className="h-5 w-5 text-aspora-600" />
                 {license.name}
-              </DialogTitle>
-              <DialogDescription>
+              </h2>
+              <div className="text-sm text-muted-foreground">
                 {license.license_type || "License"} · {license.authority}
-              </DialogDescription>
-            </DialogHeader>
+              </div>
+            </div>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Delete license "${license.name}"? This also removes its uploaded file.`,
+                    )
+                  ) {
+                    deleteMutation.mutate();
+                  }
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                Delete
+              </Button>
+            )}
+          </div>
 
-            <div className="p-6 space-y-5">
+          <div>
               {/* Summary grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <Stat label="Entity" value={license.entity_name} />
@@ -1242,35 +1259,9 @@ function LicenseDetailDialog({
               }}
             />
 
-            <DialogFooter>
-              {isAdmin && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (
-                      confirm(
-                        `Delete license "${license.name}"? This also removes its uploaded file.`,
-                      )
-                    ) {
-                      deleteMutation.mutate();
-                    }
-                  }}
-                  disabled={deleteMutation.isPending}
-                >
-                  {deleteMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  Delete
-                </Button>
-              )}
-              <Button onClick={onClose}>Close</Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

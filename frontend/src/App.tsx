@@ -12,6 +12,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { CalendarPage } from "@/pages/CalendarPage";
 import { EntitiesPage } from "@/pages/EntitiesPage";
 import { EntityDetailPage } from "@/pages/EntityDetailPage";
+import { LicenseDetailPage } from "@/pages/LicenseDetailPage";
 import { TasksPage } from "@/pages/TasksPage";
 import { RulesPage } from "@/pages/RulesPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -56,6 +57,7 @@ export default function App() {
                 {/* Flat IA — 4 daily-use pages at the top level */}
                 <Route index element={<DashboardPage />} />
                 <Route path="licenses" element={<LicensesPage />} />
+                <Route path="licenses/:licenseId" element={<LicenseDetailPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
                 {/* Combined Compliance & Finance — one Tasks page where
                     both teams work. The Awaiting payment chip is the
