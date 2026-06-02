@@ -47,6 +47,43 @@ export function cleanFilingName(name: string | null | undefined): string {
   return s || (name ?? "");
 }
 
+// Mirror of the backend classification.derive_function — maps a rule's
+// category/area to the responsible team (Finance / Compliance / Legal). Used
+// client-side (e.g. AI-extract candidates that don't carry a function yet).
+export function deriveFunction(category = "", area = ""): string {
+  const t = `${category} ${area}`.toLowerCase();
+  const has = (kws: string[]) => kws.some((k) => t.includes(k));
+  if (
+    has([
+      "aml", "cft", "ctf", "financial regulation", "consumer protection",
+      "data protection", "risk", "fraud", "regulatory reporting", "regdata",
+      "economic substance", "statistics", "complaints", "sanction",
+      "fitness", "conduct", "prudential", "reporting",
+    ])
+  )
+    return "Compliance";
+  if (
+    has([
+      "tax", "vat", "gst", "hst", "pst", "qst", "excise", "payroll",
+      "pension", "social security", "accounting", "information return",
+      "unclaimed property", "duty", "customs", "withholding", "remittance",
+      "intrastat",
+    ])
+  )
+    return "Finance";
+  if (
+    has([
+      "corporate law", "corporate record", "corporate & statutory",
+      "statutory filing", "statutory account", "company registration",
+      "registry", "registrar", "beneficial owner", "ubo", "psc",
+      "licens", "incorporation", "governance", "confirmation statement",
+      "annual return", "change notification", "premises",
+    ])
+  )
+    return "Legal";
+  return "Compliance";
+}
+
 export function jurisdiction(code: string): {
   name: string;
   flag: string;

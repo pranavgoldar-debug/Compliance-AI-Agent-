@@ -40,7 +40,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, JURISDICTIONS, cleanFilingName } from "@/lib/format";
+import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
 import type {
   ApplicableRulesResponse,
   Entity,
@@ -758,6 +758,7 @@ function AIExtractDialog({
   const [response, setResponse] = useState<AIExtractResponse | null>(null);
   const [kept, setKept] = useState<Set<number>>(new Set());
   const [candSearch, setCandSearch] = useState("");
+  const [candFn, setCandFn] = useState("");
   const [candReg, setCandReg] = useState("");
   const [candCat, setCandCat] = useState("");
   const [candFreq, setCandFreq] = useState("");
@@ -931,6 +932,7 @@ function AIExtractDialog({
                 );
                 return (
                   <div className="flex flex-wrap gap-2">
+                    {sel(candFn, setCandFn, ["Finance", "Compliance", "Legal"], "functions")}
                     {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
                     {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
                     {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
@@ -947,6 +949,8 @@ function AIExtractDialog({
                       !`${r.form_name} ${r.plain_description ?? ""} ${r.authority} ${r.category} ${r.frequency}`
                         .toLowerCase()
                         .includes(q))
+                      return false;
+                    if (candFn && deriveFunction(r.category, r.area) !== candFn)
                       return false;
                     if (candReg && r.authority !== candReg) return false;
                     if (candCat && r.category !== candCat) return false;
@@ -979,6 +983,7 @@ function AIExtractDialog({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{cleanFilingName(r.form_name)}</span>
+                          <Badge variant="neutral">{deriveFunction(r.category, r.area)}</Badge>
                           {isTracked(r.form_name, existingForms) ? (
                             <Badge variant="neutral">Already tracked</Badge>
                           ) : (
