@@ -89,6 +89,7 @@ interface Filters {
   jurisdictions: string[];
   taxTypes: string[];
   applicabilities: string[];
+  authorities: string[];
   statuses: ObligationStatus[];
   assigneeIds: number[];
 }
@@ -100,6 +101,7 @@ function emptyFilters(): Filters {
     jurisdictions: [],
     taxTypes: [],
     applicabilities: [],
+    authorities: [],
     statuses: [],
     assigneeIds: [],
   };
@@ -176,16 +178,33 @@ export function CalendarPage() {
     filters.jurisdictions.length +
     filters.taxTypes.length +
     filters.applicabilities.length +
+    filters.authorities.length +
     filters.statuses.length +
     filters.assigneeIds.length;
 
-  // Applicability (Mandatory / Conditional / Sector-specific) filter, applied
-  // client-side on already-loaded data. Empty = show everything.
+  // Distinct authorities/regulators present in the loaded range — drives the
+  // Authority filter options. Derived from the server-fetched items (before
+  // client-side filtering) so options never disappear as you select.
+  const authorityOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of items) if (o.rule_authority) set.add(o.rule_authority);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  // Applicability (Mandatory / Conditional / Sector-specific) + Authority
+  // filters, applied client-side on already-loaded data. Empty = show all.
   const filteredItems = useMemo(() => {
-    if (filters.applicabilities.length === 0) return items;
-    const set = new Set(filters.applicabilities);
-    return items.filter((o) => set.has(o.rule_applicability));
-  }, [items, filters.applicabilities]);
+    let out = items;
+    if (filters.applicabilities.length > 0) {
+      const set = new Set(filters.applicabilities);
+      out = out.filter((o) => set.has(o.rule_applicability));
+    }
+    if (filters.authorities.length > 0) {
+      const set = new Set(filters.authorities);
+      out = out.filter((o) => set.has(o.rule_authority));
+    }
+    return out;
+  }, [items, filters.applicabilities, filters.authorities]);
 
   // Build a date -> obligations map for the heatmap.
   const byDate = useMemo(() => {
@@ -287,6 +306,13 @@ export function CalendarPage() {
             options={APPLICABILITIES.map((a) => ({ value: a, label: a }))}
             selected={filters.applicabilities}
             onChange={(vals) => setFilters((f) => ({ ...f, applicabilities: vals }))}
+          />
+          <MultiSelectFilter
+            label="Authority"
+            options={authorityOptions.map((a) => ({ value: a, label: a }))}
+            selected={filters.authorities}
+            onChange={(vals) => setFilters((f) => ({ ...f, authorities: vals }))}
+            searchable
           />
           <MultiSelectFilter
             label="Status"
