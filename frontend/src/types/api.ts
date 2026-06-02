@@ -417,6 +417,9 @@ export interface LicenseRuleHit {
   due_date_rule: string;
   payment_rule: string | null;
   applicability: string;
+  responsible_function: string | null;
+  plain_description: string | null;
+  tax_type: string;
   relevance: "direct" | "entity";
   match_reason: string | null;
   next_obligation_id: number | null;

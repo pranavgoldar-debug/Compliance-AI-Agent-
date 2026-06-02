@@ -20,6 +20,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/PageHeader";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
@@ -1203,42 +1204,18 @@ function LicenseDetailDialog({
                       const q = ruleSearch.trim().toLowerCase();
                       const direct = q
                         ? rulesQuery.data.direct.filter((r) =>
-                            `${r.form_name} ${r.name} ${r.authority} ${r.category} ${r.area} ${r.frequency}`
+                            `${r.form_name} ${r.name} ${r.plain_description ?? ""} ${r.authority} ${r.category} ${r.area} ${r.frequency} ${r.responsible_function ?? ""}`
                               .toLowerCase()
                               .includes(q),
                           )
                         : rulesQuery.data.direct;
-                      const mandatory = direct.filter(
-                        (r) => r.applicability === "Mandatory",
-                      );
-                      const optional = direct.filter(
-                        (r) => r.applicability !== "Mandatory",
-                      );
                       return (
-                        <>
-                          {mandatory.length > 0 && (
-                            <RuleGroup
-                              title={`Mandatory · ${mandatory.length}`}
-                              subtitle="You MUST file these — non-compliance is a regulatory breach."
-                              items={mandatory}
-                              tone="mandatory"
-                              licenseId={license.id}
-                              isAdmin={isAdmin}
-                              onScheduled={() => rulesQuery.refetch()}
-                            />
-                          )}
-                          {optional.length > 0 && (
-                            <RuleGroup
-                              title={`Conditional / Sector-specific · ${optional.length}`}
-                              subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
-                              items={optional}
-                              tone="conditional"
-                              licenseId={license.id}
-                              isAdmin={isAdmin}
-                              onScheduled={() => rulesQuery.refetch()}
-                            />
-                          )}
-                        </>
+                        <RegulationsTable
+                          items={direct}
+                          licenseId={license.id}
+                          isAdmin={isAdmin}
+                          onScheduled={() => rulesQuery.refetch()}
+                        />
                       );
                     })()}
                   </div>
@@ -1409,6 +1386,189 @@ function statusBadgeVariant(
 function statusLabel(status: string | null): string {
   if (!status) return "Not scheduled";
   return status.replace(/_/g, " ");
+}
+
+// Hierarchical, per-column filterable regulations table (revamp Phase 2/3).
+// Columns: Function · Regulator · Category · Obligation (plain English) ·
+// Frequency · Due · Mandatory/Conditional. Every column except the obligation
+// text gets a dropdown filter.
+function RegulationsTable({
+  items,
+  licenseId,
+  isAdmin,
+  onScheduled,
+}: {
+  items: LicenseRuleHit[];
+  licenseId: number;
+  isAdmin: boolean;
+  onScheduled: () => void;
+}) {
+  const [fn, setFn] = useState("");
+  const [reg, setReg] = useState("");
+  const [cat, setCat] = useState("");
+  const [freq, setFreq] = useState("");
+  const [appl, setAppl] = useState("");
+
+  const uniq = (vals: (string | null | undefined)[]) =>
+    Array.from(new Set(vals.filter((v): v is string => !!v))).sort((a, b) =>
+      a.localeCompare(b),
+    );
+  const fnOpts = uniq(items.map((r) => r.responsible_function));
+  const regOpts = uniq(items.map((r) => r.authority));
+  const catOpts = uniq(items.map((r) => r.category));
+  const freqOpts = uniq(items.map((r) => r.frequency));
+
+  const rows = items.filter(
+    (r) =>
+      (!fn || r.responsible_function === fn) &&
+      (!reg || r.authority === reg) &&
+      (!cat || r.category === cat) &&
+      (!freq || r.frequency === freq) &&
+      (!appl ||
+        (appl === "Mandatory"
+          ? r.applicability === "Mandatory"
+          : r.applicability !== "Mandatory")),
+  );
+
+  const Sel = ({
+    value,
+    onChange,
+    opts,
+    label,
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    opts: string[];
+    label: string;
+  }) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-transparent text-[11px] font-normal normal-case text-foreground border border-border rounded px-1 py-0.5 mt-1"
+    >
+      <option value="">All {label}</option>
+      {opts.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <div className="rounded-lg border border-border overflow-x-auto">
+      <table className="w-full text-sm min-w-[920px]">
+        <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground align-top">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium w-[110px]">
+              Function
+              <Sel value={fn} onChange={setFn} opts={fnOpts} label="" />
+            </th>
+            <th className="px-3 py-2 text-left font-medium w-[150px]">
+              Regulator
+              <Sel value={reg} onChange={setReg} opts={regOpts} label="" />
+            </th>
+            <th className="px-3 py-2 text-left font-medium w-[140px]">
+              Category
+              <Sel value={cat} onChange={setCat} opts={catOpts} label="" />
+            </th>
+            <th className="px-3 py-2 text-left font-medium">Obligation</th>
+            <th className="px-3 py-2 text-left font-medium w-[120px]">
+              Frequency
+              <Sel value={freq} onChange={setFreq} opts={freqOpts} label="" />
+            </th>
+            <th className="px-3 py-2 text-left font-medium w-[130px]">Due</th>
+            <th className="px-3 py-2 text-left font-medium w-[120px]">
+              Status
+              <Sel
+                value={appl}
+                onChange={setAppl}
+                opts={["Mandatory", "Conditional"]}
+                label=""
+              />
+            </th>
+            <th className="px-3 py-2 w-[90px]"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={8} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                No filings match these filters.
+              </td>
+            </tr>
+          ) : (
+            rows.map((r) => (
+              <tr
+                key={r.id}
+                className={cn(
+                  "hover:bg-secondary/20",
+                  r.next_obligation_id && "cursor-pointer",
+                )}
+                onClick={() => {
+                  if (r.next_obligation_id)
+                    window.location.href = `/obligations/${r.next_obligation_id}`;
+                }}
+              >
+                <td className="px-3 py-2 align-top">
+                  <Badge variant="neutral">{r.responsible_function || "—"}</Badge>
+                </td>
+                <td className="px-3 py-2 align-top text-xs text-muted-foreground">
+                  {r.authority}
+                </td>
+                <td className="px-3 py-2 align-top text-xs">
+                  <div>{r.category}</div>
+                  {r.tax_type && r.tax_type !== "Not a Tax" && (
+                    <div className="text-[10px] text-muted-foreground">{r.tax_type}</div>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="font-medium">
+                    {r.plain_description || r.form_name}
+                  </div>
+                  {r.plain_description && (
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.form_name}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-muted-foreground italic">
+                    {r.due_date_rule}
+                  </div>
+                </td>
+                <td className="px-3 py-2 align-top text-xs">{r.frequency}</td>
+                <td className="px-3 py-2 align-top text-xs">
+                  {r.next_due_date ? (
+                    <div>
+                      {r.next_due_date}
+                      <div className="text-[10px] text-muted-foreground">
+                        {r.next_status ? statusLabel(r.next_status) : ""}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">Not scheduled</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <Badge variant={r.applicability === "Mandatory" ? "overdue" : "alert"}>
+                    {r.applicability === "Mandatory" ? "Mandatory" : "Conditional"}
+                  </Badge>
+                </td>
+                <td className="px-3 py-2 align-top" onClick={(e) => e.stopPropagation()}>
+                  {!r.next_obligation_id && isAdmin && (
+                    <ScheduleRuleButton
+                      licenseId={licenseId}
+                      ruleId={r.id}
+                      onScheduled={onScheduled}
+                    />
+                  )}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function RuleGroup({
