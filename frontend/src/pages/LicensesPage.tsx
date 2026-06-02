@@ -1025,25 +1025,6 @@ export function LicenseDetailBody({
       ),
   });
 
-  const scheduleAllMutation = useMutation({
-    mutationFn: () =>
-      api.post<{ scheduled: number; skipped_existing: number; applicable: number }>(
-        `/api/licenses/${license.id}/schedule-all`,
-      ),
-    onSuccess: (r) => {
-      rulesQuery.refetch();
-      detailQueryClient.invalidateQueries({ queryKey: ["calendar"] });
-      detailQueryClient.invalidateQueries({ queryKey: ["obligations"] });
-      detailQueryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      window.alert(
-        `Scheduled ${r.scheduled} filing(s) onto the calendar.\n` +
-          `Already on the calendar: ${r.skipped_existing}\n` +
-          `Total applicable to this license: ${r.applicable}`,
-      );
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/licenses/${license.id}`),
     onSuccess: () => onChanged(),
@@ -1177,30 +1158,6 @@ export function LicenseDetailBody({
                         Extract with AI
                       </Button>
                     )}
-                    {isAdmin &&
-                      rulesQuery.data &&
-                      rulesQuery.data.direct.length > 0 && (
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Schedule all ${rulesQuery.data!.direct.length} applicable filing(s) for this license onto the calendar? Filings already scheduled are skipped.`,
-                              )
-                            ) {
-                              scheduleAllMutation.mutate();
-                            }
-                          }}
-                          disabled={scheduleAllMutation.isPending}
-                          title="Create an obligation for every applicable filing so they all appear on the calendar"
-                        >
-                          {scheduleAllMutation.isPending && (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          )}
-                          <CalendarPlus className="h-3.5 w-3.5" />
-                          Schedule all on calendar
-                        </Button>
-                      )}
                   </div>
                 </div>
 
@@ -1432,6 +1389,29 @@ function RegulationsTable({
           : r.applicability !== "Mandatory")),
   );
 
+  const tableQueryClient = useQueryClient();
+  const scheduleSelection = useMutation({
+    mutationFn: (ruleIds: number[]) =>
+      api.post<{ scheduled: number; skipped_existing: number; applicable: number }>(
+        `/api/licenses/${licenseId}/schedule-rules`,
+        { rule_ids: ruleIds },
+      ),
+    onSuccess: (r) => {
+      onScheduled();
+      tableQueryClient.invalidateQueries({ queryKey: ["calendar"] });
+      tableQueryClient.invalidateQueries({ queryKey: ["obligations"] });
+      tableQueryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        `Scheduled ${r.scheduled} filing(s) onto the calendar.` +
+          (r.skipped_existing
+            ? `\nAlready scheduled (skipped): ${r.skipped_existing}`
+            : ""),
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const unscheduled = rows.filter((r) => !r.next_obligation_id);
+
   const Sel = ({
     value,
     onChange,
@@ -1458,7 +1438,36 @@ function RegulationsTable({
   );
 
   return (
-    <div className="rounded-lg border border-border overflow-x-auto">
+    <div className="space-y-2">
+      {isAdmin && (
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-xs text-muted-foreground">
+            Filter by function / regulator / category, then schedule the
+            selection onto the calendar.
+          </div>
+          <Button
+            size="sm"
+            disabled={unscheduled.length === 0 || scheduleSelection.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Schedule ${unscheduled.length} filing(s) (the current filter) onto the calendar with their deadlines?`,
+                )
+              ) {
+                scheduleSelection.mutate(unscheduled.map((r) => r.id));
+              }
+            }}
+            title="Creates calendar obligations for the filtered filings, routed to the right team"
+          >
+            {scheduleSelection.isPending && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
+            <CalendarPlus className="h-3.5 w-3.5" />
+            Schedule {unscheduled.length} on calendar
+          </Button>
+        </div>
+      )}
+      <div className="rounded-lg border border-border overflow-x-auto">
       <table className="w-full text-sm min-w-[920px]">
         <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground align-top">
           <tr>
@@ -1569,6 +1578,7 @@ function RegulationsTable({
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

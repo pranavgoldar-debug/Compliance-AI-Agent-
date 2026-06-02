@@ -414,7 +414,6 @@ export function DashboardPage() {
             <MetricCard
               value={data.awaiting_review}
               label="Pending verification"
-              sublabel="Compliance — admin approval"
               tone={data.awaiting_review > 0 ? "alert" : "muted"}
               icon={CheckCircle2}
               href="/tasks?status=pending_review"
@@ -422,7 +421,6 @@ export function DashboardPage() {
             <MetricCard
               value={data.awaiting_payment}
               label="Awaiting payment"
-              sublabel="Finance — pay & log UTR"
               tone={data.awaiting_payment > 0 ? "alert" : "muted"}
               icon={CheckCircle2}
               href="/tasks?awaiting_payment=1"

@@ -314,13 +314,9 @@ def create_license(
             )
         )
 
-    # Auto-schedule every mandatory filing for this jurisdiction onto the
-    # calendar the moment the licence is uploaded — frequency-based reminders
-    # then fire automatically. Conditional/sector-specific filings stay manual.
-    auto_scheduled, _, _ = _schedule_filings_for_license(
-        db, lic, mandatory_only=True
-    )
-
+    # No auto-scheduling on upload — the admin filters the applicable filings
+    # (function / regulator / category) and schedules the selection onto the
+    # calendar explicitly, so it doesn't get messy.
     log_activity(
         db,
         actor_id=user.id,
@@ -331,7 +327,6 @@ def create_license(
             "entity_id": entity_id,
             "name": lic.name,
             "authority": lic.authority,
-            "auto_scheduled": auto_scheduled,
         },
     )
     db.commit()
@@ -1007,6 +1002,84 @@ class ScheduleAllResponse(BaseModel):
     scheduled: int
     skipped_existing: int
     applicable: int
+
+
+def _dept_for_rule(rule: Rule) -> Department:
+    """Owning department for a rule, from its responsible function."""
+    fn = (rule.responsible_function or derive_function(rule.category, rule.area) or "").lower()
+    if fn == "finance":
+        return Department.finance
+    if fn == "legal":
+        return Department.legal
+    return Department.compliance
+
+
+class ScheduleRulesPayload(BaseModel):
+    rule_ids: list[int]
+
+
+@router.post(
+    "/{license_id}/schedule-rules",
+    response_model=ScheduleAllResponse,
+    status_code=201,
+)
+def schedule_rules_for_license(
+    license_id: int,
+    payload: ScheduleRulesPayload,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ScheduleAllResponse:
+    """Schedule the SELECTED filings (the admin's filtered set) onto the
+    calendar. Each obligation is routed to the department matching the rule's
+    function (finance / compliance / legal). Skips duplicates."""
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found.")
+
+    today_d = date.today()
+    scheduled = skipped = 0
+    for rid in payload.rule_ids:
+        rule = db.get(Rule, rid)
+        if rule is None:
+            continue
+        dept = _dept_for_rule(rule)
+        due = _next_due_for_rule(rule, today_d)
+        existing = db.execute(
+            select(Obligation).where(
+                Obligation.rule_id == rule.id,
+                Obligation.entity_id == lic.entity_id,
+                Obligation.due_date == due,
+                Obligation.department == dept,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            skipped += 1
+            continue
+        db.add(
+            Obligation(
+                rule_id=rule.id,
+                entity_id=lic.entity_id,
+                due_date=due,
+                status=ObligationStatus.not_started,
+                department=dept,
+            )
+        )
+        scheduled += 1
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="license.scheduled_rules",
+        target_type="license",
+        target_id=license_id,
+        payload={"scheduled": scheduled, "skipped_existing": skipped,
+                 "requested": len(payload.rule_ids)},
+    )
+    db.commit()
+    return ScheduleAllResponse(
+        scheduled=scheduled,
+        skipped_existing=skipped,
+        applicable=len(payload.rule_ids),
+    )
 
 
 def _schedule_filings_for_license(
