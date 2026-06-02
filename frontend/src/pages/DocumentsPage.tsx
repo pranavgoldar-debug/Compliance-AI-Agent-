@@ -16,6 +16,7 @@ import {
   Building2,
   FileStack,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
@@ -56,16 +57,6 @@ export function DocumentsPage() {
 
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const queryClient = useQueryClient();
-
-  const clearAll = useMutation({
-    mutationFn: () => api.post<{ deleted: number }>("/api/documents/clear-all"),
-    onSuccess: (r) => {
-      queryClient.invalidateQueries({ queryKey: ["documents"] });
-      window.alert(`Removed ${r.deleted} document(s). The workspace is clean.`);
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
 
   // Eager-loaded entity list — fuels the left tree.
   const { data: entities = [] } = useQuery({
@@ -113,26 +104,6 @@ export function DocumentsPage() {
         description="Filings, certificates, and audit artifacts. Pick an entity in the sidebar to upload — files always live under one entity."
         actions={
           <div className="flex items-center gap-2">
-          {isAdmin && allDocs.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-              disabled={clearAll.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete ALL ${allDocs.length} stored document(s) and their files? This resets Documents to a clean slate and can't be undone.`,
-                  )
-                ) {
-                  clearAll.mutate();
-                }
-              }}
-            >
-              {clearAll.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Clear all documents
-            </Button>
-          )}
           <div className="inline-flex rounded-lg border border-input overflow-hidden">
             <button
               onClick={() => setLayout("rows")}
@@ -237,6 +208,7 @@ export function DocumentsPage() {
                 documents={filteredAll}
                 layout={layout}
                 entities={entities}
+                isAdmin={isAdmin}
                 onPickEntity={(id) =>
                   setSelection({ kind: "entity", entityId: id })
                 }
@@ -474,13 +446,34 @@ function AllDocsView({
   documents,
   layout,
   entities,
+  isAdmin,
   onPickEntity,
 }: {
   documents: DocumentOut[];
   layout: "rows" | "grid";
   entities: Entity[];
+  isAdmin: boolean;
   onPickEntity: (entityId: number) => void;
 }) {
+  const qc = useQueryClient();
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const toggle = (id: number) =>
+    setSel((p) => {
+      const n = new Set(p);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  const deleteSel = useMutation({
+    mutationFn: (ids: number[]) =>
+      Promise.all(ids.map((id) => api.delete(`/api/documents/${id}`))),
+    onSuccess: (_r, ids) => {
+      qc.invalidateQueries({ queryKey: ["documents"] });
+      setSel(new Set());
+      window.alert(`Deleted ${ids.length} document(s).`);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const allSel = documents.length > 0 && documents.every((d) => sel.has(d.id));
   if (documents.length === 0) {
     return (
       <Card>
@@ -519,10 +512,45 @@ function AllDocsView({
   // a scope-less list. Simplest: render inline here so we don't double-load.
   return layout === "rows" ? (
     <Card className="overflow-hidden">
+      {isAdmin && sel.size > 0 && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-secondary/30">
+          <span className="text-sm">{sel.size} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            disabled={deleteSel.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Permanently delete ${sel.size} selected document(s) and their files?`,
+                )
+              ) {
+                deleteSel.mutate(Array.from(sel));
+              }
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete selected
+          </Button>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
+              {isAdmin && (
+                <th className="px-3 py-2.5 w-8">
+                  <input
+                    type="checkbox"
+                    checked={allSel}
+                    onChange={(e) =>
+                      setSel(e.target.checked ? new Set(documents.map((d) => d.id)) : new Set())
+                    }
+                    className="accent-aspora-600"
+                  />
+                </th>
+              )}
               <th className="px-3 py-2.5 text-left font-medium">Name</th>
               <th className="px-3 py-2.5 text-left font-medium">Entity</th>
               <th className="px-3 py-2.5 text-left font-medium">Linked to</th>
@@ -534,6 +562,16 @@ function AllDocsView({
           <tbody className="divide-y divide-border">
             {documents.map((d) => (
               <tr key={d.id} className="hover:bg-secondary/30">
+                {isAdmin && (
+                  <td className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={sel.has(d.id)}
+                      onChange={() => toggle(d.id)}
+                      className="accent-aspora-600"
+                    />
+                  </td>
+                )}
                 <td className="px-3 py-2.5">
                   <a
                     href={`/api/documents/${d.id}/download`}

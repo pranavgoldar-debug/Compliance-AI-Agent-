@@ -118,13 +118,22 @@ export function LicensesPage() {
     queryClient.invalidateQueries({ queryKey: ["licenses"] });
   }
 
-  const clearAllLicenses = useMutation({
-    mutationFn: () =>
-      api.post<{ deleted: number }>("/api/licenses/clear-all"),
-    onSuccess: (r) => {
+  const [selectedLics, setSelectedLics] = useState<Set<number>>(new Set());
+  const toggleLic = (id: number) =>
+    setSelectedLics((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const deleteLicenses = useMutation({
+    mutationFn: (ids: number[]) =>
+      Promise.all(ids.map((id) => api.delete(`/api/licenses/${id}`))),
+    onSuccess: (_r, ids) => {
       queryClient.invalidateQueries({ queryKey: ["licenses"] });
       queryClient.invalidateQueries({ queryKey: ["entities"] });
-      window.alert(`Deleted ${r.deleted} license(s). You can re-upload now.`);
+      setSelectedLics(new Set());
+      window.alert(`Deleted ${ids.length} license(s).`);
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
@@ -136,31 +145,10 @@ export function LicensesPage() {
         description="Authorisations each entity holds from regulators. Upload one to see which filings apply to it."
         actions={
           isAdmin && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                disabled={clearAllLicenses.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Delete ALL licenses (and their files)? Obligations already on the calendar stay. You'll re-upload licenses manually. This can't be undone.",
-                    )
-                  ) {
-                    clearAllLicenses.mutate();
-                  }
-                }}
-              >
-                {clearAllLicenses.isPending && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                )}
-                Delete all licenses
-              </Button>
-              <Button onClick={() => setUploadOpen(true)}>
-                <Plus className="h-4 w-4" />
-                Upload license
-              </Button>
-            </div>
+            <Button onClick={() => setUploadOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Upload license
+            </Button>
           )
         }
       />
@@ -235,9 +223,48 @@ export function LicensesPage() {
         />
       ) : (
         <div className="rounded-lg border border-border overflow-hidden bg-card">
+          {isAdmin && selectedLics.size > 0 && (
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-secondary/30">
+              <span className="text-sm">{selectedLics.size} selected</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={deleteLicenses.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Permanently delete ${selectedLics.size} selected license(s) and their files? This can't be undone.`,
+                    )
+                  ) {
+                    deleteLicenses.mutate(Array.from(selectedLics));
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete selected
+              </Button>
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
+                {isAdmin && (
+                  <th className="px-3 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && filtered.every((l) => selectedLics.has(l.id))}
+                      onChange={(e) =>
+                        setSelectedLics(
+                          e.target.checked
+                            ? new Set(filtered.map((l) => l.id))
+                            : new Set(),
+                        )
+                      }
+                      className="accent-aspora-600"
+                    />
+                  </th>
+                )}
                 <th className="text-left px-3 py-2 font-medium">License</th>
                 <th className="text-left px-3 py-2 font-medium">Entity</th>
                 <th className="text-left px-3 py-2 font-medium">Authority</th>
@@ -253,6 +280,16 @@ export function LicensesPage() {
                   className="border-t border-border hover:bg-secondary/20 cursor-pointer"
                   onClick={() => navigate(`/licenses/${lic.id}`)}
                 >
+                  {isAdmin && (
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedLics.has(lic.id)}
+                        onChange={() => toggleLic(lic.id)}
+                        className="accent-aspora-600"
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <JurisdictionBadge code={lic.jurisdiction_code} showName={false} />
