@@ -8,7 +8,7 @@ export function ObligationDrawer() {
   const { obligationId, closeObligation } = useObligationDrawer();
   return (
     <Dialog open={obligationId !== null} onOpenChange={(open) => !open && closeObligation()}>
-      <DialogContent side="right" hideCloseButton className="p-0 w-[540px] max-w-[95vw]">
+      <DialogContent side="right" hideCloseButton className="p-0 w-[760px] max-w-[95vw]">
         {obligationId !== null && (
           <ObligationDetail
             obligationId={obligationId}
