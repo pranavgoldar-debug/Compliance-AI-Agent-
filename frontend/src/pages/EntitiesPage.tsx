@@ -39,21 +39,6 @@ export function EntitiesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const queryClient = useQueryClient();
-  const removeExtras = useMutation({
-    mutationFn: () =>
-      api.post<{ archived: number; names: string[] }>(
-        "/api/entities/archive-org-chart-extras",
-      ),
-    onSuccess: (r) => {
-      queryClient.invalidateQueries({ queryKey: ["entities"] });
-      window.alert(
-        r.archived === 0
-          ? "Nothing to remove — already matches the Excel entity list."
-          : `Removed ${r.archived} org-chart entity(ies):\n${r.names.join("\n")}`,
-      );
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
   const deleteOne = useMutation({
     mutationFn: (id: number) => api.delete(`/api/entities/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entities"] }),
@@ -107,25 +92,6 @@ export function EntitiesPage() {
         description="Every Aspora legal entity, with active obligation counts and country leads."
         actions={
           <div className="flex items-center gap-2">
-            {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={removeExtras.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Permanently delete the org-chart entities that aren't in the Excel list (Australia, UAB Hokodo, the IFSC/UK extras) along with their licenses? This can't be undone.",
-                    )
-                  ) {
-                    removeExtras.mutate();
-                  }
-                }}
-                title="Permanently delete entities the org-chart import added that aren't in the Excel entity list"
-              >
-                Keep only Excel entities
-              </Button>
-            )}
             <ExportMenu
               kind="entities"
               params={{
