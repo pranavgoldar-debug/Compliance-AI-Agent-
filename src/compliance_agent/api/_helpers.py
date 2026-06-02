@@ -59,6 +59,35 @@ def lead_time_days(band: EffortBand) -> int:
     return max(reminder_offsets_days(band))
 
 
+def reminder_offsets_for_frequency(frequency: str) -> list[int]:
+    """Advance-notice offsets (days before due) driven by the filing's
+    FREQUENCY, per the revamp feedback:
+
+      Monthly    →  7 days before   (one week)
+      Quarterly  →  30 days before  (one month)
+      Annual     →  45 days before
+
+    Half-yearly and other cadences get sensible defaults. Returns None-ish
+    behaviour ([]) only for cadences with no fixed due date (event-based,
+    one-time, continuous, per-consignment) where date reminders don't apply.
+    """
+    f = (frequency or "").lower()
+    if any(k in f for k in ("event", "one-time", "one time", "continuous", "consignment", "ad hoc", "ad-hoc")):
+        return []
+    if "month" in f and "half" not in f:  # monthly (not "half-yearly")
+        return [7]
+    if "quarter" in f:
+        return [30]
+    if "half" in f or "semi" in f or "bi-annual" in f or "biannual" in f:
+        return [30, 15]
+    if "annual" in f or "year" in f:
+        return [45]
+    if "week" in f:
+        return [3]
+    return [30]
+
+
+
 _REMINDER_OFFSETS: dict[EffortBand, list[int]] = {
     # Aspora policy — first number = how early the FIRST reminder fires:
     #   Monthly   → 1 week before · Quarterly → 1 month before · Annual → 45 days

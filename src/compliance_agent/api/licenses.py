@@ -36,6 +36,7 @@ from compliance_agent.classification import derive_function
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Applicability,
     Department,
     Entity,
     License,
@@ -313,6 +314,13 @@ def create_license(
             )
         )
 
+    # Auto-schedule every mandatory filing for this jurisdiction onto the
+    # calendar the moment the licence is uploaded — frequency-based reminders
+    # then fire automatically. Conditional/sector-specific filings stay manual.
+    auto_scheduled, _, _ = _schedule_filings_for_license(
+        db, lic, mandatory_only=True
+    )
+
     log_activity(
         db,
         actor_id=user.id,
@@ -323,6 +331,7 @@ def create_license(
             "entity_id": entity_id,
             "name": lic.name,
             "authority": lic.authority,
+            "auto_scheduled": auto_scheduled,
         },
     )
     db.commit()
@@ -1005,19 +1014,13 @@ class ScheduleAllResponse(BaseModel):
     response_model=ScheduleAllResponse,
     status_code=201,
 )
-def schedule_all_for_license(
-    license_id: int,
-    db: Session = Depends(get_session),
-    actor: User = Depends(require_admin),
-) -> ScheduleAllResponse:
-    """Schedule an obligation for every rule directly applicable to this
-    license's entity, so all its filings show up on the calendar in one go.
-    Uses the same authority/type matching as the applicable-rules view and
-    skips any filing that already has an obligation on the computed due date."""
-    lic = db.get(License, license_id)
-    if lic is None:
-        raise HTTPException(status_code=404, detail="License not found.")
-
+def _schedule_filings_for_license(
+    db: Session, lic: License, *, mandatory_only: bool
+) -> tuple[int, int, int]:
+    """Create a compliance obligation for every production rule in the
+    licence's jurisdiction (the whole country set is applicable). Skips any
+    that already have an obligation on the computed due date. Returns
+    (scheduled, skipped_existing, applicable). Does NOT commit."""
     pool = (
         db.execute(
             select(Rule).where(
@@ -1028,15 +1031,10 @@ def schedule_all_for_license(
         .scalars()
         .all()
     )
-    license_tokens = _tokens(lic.authority, lic.license_type, lic.name)
-
     today_d = date.today()
-    scheduled = 0
-    skipped = 0
-    applicable = 0
+    scheduled = skipped = applicable = 0
     for rule in pool:
-        rule_tokens = _tokens(rule.authority, rule.category, rule.area)
-        if not (license_tokens & rule_tokens):
+        if mandatory_only and rule.applicability != Applicability.mandatory:
             continue
         applicable += 1
         due = _next_due_for_rule(rule, today_d)
@@ -1061,7 +1059,24 @@ def schedule_all_for_license(
             )
         )
         scheduled += 1
+    return scheduled, skipped, applicable
 
+
+def schedule_all_for_license(
+    license_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ScheduleAllResponse:
+    """Schedule an obligation for every applicable filing in this licence's
+    jurisdiction, so all of them show up on the calendar in one go. Skips any
+    filing that already has an obligation on the computed due date."""
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found.")
+
+    scheduled, skipped, applicable = _schedule_filings_for_license(
+        db, lic, mandatory_only=False
+    )
     log_activity(
         db,
         actor_id=actor.id,
