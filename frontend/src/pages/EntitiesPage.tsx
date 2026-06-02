@@ -109,13 +109,13 @@ export function EntitiesPage() {
                 onClick={() => {
                   if (
                     window.confirm(
-                      "Remove the org-chart entities that aren't in the Excel list (Australia, UAB Hokodo, the IFSC/UK extras)? Their licenses stay in the system; only the entity is archived.",
+                      "Permanently delete the org-chart entities that aren't in the Excel list (Australia, UAB Hokodo, the IFSC/UK extras) along with their licenses? This can't be undone.",
                     )
                   ) {
                     removeExtras.mutate();
                   }
                 }}
-                title="Archive entities the org-chart import added that aren't in the Excel entity list"
+                title="Permanently delete entities the org-chart import added that aren't in the Excel entity list"
               >
                 Keep only Excel entities
               </Button>
