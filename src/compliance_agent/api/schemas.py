@@ -222,6 +222,7 @@ class ObligationOut(_Base):
     rule_authority: str
     rule_category: str
     rule_tax_type: TaxType = TaxType.not_tax
+    rule_responsible_function: Optional[str] = None
     rule_frequency: str
     rule_due_date_rule: Optional[str] = None
     rule_source_url: Optional[str] = None

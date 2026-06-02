@@ -83,6 +83,7 @@ export interface Obligation {
   rule_authority: string;
   rule_category: string;
   rule_tax_type: TaxType;
+  rule_responsible_function: string | null;
   rule_frequency: string;
   rule_due_date_rule: string | null;
   rule_source_url: string | null;

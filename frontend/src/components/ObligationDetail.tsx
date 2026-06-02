@@ -648,27 +648,70 @@ function ActionBar({
                 : "Assign"}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuLabel>Assign to…</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onPatch({ assignee: null } as Partial<Obligation>)}
-            >
-              Unassigned
-            </DropdownMenuItem>
-            {users.map((u) => (
-              <DropdownMenuItem
-                key={u.id}
-                onClick={() => onPatch({ assignee_id: u.id } as never)}
-              >
-                <Avatar className="h-5 w-5 mr-2">
-                  <AvatarFallback className="text-[9px]">
-                    {userInitials(u.full_name)}
-                  </AvatarFallback>
-                </Avatar>
-                {u.full_name}
-              </DropdownMenuItem>
-            ))}
+          <DropdownMenuContent className="max-h-[60vh] overflow-y-auto">
+            {(() => {
+              // This filing's function (Finance / Compliance / Legal) decides
+              // which team should action it — show that team's people first so
+              // a VAT filing routes to finance, not compliance.
+              const fn = (obligation.rule_responsible_function || "").toLowerCase();
+              const targetDept =
+                fn === "finance" ? "finance" : fn === "legal" ? "legal" : "compliance";
+              const inTeam = users.filter(
+                (u) => (u.department ?? "") === targetDept,
+              );
+              const others = users.filter(
+                (u) => (u.department ?? "") !== targetDept,
+              );
+              const row = (u: UserBrief) => (
+                <DropdownMenuItem
+                  key={u.id}
+                  onClick={() => onPatch({ assignee_id: u.id } as never)}
+                >
+                  <Avatar className="h-5 w-5 mr-2">
+                    <AvatarFallback className="text-[9px]">
+                      {userInitials(u.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  {u.full_name}
+                  {u.department && (
+                    <span className="ml-auto pl-2 text-[10px] text-muted-foreground capitalize">
+                      {u.department}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              );
+              return (
+                <>
+                  <DropdownMenuLabel className="capitalize">
+                    {targetDept} team — for this {fn || "compliance"} filing
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() =>
+                      onPatch({ assignee: null } as Partial<Obligation>)
+                    }
+                  >
+                    Unassigned
+                  </DropdownMenuItem>
+                  {inTeam.length > 0 ? (
+                    inTeam.map(row)
+                  ) : (
+                    <div className="px-2 py-1.5 text-[11px] text-muted-foreground italic">
+                      No one tagged to the {targetDept} team yet.
+                    </div>
+                  )}
+                  {others.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                        Other teams (override)
+                      </DropdownMenuLabel>
+                      {others.map(row)}
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </DropdownMenuContent>
         </DropdownMenu>
         )}

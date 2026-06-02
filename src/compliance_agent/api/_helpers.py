@@ -7,6 +7,8 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from compliance_agent.classification import derive_function
+
 from compliance_agent.db import (
     Activity,
     EFFORT_BAND_DAYS,
@@ -153,6 +155,10 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
         rule_tax_type=o.rule.tax_type,
+        rule_responsible_function=(
+            o.rule.responsible_function
+            or derive_function(o.rule.category, o.rule.area)
+        ),
         rule_frequency=o.rule.frequency,
         rule_due_date_rule=o.rule.due_date_rule,
         rule_source_url=o.rule.source_url,
