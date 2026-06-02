@@ -32,6 +32,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
+from compliance_agent.classification import derive_function
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
@@ -98,6 +99,9 @@ class LicenseRuleHit(_Base):
     due_date_rule: str
     payment_rule: Optional[str] = None
     applicability: str
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
+    tax_type: str = "Not a Tax"
     relevance: str  # "direct" | "entity"
     match_reason: Optional[str] = None
     # Tracking — the next upcoming obligation for (this rule, license.entity).
@@ -818,6 +822,12 @@ def applicable_rules(
             due_date_rule=rule.due_date_rule,
             payment_rule=rule.payment_rule,
             applicability=rule.applicability.value if rule.applicability else "",
+            responsible_function=(
+                rule.responsible_function
+                or derive_function(rule.category, rule.area)
+            ),
+            plain_description=rule.plain_description,
+            tax_type=rule.tax_type.value if rule.tax_type else "Not a Tax",
             relevance=relevance,
             match_reason=match_reason,
             next_obligation_id=ob.id if ob else None,

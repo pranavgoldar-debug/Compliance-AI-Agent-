@@ -219,6 +219,9 @@ def _add_missing_columns() -> None:
             ("submission_url", varchar(1024)),
             ("source_text", text_type),
             ("source_changed_at", datetime_type),
+            # Revamp: function (Finance/Compliance/Legal) + plain-English desc.
+            ("responsible_function", varchar(24)),
+            ("plain_description", text_type),
         ],
         # Phase 9: per-user notification prefs + Slack member id +
         # functional department (drives finance / compliance routing).

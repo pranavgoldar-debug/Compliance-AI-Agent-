@@ -120,6 +120,8 @@ class RuleCreate(BaseModel):
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
     tax_type: TaxType = TaxType.not_tax
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
     status: RuleStatus = RuleStatus.production
     source_url: Optional[str] = None
     submission_url: Optional[str] = None
@@ -140,6 +142,8 @@ class RuleUpdate(BaseModel):
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
     tax_type: Optional[TaxType] = None
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
     source_url: Optional[str] = None
     submission_url: Optional[str] = None
     source_text: Optional[str] = None
@@ -161,6 +165,8 @@ class RuleOut(_Base):
     applicability: Applicability
     applicability_note: Optional[str] = None
     tax_type: TaxType = TaxType.not_tax
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
     status: RuleStatus
     source_url: Optional[str] = None
     submission_url: Optional[str] = None

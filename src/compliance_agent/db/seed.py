@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from compliance_agent.auth.passwords import hash_password
+from compliance_agent.classification import derive_function
 from compliance_agent.db import (
     Applicability,
     Department,
@@ -309,6 +310,11 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
                 # Sync entity attachments in case new entities were added.
                 if jurisdiction_entities and not existing.entities:
                     existing.entities = list(jurisdiction_entities)
+                # Backfill the responsible function on older rows.
+                if not existing.responsible_function:
+                    existing.responsible_function = derive_function(
+                        existing.category, existing.area
+                    )
                 created.append(existing)
                 continue
             rule = Rule(
@@ -324,6 +330,7 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
                 applicability=_applicability_from_str(filing.applicability),
                 applicability_note=filing.applicability_note,
                 tax_type=_tax_type_from_category(filing.category, filing.area),
+                responsible_function=derive_function(filing.category, filing.area),
                 source_url=_authority_url(filing.authority),
                 submission_url=_authority_url(filing.authority),
                 status=RuleStatus.production,

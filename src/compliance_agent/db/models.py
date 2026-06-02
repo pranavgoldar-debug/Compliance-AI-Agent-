@@ -221,6 +221,15 @@ class Rule(Base):
     tax_type: Mapped[TaxType] = mapped_column(
         SAEnum(TaxType), nullable=False, default=TaxType.not_tax, index=True
     )
+    # Function responsible for the filing: Finance / Compliance / Legal.
+    # Auto-derived from category at seed time, editable per rule. Plain string
+    # (not an enum) so the team can add their own functions later.
+    responsible_function: Mapped[Optional[str]] = mapped_column(
+        String(24), nullable=True, index=True
+    )
+    # Plain-English description of the obligation (de-jargoned). Falls back to
+    # form_name in the UI when empty.
+    plain_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[RuleStatus] = mapped_column(
         SAEnum(RuleStatus), nullable=False, default=RuleStatus.production, index=True
     )
