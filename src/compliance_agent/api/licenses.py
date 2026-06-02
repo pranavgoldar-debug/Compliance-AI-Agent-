@@ -830,22 +830,21 @@ def applicable_rules(
     direct: list[LicenseRuleHit] = []
     entity_other: list[LicenseRuleHit] = []
 
+    # Every production rule in the licence's jurisdiction is "applicable" — the
+    # entity must file the whole country's compliance set, the licence is just
+    # the authorisation that puts the entity in scope. Rules whose authority /
+    # type token-matches the licence are flagged so the most-relevant ones can
+    # still be surfaced first.
+    juris_label = lic.jurisdiction_code.upper()
     for rule in pool:
         rule_tokens = _tokens(rule.authority, rule.category, rule.area)
         shared = license_tokens & rule_tokens
-        is_attached = rule.id in entity_rule_ids
-        if shared:
-            direct.append(
-                _hit(
-                    rule,
-                    relevance="direct",
-                    match_reason=f"matched on: {', '.join(sorted(shared))}",
-                )
-            )
-        elif is_attached:
-            entity_other.append(
-                _hit(rule, relevance="entity", match_reason="attached to this entity")
-            )
+        reason = (
+            f"matched on: {', '.join(sorted(shared))}"
+            if shared
+            else f"Applies to all {juris_label} entities"
+        )
+        direct.append(_hit(rule, relevance="direct", match_reason=reason))
 
     # Roll-up counts so the UI can show "5 unassigned · 3 in progress · …"
     counts: dict[str, int] = {
