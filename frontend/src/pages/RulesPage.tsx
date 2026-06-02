@@ -250,31 +250,61 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
+  const backfillMutation = useMutation({
+    mutationFn: () =>
+      api.post<{
+        checked: number;
+        source_filled: number;
+        submission_filled: number;
+        skipped_no_match: number;
+      }>("/api/rules/backfill-source-urls"),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      window.alert(
+        `Regulator URLs filled.\nChecked: ${r.checked}\nSource links added: ${r.source_filled}\nSubmission links added: ${r.submission_filled}\nNo authority match: ${r.skipped_no_match}`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <Card className="overflow-hidden">
       {isAdmin && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-secondary/20">
           <span className="text-xs text-muted-foreground">
-            Added some production rules by mistake? Clean up the ones you created recently.
+            Regulator links missing on obligations? Backfill them, or clean up rules you added recently.
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-            disabled={cleanupMutation.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Delete ALL production rules you created in the last 24 hours (and any filings scheduled from them)? Uploaded documents are kept. This can't be undone.",
-                )
-              ) {
-                cleanupMutation.mutate();
-              }
-            }}
-          >
-            {cleanupMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Clean up rules I added (last 24h)
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={backfillMutation.isPending}
+              onClick={() => backfillMutation.mutate()}
+              title="Fill every rule's regulator 'View regulation' + 'Submit & pay' links from the authority table"
+            >
+              {backfillMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Backfill regulator URLs
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={cleanupMutation.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Delete ALL production rules you created in the last 24 hours (and any filings scheduled from them)? Uploaded documents are kept. This can't be undone.",
+                  )
+                ) {
+                  cleanupMutation.mutate();
+                }
+              }}
+            >
+              {cleanupMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Clean up rules I added (last 24h)
+            </Button>
+          </div>
         </div>
       )}
       <div className="overflow-x-auto">

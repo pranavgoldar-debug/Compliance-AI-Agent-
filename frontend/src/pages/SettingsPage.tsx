@@ -1491,7 +1491,7 @@ function GmailCard() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <div className="font-semibold">Email (Resend or SMTP)</div>
+              <div className="font-semibold">Email (Gmail API)</div>
               <Badge variant="neutral">Config via .env</Badge>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
@@ -1502,12 +1502,12 @@ function GmailCard() {
         </div>
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          <strong>On Render?</strong> Render blocks outbound SMTP ports, so smtp.gmail.com fails
-          with “Network is unreachable”. Send over an HTTPS API instead (port 443 isn’t blocked).
+          <strong>Your own Gmail, no third party.</strong> We send over the Gmail HTTPS API
+          (port 443), so Render's SMTP-port block doesn't matter — no Brevo / Resend / SMTP needed.
         </div>
 
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
-          <div className="font-medium">Your Gmail only, no third party: Gmail API</div>
+          <div className="font-medium">Set up Gmail API (one-time)</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
             <li>
               Google Cloud Console → new project → enable the <strong>Gmail API</strong>.
@@ -1536,41 +1536,6 @@ GMAIL_SENDER=you@aspora.com`}
               </pre>
             </li>
           </ol>
-          <div className="font-medium pt-1">Easiest (no DNS, email anyone): Brevo</div>
-          <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
-            <li>
-              Sign up at <span className="font-mono">brevo.com</span> (free: 300 emails/day).
-            </li>
-            <li>
-              Senders &amp; IP → <strong>Senders</strong> → add{" "}
-              <span className="font-mono">compliance@aspora.com</span> → click the confirmation
-              link Brevo emails you. (No DNS needed — this single verified sender can email anyone.)
-            </li>
-            <li>
-              SMTP &amp; API → <strong>API Keys</strong> → create one (<span className="font-mono">xkeysib-…</span>).
-            </li>
-            <li>
-              Set these env vars (Render → Environment), then redeploy:
-              <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
-{`BREVO_API_KEY=xkeysib-xxxxxxxx
-BREVO_FROM=compliance@aspora.com
-BREVO_FROM_NAME=Aspora Compliance`}
-              </pre>
-            </li>
-          </ol>
-          <div className="font-medium pt-1">Alternative: Resend (verify aspora.com domain via DNS)</div>
-          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
-{`RESEND_API_KEY=re_xxxxxxxx
-RESEND_FROM="Aspora Compliance <compliance@aspora.com>"`}
-          </pre>
-          <div className="font-medium pt-1">SMTP (local / non-Render only)</div>
-          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
-{`SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=you@aspora.com
-SMTP_PASSWORD=<the 16-char app password>
-SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
-          </pre>
         </div>
 
         <div className="flex items-end gap-2">

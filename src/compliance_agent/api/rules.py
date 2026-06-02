@@ -255,6 +255,38 @@ def cleanup_recent_production(
     return CleanupRecentResult(deleted_rules=len(rules), deleted_obligations=total_obs)
 
 
+class BackfillUrlsResult(BaseModel):
+    checked: int
+    source_filled: int
+    submission_filled: int
+    skipped_no_match: int
+
+
+@router.post("/backfill-source-urls", response_model=BackfillUrlsResult)
+def backfill_source_urls(
+    overwrite: bool = Query(False),
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> BackfillUrlsResult:
+    """Admin-only: fill every rule's regulator source_url + submission_url from
+    the authority lookup table, so the 'View regulation' / 'Submit & pay on
+    portal' links appear on obligations. Only fills empty URLs unless
+    overwrite=true. Idempotent."""
+    from compliance_agent.db.seed import populate_source_urls
+
+    counts = populate_source_urls(overwrite=overwrite)
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="rules.backfill_source_urls",
+        target_type="rule",
+        target_id=None,
+        payload=counts,
+    )
+    db.commit()
+    return BackfillUrlsResult(**counts)
+
+
 # ---------------------------------------------------------------------------
 # Snapshots (Phase 7) — history of regulation-change checks
 # ---------------------------------------------------------------------------
