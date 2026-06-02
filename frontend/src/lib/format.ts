@@ -31,6 +31,12 @@ const _JUR_SUFFIX =
 
 export function cleanFilingName(name: string | null | undefined): string {
   let s = (name ?? "").trim();
+  // Keep only the real obligation name — drop secondary clauses appended with
+  // " + " or an em/en-dash, e.g.
+  //   "Annual MLRO report + business-wide risk assessment refresh" -> "Annual MLRO report"
+  //   "HMRC AML supervised business — annual fees + register update"  -> "HMRC AML supervised business"
+  s = s.split(/\s+[—–-]\s+/)[0].trim();
+  s = s.split(/\s+\+\s+/)[0].trim();
   // Drop trailing parenthetical explanations: "AGM (not a filing, …)" -> "AGM",
   // "Corporation Tax return (CT600)" -> "Corporation Tax return".
   for (let i = 0; i < 3; i++) {

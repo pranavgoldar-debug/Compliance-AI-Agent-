@@ -108,6 +108,10 @@ class LicenseRuleHit(_Base):
     # Tracking — the next upcoming obligation for (this rule, license.entity).
     next_obligation_id: Optional[int] = None
     next_due_date: Optional[date] = None
+    # Estimated next deadline derived from the rule's frequency — shown the
+    # moment a licence is uploaded, before anything is scheduled, so every
+    # obligation carries a date.
+    projected_due_date: Optional[date] = None
     next_status: Optional[str] = None
     next_assignee: Optional[LicenseAssignee] = None
     days_to_next: Optional[int] = None
@@ -863,6 +867,7 @@ def applicable_rules(
             match_reason=match_reason,
             next_obligation_id=ob.id if ob else None,
             next_due_date=ob.due_date if ob else None,
+            projected_due_date=_next_due_for_rule(rule, today_d),
             next_status=ob.status.value if ob and ob.status else None,
             next_assignee=assignee,
             days_to_next=((ob.due_date - today_d).days if ob else None),

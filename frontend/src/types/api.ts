@@ -425,6 +425,7 @@ export interface LicenseRuleHit {
   match_reason: string | null;
   next_obligation_id: number | null;
   next_due_date: string | null;
+  projected_due_date: string | null;
   next_status: string | null;
   next_assignee: LicenseAssignee | null;
   days_to_next: number | null;

@@ -1693,17 +1693,12 @@ function RegulationsTable({
                   )}
                 </td>
                 <td className="px-3 py-2 align-top">
-                  <div className="font-medium">
-                    {r.plain_description || cleanFilingName(r.form_name)}
-                  </div>
+                  <div className="font-medium">{cleanFilingName(r.form_name)}</div>
                   {r.plain_description && (
                     <div className="text-[11px] text-muted-foreground">
-                      {cleanFilingName(r.form_name)}
+                      {r.plain_description}
                     </div>
                   )}
-                  <div className="text-[11px] text-muted-foreground italic">
-                    {r.due_date_rule}
-                  </div>
                 </td>
                 <td className="px-3 py-2 align-top text-xs">{r.frequency}</td>
                 <td className="px-3 py-2 align-top text-xs">
@@ -1712,6 +1707,13 @@ function RegulationsTable({
                       {r.next_due_date}
                       <div className="text-[10px] text-muted-foreground">
                         {r.next_status ? statusLabel(r.next_status) : ""}
+                      </div>
+                    </div>
+                  ) : r.projected_due_date ? (
+                    <div>
+                      {r.projected_due_date}
+                      <div className="text-[10px] text-muted-foreground">
+                        projected
                       </div>
                     </div>
                   ) : (
@@ -1860,10 +1862,15 @@ function RuleGroup({
                             : ""}
                         </div>
                       </div>
+                    ) : r.projected_due_date ? (
+                      <div>
+                        <div>{r.projected_due_date}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          projected
+                        </div>
+                      </div>
                     ) : (
-                      <span className="text-xs text-muted-foreground italic">
-                        {r.due_date_rule}
-                      </span>
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
                   <td className="px-3 py-2 align-top text-right">
