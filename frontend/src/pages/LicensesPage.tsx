@@ -659,8 +659,22 @@ interface AIExtractResponse {
   license_id: number;
   jurisdiction_hint: string | null;
   extracted_chars: number;
+  from_document?: boolean;
   candidates: CandidateRule[];
   notes: string | null;
+}
+
+// Loose match so "GST Return GSTR-3B" lines up with a tracked "GSTR-3B".
+function normForm(s: string): string {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+function isTracked(candidateForm: string, existing: string[]): boolean {
+  const c = normForm(candidateForm);
+  if (!c) return false;
+  return existing.some((e) => {
+    const n = normForm(e);
+    return n.length > 2 && (n.includes(c) || c.includes(n));
+  });
 }
 
 function AIExtractDialog({
@@ -668,11 +682,13 @@ function AIExtractDialog({
   open,
   onOpenChange,
   onCreated,
+  existingForms = [],
 }: {
   license: License;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
+  existingForms?: string[];
 }) {
   const [response, setResponse] = useState<AIExtractResponse | null>(null);
   const [kept, setKept] = useState<Set<number>>(new Set());
@@ -768,11 +784,36 @@ function AIExtractDialog({
             <div className="space-y-3">
               <div className="text-sm">
                 Found <strong>{response.candidates.length}</strong> candidate{" "}
-                obligation{response.candidates.length === 1 ? "" : "s"}. Tick
-                the ones to create — they'll land in{" "}
+                obligation{response.candidates.length === 1 ? "" : "s"}
+                {response.from_document === false
+                  ? " from the regulator + license type (no PDF read)"
+                  : ""}
+                . Tick the ones to create — they'll land in{" "}
                 <strong>Compliance Rules → Staging</strong> for an admin to
                 approve.
               </div>
+              {(() => {
+                const missing = response.candidates.filter(
+                  (r) => !isTracked(r.form_name, existingForms),
+                );
+                return (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <strong>Cross-check vs your tracked list:</strong>{" "}
+                    {missing.length === 0 ? (
+                      <>everything the AI found is already in your{" "}
+                      {existingForms.length} tracked filing
+                      {existingForms.length === 1 ? "" : "s"}. ✅</>
+                    ) : (
+                      <>
+                        {missing.length} of {response.candidates.length} are{" "}
+                        <strong>not in your {existingForms.length} tracked
+                        filings</strong> (marked “Missing” below) — verify each
+                        before assuming it applies.
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
               {response.notes && (
                 <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
                   {response.notes}
@@ -802,7 +843,14 @@ function AIExtractDialog({
                         className="mt-1 accent-aspora-600"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium">{r.form_name}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{r.form_name}</span>
+                          {isTracked(r.form_name, existingForms) ? (
+                            <Badge variant="neutral">Already tracked</Badge>
+                          ) : (
+                            <Badge variant="alert">Missing from your list</Badge>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {r.authority} · {r.category} · {r.frequency}
                         </div>
@@ -999,24 +1047,21 @@ function LicenseDetailDialog({
                         {rulesQuery.data.direct.length} applicable to this license
                       </div>
                     )}
-                    {isAdmin && license.has_file ? (
+                    {isAdmin && (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setAiOpen(true)}
-                        title="Read the uploaded license with Claude and surface obligations"
+                        title={
+                          license.has_file
+                            ? "Read the uploaded license with Claude and surface obligations"
+                            : "No PDF needed — Claude lists the filings this license type usually owes, so you can cross-check your tracked list"
+                        }
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         Extract with AI
                       </Button>
-                    ) : isAdmin ? (
-                      <span
-                        className="text-[11px] text-muted-foreground italic"
-                        title="Re-open this license, upload the PDF, and Extract with AI will appear here."
-                      >
-                        Upload a file to enable AI extract
-                      </span>
-                    ) : null}
+                    )}
                   </div>
                 </div>
 
@@ -1086,6 +1131,9 @@ function LicenseDetailDialog({
               license={license}
               open={aiOpen}
               onOpenChange={setAiOpen}
+              existingForms={(rulesQuery.data?.direct ?? []).map(
+                (r) => r.form_name || r.name || "",
+              )}
               onCreated={() => {
                 onChanged();
               }}
