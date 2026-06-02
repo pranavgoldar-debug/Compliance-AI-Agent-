@@ -755,17 +755,13 @@ def ai_extract_obligations(
     )
     combined_notes = " ".join(n for n in (extra_note, result.notes) if n) or None
 
-    # FINANCE_ONLY switch: surface only Finance-function candidates.
-    candidates = [
-        c
-        for c in result.rules
-        if keep_function(
-            getattr(c, "category", ""),
-            getattr(c, "area", ""),
-            getattr(c, "responsible_function", None),
-        )
-    ]
-
+    # NOTE: the AI extract is the comprehensive "source of truth" / cross-check
+    # tool, so it is deliberately NOT narrowed by the FINANCE_ONLY switch — it
+    # surfaces every obligation Claude finds (finance + compliance + legal).
+    # The FINANCE_ONLY filter only applies to the operational website lists
+    # (applicable rules, catalogue, calendar), which stay a finance subset of
+    # this full list. Filtering here too would leave licences like an FCA
+    # Payment Institution (mostly compliance obligations) showing nothing.
     return LicenseAIExtractResponse(
         available=True,
         license_id=license_id,
@@ -775,7 +771,7 @@ def ai_extract_obligations(
         # rules created from these candidates get a code that fits the column.
         jurisdiction_hint=lic.jurisdiction_code,
         extracted_chars=len(text),
-        candidates=[c.model_dump() for c in candidates],
+        candidates=[c.model_dump() for c in result.rules],
         notes=combined_notes,
     )
 
