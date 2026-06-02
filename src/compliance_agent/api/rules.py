@@ -255,6 +255,34 @@ def cleanup_recent_production(
     return CleanupRecentResult(deleted_rules=len(rules), deleted_obligations=total_obs)
 
 
+class RestoreCatalogueResult(BaseModel):
+    rules_total: int
+
+
+@router.post("/restore-catalogue", response_model=RestoreCatalogueResult)
+def restore_catalogue(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> RestoreCatalogueResult:
+    """Admin-only recovery: idempotently re-create every catalogue rule that's
+    missing from the live DB (e.g. after an accidental delete) and re-attach
+    them to existing entities. Safe to run repeatedly — existing rules are left
+    untouched and no obligations are created. No server shell needed."""
+    from compliance_agent.db.seed import sync_catalog_rules
+
+    total = sync_catalog_rules()
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="rules.restore_catalogue",
+        target_type="rule",
+        target_id=None,
+        payload={"rules_total": total},
+    )
+    db.commit()
+    return RestoreCatalogueResult(rules_total=total)
+
+
 class BackfillUrlsResult(BaseModel):
     checked: int
     source_filled: int

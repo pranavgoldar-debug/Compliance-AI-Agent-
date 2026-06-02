@@ -268,14 +268,48 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ rules_total: number }>("/api/rules/restore-catalogue"),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["license-rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        `Catalogue restored. ${r.rules_total} rule(s) now in the system — any that were accidentally deleted have been re-created and re-attached to your entities.`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <Card className="overflow-hidden">
       {isAdmin && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-secondary/20">
           <span className="text-xs text-muted-foreground">
-            Regulator links missing on obligations? Backfill them, or clean up rules you added recently.
+            Rules missing after a delete? Restore the catalogue. Or backfill
+            regulator links / clean up rules you added recently.
           </span>
           <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={restoreMutation.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Re-create every standard catalogue rule that's missing (e.g. after an accidental delete) and re-attach to your entities? Existing rules are left untouched and no filings are created. Safe to run.",
+                  )
+                ) {
+                  restoreMutation.mutate();
+                }
+              }}
+              title="Idempotently restore any deleted catalogue rules — no server shell needed"
+            >
+              {restoreMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Restore catalogue rules
+            </Button>
             <Button
               variant="outline"
               size="sm"
