@@ -124,23 +124,35 @@ def sync_org_chart() -> dict:
         db.flush()
 
         # --- Licences -------------------------------------------------------
+        # Use the plain licence type as the name (no made-up descriptive title)
+        # so org-chart licences read like manually-added ones.
         existing_lic = db.execute(select(License)).scalars().all()
-        lic_nums = {_norm_num(l.license_number) for l in existing_lic if l.license_number}
-        # (entity_id, normalised name) guards licences with no number.
+        by_num = {
+            _norm_num(l.license_number): l for l in existing_lic if l.license_number
+        }
         lic_keys = {(l.entity_id, _norm(l.name)) for l in existing_lic}
 
         for spec in ORG_LICENSES:
             ent = by_norm.get(_norm(spec["entity_name"]))
             if ent is None:
                 continue  # entity missing (shouldn't happen) — skip its licence
+            plain_name = spec["license_type"] or spec["name"]
             num_key = _norm_num(spec["license_number"])
-            if (num_key and num_key in lic_nums) or (ent.id, _norm(spec["name"])) in lic_keys:
+            existing = by_num.get(num_key) if num_key else None
+            if existing is not None:
+                # Already imported — simplify the name to the plain type, but
+                # never touch a licence the user uploaded a file for (manual).
+                if existing.storage_path is None and existing.name != plain_name:
+                    existing.name = plain_name
+                skipped_licenses += 1
+                continue
+            if (ent.id, _norm(plain_name)) in lic_keys:
                 skipped_licenses += 1
                 continue
             db.add(
                 License(
                     entity_id=ent.id,
-                    name=spec["name"],
+                    name=plain_name,
                     license_type=spec["license_type"],
                     authority=spec["authority"],
                     jurisdiction_code=spec["jurisdiction_code"],
@@ -149,8 +161,8 @@ def sync_org_chart() -> dict:
                 )
             )
             if num_key:
-                lic_nums.add(num_key)
-            lic_keys.add((ent.id, _norm(spec["name"])))
+                by_num[num_key] = None  # mark seen
+            lic_keys.add((ent.id, _norm(plain_name)))
             created_licenses += 1
 
         db.commit()
