@@ -842,10 +842,10 @@ function ActionBar({
               Saving…
             </span>
           )}
-          {/* Admin-only destructive action — delete this filing entirely.
-              Used to remove obligations whose license/rule no longer
-              applies. Kept on the far right, away from the everyday
-              workflow buttons, behind a confirm. */}
+          {/* Admin-only — removes this scheduled filing from the calendar.
+              The underlying rule/filing stays on the license and can be
+              re-scheduled anytime; only this scheduled instance + its
+              comments go. Kept on the far right, behind a confirm. */}
           {isAdmin && (
             <Button
               variant="ghost"
@@ -855,21 +855,21 @@ function ActionBar({
                 const form = obligation.rule_form_name || "this filing";
                 if (
                   window.confirm(
-                    `Delete "${form}"?\n\nThis permanently removes this filing and its comments. Uploaded documents are kept. This can't be undone.`,
+                    `Remove "${form}" from the calendar?\n\nThis only un-schedules it — the filing stays on the license and you can schedule it again anytime. Uploaded documents are kept; comments on this instance are removed.`,
                   )
                 ) {
                   onDelete();
                 }
               }}
               className="text-destructive hover:text-destructive hover:bg-destructive/10"
-              title="Delete this filing permanently"
+              title="Remove from calendar (filing stays on the license, can be re-scheduled)"
             >
               {deleting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Trash2 className="h-3.5 w-3.5" />
               )}
-              Delete
+              Remove from calendar
             </Button>
           )}
         </div>

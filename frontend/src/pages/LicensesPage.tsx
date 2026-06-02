@@ -734,12 +734,46 @@ interface AIExtractResponse {
 function normForm(s: string): string {
   return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
+// Generic words that don't help tell two filings apart — dropped before the
+// token-overlap check so e.g. "Annual MLRO report" matches "MLRO report".
+const _MATCH_STOP = new Set([
+  "the", "and", "for", "of", "to", "in", "on", "a", "an", "with",
+  "annual", "monthly", "quarterly", "report", "reports", "return", "returns",
+  "form", "filing", "filings", "submission", "review", "notification",
+  "fca", "hmrc", "ofsi", "uk", "update", "fees", "fee", "register",
+]);
+function matchTokens(s: string): Set<string> {
+  return new Set(
+    (s || "").toLowerCase().match(/[a-z0-9]+/g)?.filter(
+      (t) => t.length > 2 && !_MATCH_STOP.has(t),
+    ) ?? [],
+  );
+}
 function isTracked(candidateForm: string, existing: string[]): boolean {
   const c = normForm(candidateForm);
   if (!c) return false;
+  // 1) Fast path — one name is a substring of the other ("GSTR-3B" in "GST Return GSTR-3B").
+  if (
+    existing.some((e) => {
+      const n = normForm(e);
+      return n.length > 2 && (n.includes(c) || c.includes(n));
+    })
+  )
+    return true;
+  // 2) Token-overlap — catches reworded names ("Complaints Return" vs
+  //    "DISP complaints + Ombudsman cooperation") so genuinely-same filings
+  //    aren't flagged "Missing" just because the AI phrased them differently.
+  const ct = matchTokens(candidateForm);
+  if (ct.size === 0) return false;
   return existing.some((e) => {
-    const n = normForm(e);
-    return n.length > 2 && (n.includes(c) || c.includes(n));
+    const et = matchTokens(e);
+    if (et.size === 0) return false;
+    let shared = 0;
+    ct.forEach((t) => {
+      if (et.has(t)) shared += 1;
+    });
+    // 2+ shared keywords, or 1 keyword that fully covers the shorter name.
+    return shared >= 2 || (shared >= 1 && shared === Math.min(ct.size, et.size));
   });
 }
 
@@ -1378,9 +1412,10 @@ export function LicenseDetailBody({
               license={license}
               open={aiOpen}
               onOpenChange={setAiOpen}
-              existingForms={(rulesQuery.data?.direct ?? []).map(
-                (r) => r.form_name || r.name || "",
-              )}
+              existingForms={[
+                ...(rulesQuery.data?.direct ?? []),
+                ...(rulesQuery.data?.entity_other ?? []),
+              ].flatMap((r) => [r.form_name, r.name].filter(Boolean) as string[])}
               onCreated={() => {
                 onChanged();
               }}
