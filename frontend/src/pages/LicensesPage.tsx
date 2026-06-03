@@ -1205,6 +1205,14 @@ export function LicenseDetailBody({
     onSuccess: () => onChanged(),
   });
 
+  const genCatalogue = useMutation({
+    mutationFn: () =>
+      api.post<{ created: number; skipped: number; available: boolean; notes?: string | null }>(
+        `/api/licenses/${license.id}/generate-catalogue`,
+      ),
+    onSuccess: () => rulesQuery.refetch(),
+  });
+
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -1427,10 +1435,44 @@ export function LicenseDetailBody({
                     ))}
                   </div>
                 ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? (
-                  <div className="rounded-lg border border-border bg-secondary/30 px-3 py-3 text-sm text-muted-foreground">
-                    No rules matched this license in the catalogue yet. Try
-                    sharpening the authority or license type fields, or add a
-                    rule with a matching authority.
+                  <div className="rounded-lg border border-border bg-secondary/30 px-3 py-3 text-sm text-muted-foreground space-y-3">
+                    <div>
+                      No finance filings tracked for{" "}
+                      <strong>{license.jurisdiction_code?.toUpperCase()}</strong>{" "}
+                      yet — your catalogue has no data for this country.
+                    </div>
+                    {isAdmin && (
+                      <div>
+                        <Button
+                          size="sm"
+                          onClick={() => genCatalogue.mutate()}
+                          disabled={genCatalogue.isPending}
+                        >
+                          {genCatalogue.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          Generate finance catalogue with AI
+                        </Button>
+                        {genCatalogue.isSuccess && (
+                          <div className="mt-2 text-xs text-foreground">
+                            Added{" "}
+                            <strong>{genCatalogue.data?.created ?? 0}</strong>{" "}
+                            finance filing(s) from AI
+                            {genCatalogue.data?.skipped
+                              ? ` (skipped ${genCatalogue.data.skipped} already-tracked / non-finance)`
+                              : ""}
+                            . They're now in your catalogue and on the calendar.
+                          </div>
+                        )}
+                        {genCatalogue.isError && (
+                          <div className="mt-2 text-xs text-destructive">
+                            {(genCatalogue.error as Error).message}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">

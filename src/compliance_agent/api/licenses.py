@@ -958,6 +958,147 @@ def ai_extract_obligations(
 
 
 # ---------------------------------------------------------------------------
+# AI catalogue generation (for jurisdictions with no seed data)
+# ---------------------------------------------------------------------------
+class GenerateCatalogueResponse(BaseModel):
+    available: bool
+    created: int
+    skipped: int
+    jurisdiction_code: str
+    notes: Optional[str] = None
+
+
+def _rule_key(name: str, form_name: str) -> tuple:
+    """Dedup identity for a filing: its form code if it has one, else its
+    normalised name."""
+    code = _form_code(form_name or "")
+    if code:
+        return ("code", code.lower())
+    return ("name", re.sub(r"[^a-z0-9]+", "", (name or form_name or "").lower()))
+
+
+@router.post(
+    "/{license_id}/generate-catalogue", response_model=GenerateCatalogueResponse
+)
+def generate_jurisdiction_catalogue(
+    license_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> GenerateCatalogueResponse:
+    """Use Claude to build the standard ongoing FINANCE/TAX filing catalogue for
+    this license's jurisdiction and persist the missing ones as production
+    Rules. This lets a brand-new country with no seed data get a working
+    catalogue (and calendar) straight from AI."""
+    from compliance_agent.rule_extractor import (  # local import: heavy SDK
+        RuleExtractorUnavailable,
+        extract_rules_from_text,
+    )
+
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found")
+
+    jur = (lic.jurisdiction_code or "").strip().lower()[:16] or "xx"
+
+    # Only ADD what we don't already track, so this is safe to run repeatedly.
+    existing_keys = {
+        _rule_key(r.name, r.form_name)
+        for r in db.execute(
+            select(Rule).where(
+                Rule.jurisdiction_code == jur,
+                Rule.status == RuleStatus.production,
+            )
+        )
+        .scalars()
+        .all()
+    }
+
+    prompt = (
+        f"Build the standard ongoing FINANCE, TAX and ACCOUNTING compliance "
+        f"catalogue for any operating company in "
+        f"{lic.jurisdiction_code.upper()}.\n\n"
+        f"List every recurring finance/tax/accounting filing such a company "
+        f"owes: corporate / income tax returns, VAT / GST / sales-tax returns, "
+        f"annual financial statements & audit filing, payroll & social-security "
+        f"/ withholding returns, transfer pricing and economic-substance filings "
+        f"where applicable. For each: put the human FILING name (no form code) in "
+        f"`name`, ONLY the official form code in `form_name` (repeat the name if "
+        f"there is no formal code), plus the authority, frequency, due-date rule, "
+        f"and whether it is mandatory or conditional. Classify category/area as "
+        f"Finance/Tax. Do NOT include licensing, AML/CFT, conduct or purely legal "
+        f"obligations — finance/tax/accounting only."
+    )
+
+    try:
+        result = extract_rules_from_text(prompt, jurisdiction_hint=lic.jurisdiction_code)
+    except RuleExtractorUnavailable as exc:
+        return GenerateCatalogueResponse(
+            available=False, created=0, skipped=0, jurisdiction_code=jur, notes=str(exc)
+        )
+    except Exception as exc:  # noqa: BLE001 — surface Claude failures as 502
+        raise HTTPException(
+            status_code=502, detail=f"Claude call failed: {exc}"
+        ) from exc
+
+    seen_batch: set = set()
+    created = skipped = 0
+    for cand in result.rules:
+        if not keep_function(
+            cand.category, cand.area, getattr(cand, "responsible_function", None)
+        ):
+            skipped += 1
+            continue
+        key = _rule_key(cand.name, cand.form_name)
+        if key in existing_keys or key in seen_batch:
+            skipped += 1
+            continue
+        seen_batch.add(key)
+        db.add(
+            Rule(
+                name=cand.name,
+                jurisdiction_code=jur,
+                category=cand.category,
+                area=cand.area,
+                form_name=cand.form_name,
+                authority=cand.authority,
+                frequency=cand.frequency,
+                due_date_rule=cand.due_date_rule,
+                payment_rule=cand.payment_rule,
+                applicability=cand.applicability,
+                applicability_note=cand.applicability_note,
+                tax_type=cand.tax_type,
+                plain_description=cand.plain_description,
+                responsible_function=derive_function(cand.category, cand.area),
+                status=RuleStatus.production,
+                created_by_id=user.id,
+            )
+        )
+        created += 1
+
+    # Put the freshly-generated filings straight onto this licence's calendar
+    # (mirrors the auto-schedule that runs on upload).
+    if created:
+        db.flush()
+        _schedule_filings_for_license(db, lic, mandatory_only=False)
+
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="rule.ai_catalogue_generated",
+        target_type="rule",
+        payload={"jurisdiction": jur, "created": created, "skipped": skipped},
+    )
+    db.commit()
+    return GenerateCatalogueResponse(
+        available=True,
+        created=created,
+        skipped=skipped,
+        jurisdiction_code=jur,
+        notes=result.notes,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Applicable regulations
 # ---------------------------------------------------------------------------
 @router.get("/{license_id}/applicable-rules", response_model=ApplicableRulesResponse)
