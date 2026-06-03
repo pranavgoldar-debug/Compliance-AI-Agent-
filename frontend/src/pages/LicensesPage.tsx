@@ -852,6 +852,16 @@ function AIExtractDialog({
     createMutation.reset();
   }
 
+  // Clicking "Find Regulations" opens this dialog — kick off the extraction
+  // straight away so the user lands on the running state, not an extra
+  // "click to start" screen. Re-run is via the "Search again" button.
+  useEffect(() => {
+    if (open && !response && !extractMutation.isPending && !extractMutation.isError) {
+      extractMutation.mutate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   if (!open) return null;
   return (
     <Card className="border-aspora-300 bg-aspora-50/20">
@@ -883,19 +893,23 @@ function AIExtractDialog({
 
         <div className="space-y-4">
           {!response ? (
-            <div className="text-sm text-muted-foreground space-y-3">
-              <p>
-                Hit Find Regulations — we'll read{" "}
-                <strong>{license.filename || "your license file"}</strong> and
-                ask Claude what filings it triggers. Takes ~20–30 seconds.
-              </p>
-              {extractMutation.error && (
+            extractMutation.isError ? (
+              <div className="text-sm space-y-3">
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <div>{(extractMutation.error as Error).message}</div>
                 </div>
-              )}
-            </div>
+                <Button size="sm" onClick={() => extractMutation.mutate()}>
+                  <Sparkles className="h-4 w-4" />
+                  Try again
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-aspora-600 shrink-0" />
+                Finding finance regulations for this license… (~20–30s)
+              </div>
+            )
           ) : !response.available ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <div className="font-medium mb-1">Couldn't extract.</div>
@@ -1151,24 +1165,26 @@ function AIExtractDialog({
 
         <div className="flex justify-end gap-2 pt-1">
           {!response ? (
-            <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => extractMutation.mutate()}
-                disabled={extractMutation.isPending}
-              >
-                {extractMutation.isPending && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                )}
-                <Sparkles className="h-4 w-4" />
-                Find Regulations
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              onClick={() => {
+                reset();
+                onOpenChange(false);
+              }}
+            >
+              Cancel
+            </Button>
           ) : (
             <>
-              <Button variant="outline" onClick={reset}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setResponse(null);
+                  setKept(new Set());
+                  createMutation.reset();
+                  extractMutation.mutate();
+                }}
+              >
                 Search again
               </Button>
               {response.available && response.candidates.length > 0 && (

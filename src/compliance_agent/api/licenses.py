@@ -818,16 +818,18 @@ def ai_extract_obligations(
     )
 
     exhaustive_rule = (
-        "\n\nBE EXHAUSTIVE — this is a discovery tool, so list EVERY ongoing "
-        "obligation a holder of this license owes, across ALL functions, not "
-        "just finance: licensing renewals, annual returns / confirmation "
-        "statements, audited / financial statements, beneficial-ownership (UBO) "
-        "registers, AML/CFT & compliance reporting, economic-substance (ESR) "
-        "notifications and reports, data-protection filings, change/"
-        "notification filings, AND all tax filings (corporate/income tax, VAT/"
-        "GST, payroll & withholding, transfer pricing). Aim for a complete "
-        "list — do NOT limit yourself to a handful or summarise; one entry per "
-        "distinct filing. If unsure whether something applies, include it and "
+        "\n\nSCOPE — return FINANCE only. List ONLY ongoing FINANCIAL, TAX and "
+        "ACCOUNTING filings. Do NOT include legal, HR, governance or general "
+        "compliance items (e.g. UBO registers, AML/CFT reports, license "
+        "renewals, data-protection filings, board/secretarial matters) — those "
+        "are out of scope here.\n"
+        "Within finance, BE EXHAUSTIVE — list EVERY relevant filing, not just a "
+        "handful: corporate / income tax returns, VAT / GST / sales-tax "
+        "returns, annual financial statements, audit filing, payroll & "
+        "social-security / withholding returns, transfer-pricing documentation, "
+        "economic-substance filings, and any other periodic finance/tax filing "
+        "that applies. One entry per distinct filing; do NOT merge or "
+        "summarise. If unsure whether a finance filing applies, include it and "
         "mark applicability Conditional rather than omitting it."
     )
 
@@ -947,10 +949,15 @@ def ai_extract_obligations(
 
     candidates: list[dict] = []
     for c in result.rules:
-        # Find Regulations is the DISCOVERY tool — surface EVERYTHING Claude
-        # finds (finance + compliance + legal), not just finance. The admin
-        # ticks what to add. (FINANCE_ONLY still narrows the website lists /
-        # calendar, just not this extract.)
+        # Finance-only: drop anything that isn't a Finance/Tax/Accounting
+        # filing (legal, HR, governance, compliance, etc.). The exhaustive
+        # prompt makes sure the finance set itself is complete.
+        if not keep_function(
+            getattr(c, "category", ""),
+            getattr(c, "area", ""),
+            getattr(c, "responsible_function", None),
+        ):
+            continue
         d = c.model_dump()
         match = _match_catalogue(d.get("form_name", "") or "", d.get("name", "") or "")
         if match is not None:
