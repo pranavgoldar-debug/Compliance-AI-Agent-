@@ -342,6 +342,75 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
     return created
 
 
+# Filings removed from the catalogue because they duplicated a better row.
+# run_seed deletes any matching live rules (and their obligations) so a
+# re-seed cleans up databases seeded before the de-dupe. Add a (jurisdiction,
+# form_name) pair here whenever you retire a duplicate filing.
+RETIRED_FILINGS: list[tuple[str, str]] = [
+    ("uk", "CT600 — Corporation Tax Return"),
+    ("lithuania", "PLN204 (+ annexes)"),
+    ("lithuania", "FR0600 (PVM deklaracija)"),
+]
+
+
+def _remove_retired_rules(db: Session) -> int:
+    """Delete rules retired as duplicates, plus their obligations and dependent
+    rows (comments / notifications / activities; documents are detached, not
+    deleted). Safe to run repeatedly — a no-op once the rows are gone."""
+    from sqlalchemy import delete, update
+
+    from compliance_agent.db import (
+        Activity,
+        Comment,
+        Document,
+        Notification,
+        RuleEntity,
+        RuleSnapshot,
+    )
+
+    removed = 0
+    for jur, form_name in RETIRED_FILINGS:
+        rules = (
+            db.execute(
+                select(Rule).where(
+                    Rule.jurisdiction_code == jur,
+                    Rule.form_name == form_name,
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for rule in rules:
+            ob_ids = (
+                db.execute(select(Obligation.id).where(Obligation.rule_id == rule.id))
+                .scalars()
+                .all()
+            )
+            if ob_ids:
+                db.execute(delete(Comment).where(Comment.obligation_id.in_(ob_ids)))
+                db.execute(
+                    delete(Notification).where(Notification.obligation_id.in_(ob_ids))
+                )
+                db.execute(
+                    update(Document)
+                    .where(Document.obligation_id.in_(ob_ids))
+                    .values(obligation_id=None)
+                )
+                db.execute(
+                    delete(Activity).where(
+                        Activity.target_type == "obligation",
+                        Activity.target_id.in_(ob_ids),
+                    )
+                )
+                db.execute(delete(Obligation).where(Obligation.id.in_(ob_ids)))
+            db.execute(delete(RuleSnapshot).where(RuleSnapshot.rule_id == rule.id))
+            db.execute(delete(RuleEntity).where(RuleEntity.rule_id == rule.id))
+            db.delete(rule)
+            removed += 1
+    db.flush()
+    return removed
+
+
 _FREQUENCY_TO_OFFSETS_DAYS: dict[str, list[int]] = {
     # Negative = past (overdue / completed). Positive = future.
     "Monthly": [-45, -15, 5, 15, 25, 35, 45, 60, 75, 90],
@@ -547,6 +616,7 @@ def run_seed(
     with session_scope() as db:
         users = _ensure_users(db)
         entities_map = _ensure_entities(db, users)
+        retired = _remove_retired_rules(db)
         rules = _ensure_rules(db, list(entities_map.values()))
         if create_obligations:
             ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
@@ -557,6 +627,7 @@ def run_seed(
         "users": len(users),
         "entities": len(entities_map),
         "rules": len(rules),
+        "retired_duplicates_removed": retired,
         "obligations_created": ob_count,
         "effort_bands_backfilled": backfilled,
     }
