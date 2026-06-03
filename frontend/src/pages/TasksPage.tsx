@@ -424,7 +424,7 @@ export function TasksPage({
   // Header copy. The page is a single combined "Compliance & Finance"
   // queue — the Awaiting payment chip + department chips are how teams
   // slice their own work without us splitting them into separate pages.
-  const pageTitle = "Compliance & Finance";
+  const pageTitle = "Filings";
   const pageDescription =
     "Your queue. Compliance owns the filing; finance picks up the payment leg via the Awaiting payment filter.";
 

@@ -1,7 +1,7 @@
 // Licenses page — admin uploads a license, sees its details, and gets a
 // list of compliance rules that apply (matched on jurisdiction + tokens
 // from the license's authority/type/name).
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -16,7 +16,6 @@ import {
   RefreshCw,
   Search,
   Sparkles,
-  CalendarPlus,
   Trash2,
   Upload,
   X,
@@ -852,13 +851,13 @@ function AIExtractDialog({
           <div>
             <h3 className="font-semibold flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-aspora-600" />
-              Extract obligations from this license
+              Find Regulations
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Claude reads the uploaded license file and pulls out every ongoing
-              compliance obligation the licensee owes. Review, tick the ones to
-              keep, and they're created as Staging rules attached to{" "}
-              <strong>{license.entity_name}</strong>.
+              Claude finds the finance filings this license triggers. Review,
+              tick the ones to keep, and they're created as Staging rules
+              attached to <strong>{license.entity_name}</strong> — approve them
+              to Production and they auto-appear on the calendar.
             </p>
           </div>
           <Button
@@ -877,7 +876,7 @@ function AIExtractDialog({
           {!response ? (
             <div className="text-sm text-muted-foreground space-y-3">
               <p>
-                Hit Extract — we'll read{" "}
+                Hit Find Regulations — we'll read{" "}
                 <strong>{license.filename || "your license file"}</strong> and
                 ask Claude what filings it triggers. Takes ~20–30 seconds.
               </p>
@@ -1148,13 +1147,13 @@ function AIExtractDialog({
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
                 <Sparkles className="h-4 w-4" />
-                Extract
+                Find Regulations
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" onClick={reset}>
-                Re-extract
+                Search again
               </Button>
               {response.available && response.candidates.length > 0 && (
                 <Button
@@ -1199,6 +1198,27 @@ export function LicenseDetailBody({
         `/api/licenses/${license.id}/applicable-rules`,
       ),
   });
+
+  // Auto-schedule: every Production filing in this jurisdiction lands on the
+  // calendar automatically when the license is opened. Idempotent on the
+  // server (skips anything already scheduled), so it's safe to fire on mount.
+  const autoSchedule = useMutation({
+    mutationFn: () =>
+      api.post<{ scheduled: number }>(`/api/licenses/${license.id}/schedule-all`),
+    onSuccess: (r) => {
+      if (r.scheduled > 0) {
+        rulesQuery.refetch();
+        detailQueryClient.invalidateQueries({ queryKey: ["calendar"] });
+        detailQueryClient.invalidateQueries({ queryKey: ["obligations"] });
+        detailQueryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      }
+    },
+  });
+  useEffect(() => {
+    if (isAdmin) autoSchedule.mutate();
+    // Fire once per license open; autoSchedule identity is stable enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [license.id, isAdmin]);
 
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/licenses/${license.id}`),
@@ -1410,12 +1430,12 @@ export function LicenseDetailBody({
                         onClick={() => setAiOpen(true)}
                         title={
                           license.has_file
-                            ? "Read the uploaded license with Claude and surface obligations"
-                            : "No PDF needed — Claude lists the filings this license type usually owes, so you can cross-check your tracked list"
+                            ? "Read the uploaded license with Claude and find the filings it triggers"
+                            : "No PDF needed — Claude finds the finance filings this license type owes, ready to review and add"
                         }
                       >
                         <Sparkles className="h-3.5 w-3.5" />
-                        Extract with AI
+                        Find Regulations
                       </Button>
                     )}
                   </div>
@@ -1432,14 +1452,14 @@ export function LicenseDetailBody({
                     <div>
                       No finance filings tracked for{" "}
                       <strong>{license.jurisdiction_code?.toUpperCase()}</strong>{" "}
-                      yet — your catalogue has no data for this country. Use{" "}
-                      <strong>Extract with AI</strong> to have Claude list the
-                      filings, then tick the ones to add.
+                      yet. Use <strong>Find Regulations</strong> to have Claude
+                      list the filings, tick the ones to add, then approve them
+                      to Production — they'll auto-appear on the calendar.
                     </div>
                     {isAdmin && (
                       <Button size="sm" onClick={() => setAiOpen(true)}>
                         <Sparkles className="h-3.5 w-3.5" />
-                        Extract with AI
+                        Find Regulations
                       </Button>
                     )}
                   </div>
@@ -1501,59 +1521,6 @@ export function LicenseDetailBody({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function ScheduleRuleButton({
-  licenseId,
-  ruleId,
-  onScheduled,
-}: {
-  licenseId: number;
-  ruleId: number;
-  onScheduled: () => void;
-}) {
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.post<{ obligation_id: number; due_date: string }>(
-        `/api/licenses/${licenseId}/schedule-rule`,
-        { rule_id: ruleId },
-      ),
-    onSuccess: (result) => {
-      onScheduled();
-      // Drop the user straight into the new obligation — they wanted to
-      // schedule it because they're about to assign / work on it.
-      window.location.href = `/obligations/${result.obligation_id}`;
-    },
-    onError: (e) => {
-      // Without this, a 404 (server not restarted with the new endpoint) or
-      // 409 (duplicate) silently fails and the button just stops spinning.
-      const msg = e instanceof Error ? e.message : String(e);
-      window.alert(
-        `Couldn't schedule this rule:\n\n${msg}\n\n` +
-          `If you see "Not Found", restart the backend so the new endpoint is loaded.`,
-      );
-    },
-  });
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        mutation.mutate();
-      }}
-      disabled={mutation.isPending}
-      className="inline-flex items-center gap-1 rounded-md border border-aspora-300 bg-aspora-50 px-2 py-1 text-[11px] font-medium text-aspora-800 hover:bg-aspora-100 disabled:opacity-50"
-      title="Create a single obligation for this rule + entity. Default due date is based on the rule's frequency; you can change it after."
-    >
-      {mutation.isPending ? (
-        <Loader2 className="h-3 w-3 animate-spin" />
-      ) : (
-        <Plus className="h-3 w-3" />
-      )}
-      Schedule
-    </button>
   );
 }
 
@@ -1660,28 +1627,6 @@ function RegulationsTable({
           : r.applicability !== "Mandatory")),
   );
 
-  const tableQueryClient = useQueryClient();
-  const scheduleSelection = useMutation({
-    mutationFn: (ruleIds: number[]) =>
-      api.post<{ scheduled: number; skipped_existing: number; applicable: number }>(
-        `/api/licenses/${licenseId}/schedule-rules`,
-        { rule_ids: ruleIds },
-      ),
-    onSuccess: (r) => {
-      onScheduled();
-      tableQueryClient.invalidateQueries({ queryKey: ["calendar"] });
-      tableQueryClient.invalidateQueries({ queryKey: ["obligations"] });
-      tableQueryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      window.alert(
-        `Scheduled ${r.scheduled} filing(s) onto the calendar.` +
-          (r.skipped_existing
-            ? `\nAlready scheduled (skipped): ${r.skipped_existing}`
-            : ""),
-      );
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
-  const unscheduled = rows.filter((r) => !r.next_obligation_id);
 
   const Sel = ({
     value,
@@ -1711,31 +1656,10 @@ function RegulationsTable({
   return (
     <div className="space-y-2">
       {isAdmin && (
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-xs text-muted-foreground">
-            Showing Finance obligations only. Filter by regulator / category,
-            then schedule the selection onto the calendar.
-          </div>
-          <Button
-            size="sm"
-            disabled={unscheduled.length === 0 || scheduleSelection.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Schedule ${unscheduled.length} filing(s) (the current filter) onto the calendar with their deadlines?`,
-                )
-              ) {
-                scheduleSelection.mutate(unscheduled.map((r) => r.id));
-              }
-            }}
-            title="Creates calendar obligations for the filtered filings, routed to the right team"
-          >
-            {scheduleSelection.isPending && (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            )}
-            <CalendarPlus className="h-3.5 w-3.5" />
-            Schedule {unscheduled.length} on calendar
-          </Button>
+        <div className="text-xs text-muted-foreground">
+          Showing Finance filings only. These are auto-scheduled onto the
+          calendar — every Production filing in this jurisdiction appears
+          automatically when you open the license.
         </div>
       )}
       <div className="rounded-lg border border-border overflow-x-auto">
@@ -1855,13 +1779,14 @@ function RegulationsTable({
                       <CheckCircle2 className="h-3.5 w-3.5" />
                       On calendar
                     </a>
-                  ) : isAdmin ? (
-                    <ScheduleRuleButton
-                      licenseId={licenseId}
-                      ruleId={r.id}
-                      onScheduled={onScheduled}
-                    />
-                  ) : null}
+                  ) : (
+                    <span
+                      className="text-xs text-muted-foreground"
+                      title="Production filings schedule automatically when the license is opened"
+                    >
+                      —
+                    </span>
+                  )}
                 </td>
               </tr>
             ))
@@ -2005,13 +1930,9 @@ function RuleGroup({
                   <td className="px-3 py-2 align-top text-right">
                     {r.next_obligation_id ? (
                       <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
-                    ) : isAdmin ? (
-                      <ScheduleRuleButton
-                        licenseId={licenseId}
-                        ruleId={r.id}
-                        onScheduled={onScheduled}
-                      />
-                    ) : null}
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </td>
                 </tr>
               );

@@ -51,7 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       {
         to: "/tasks",
-        label: "Compliance & Finance",
+        label: "Filings",
         icon: CheckCircle2,
         badge: "tasks",
       },

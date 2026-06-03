@@ -597,27 +597,36 @@ def run_seed(
     *,
     auto_assign: bool = True,
     create_obligations: bool = True,
+    seed_rules: bool = False,
 ) -> dict[str, int]:
     """Idempotent seed. Returns counts of created objects.
 
-    auto_assign — when True (default), randomly distribute obligations
-    across the demo employee users so the dashboard / queue look populated.
-    Set False for a production-like seed where everything starts unassigned.
+    auto_assign — when True, randomly distribute obligations across the demo
+    employee users so the dashboard / queue look populated. Set False for a
+    production-like seed where everything starts unassigned.
 
-    create_obligations — when False, seed only users / entities / rules and
-    skip the obligation-generation step entirely. Use this when you want a
-    clean state where the admin manually creates obligations off the back of
-    licenses they've uploaded. Implies auto_assign=False (no obligations
-    to assign).
+    create_obligations — when False, skip the demo-obligation step entirely.
+
+    seed_rules — when False (the default now), DO NOT load the hand-curated
+    `fintech` catalogue. The product is AI-first: the catalogue is built by
+    "Find Regulations" (AI) → review → approve to production, not from a
+    frozen seed. Pass True only if you explicitly want the legacy demo
+    catalogue. With seed_rules False, create_obligations is forced off (no
+    rules to schedule against).
     """
     from compliance_agent.db import init_db
+
+    if not seed_rules:
+        create_obligations = False
 
     init_db()
     with session_scope() as db:
         users = _ensure_users(db)
         entities_map = _ensure_entities(db, users)
         retired = _remove_retired_rules(db)
-        rules = _ensure_rules(db, list(entities_map.values()))
+        rules = (
+            _ensure_rules(db, list(entities_map.values())) if seed_rules else []
+        )
         if create_obligations:
             ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
         else:
@@ -631,6 +640,58 @@ def run_seed(
         "obligations_created": ob_count,
         "effort_bands_backfilled": backfilled,
     }
+
+
+def wipe_catalogue() -> dict[str, int]:
+    """Empty the catalogue + calendar: delete every Rule and Obligation (plus
+    their dependent rows). Keeps users / entities / licenses so the admin can
+    rebuild the catalogue the AI-first way (Find Regulations → review → approve
+    to production, which auto-schedules onto the calendar). Documents are
+    detached from their obligations, not deleted."""
+    from sqlalchemy import delete, update
+
+    from compliance_agent.db import (
+        Activity,
+        Comment,
+        Document,
+        Notification,
+        Obligation,
+        Rule,
+        RuleEntity,
+        RuleSnapshot,
+        init_db,
+    )
+
+    init_db()
+    counts: dict[str, int] = {}
+    with session_scope() as db:
+        # Detach uploaded files first so deleting obligations can't orphan them.
+        db.execute(
+            update(Document)
+            .where(Document.obligation_id.is_not(None))
+            .values(obligation_id=None)
+        )
+        counts["comments"] = (
+            db.execute(delete(Comment).where(Comment.obligation_id.is_not(None))).rowcount
+            or 0
+        )
+        counts["notifications"] = (
+            db.execute(
+                delete(Notification).where(Notification.obligation_id.is_not(None))
+            ).rowcount
+            or 0
+        )
+        counts["activities"] = (
+            db.execute(
+                delete(Activity).where(Activity.target_type.in_(["obligation", "rule"]))
+            ).rowcount
+            or 0
+        )
+        counts["obligations"] = db.execute(delete(Obligation)).rowcount or 0
+        counts["rule_snapshots"] = db.execute(delete(RuleSnapshot)).rowcount or 0
+        counts["rule_entities"] = db.execute(delete(RuleEntity)).rowcount or 0
+        counts["rules"] = db.execute(delete(Rule)).rowcount or 0
+    return counts
 
 
 def purge_obligations() -> dict[str, int]:

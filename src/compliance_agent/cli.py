@@ -332,7 +332,17 @@ def _find_free_port(host: str, start: int, end: int):
         "create obligations off the back of licenses they upload."
     ),
 )
-def seed(no_assign: bool, no_obligations: bool) -> None:
+@click.option(
+    "--with-demo-catalogue",
+    is_flag=True,
+    default=False,
+    help=(
+        "Also load the legacy hand-curated fintech catalogue (357 filings). "
+        "Off by default — the product is AI-first, so the catalogue is built "
+        "via 'Find Regulations' → approve to production, not from a seed."
+    ),
+)
+def seed(no_assign: bool, no_obligations: bool, with_demo_catalogue: bool) -> None:
     """Seed the database with Aspora entities, rules, users, and obligations.
 
     Idempotent — safe to re-run. Login accounts:
@@ -360,6 +370,7 @@ def seed(no_assign: bool, no_obligations: bool) -> None:
     counts = run_seed(
         auto_assign=not no_assign,
         create_obligations=not no_obligations,
+        seed_rules=with_demo_catalogue,
     )
     click.echo(f"  users:                {counts['users']}", err=True)
     click.echo(f"  entities:             {counts['entities']}", err=True)
@@ -408,6 +419,42 @@ def purge_obligations_cmd(yes: bool) -> None:
     click.echo(
         "\nNext: log in as admin, open a license, and use 'Extract with AI' "
         "to create rules + obligations only for what actually applies.",
+        err=True,
+    )
+
+
+@main.command(name="wipe-catalogue")
+@click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt.")
+def wipe_catalogue_cmd(yes: bool) -> None:
+    """Empty the catalogue + calendar: delete EVERY rule and obligation (and
+    their dependent rows). Keeps users / entities / licenses.
+
+    Use this to go AI-first: start with an empty catalogue and rebuild it via
+    'Find Regulations' (AI) → review → approve to production, which then
+    auto-schedules onto the calendar.
+    """
+    import os
+
+    if not yes:
+        click.confirm(
+            "This deletes EVERY rule and obligation (and their comments / "
+            "notifications / calendar entries). Users, entities and licenses "
+            "stay. The catalogue starts empty. Continue?",
+            abort=True,
+        )
+    # Stop the next init_db from re-seeding anything.
+    os.environ["COMPLIANCE_AUTO_SEED"] = "0"
+
+    from compliance_agent.db.seed import wipe_catalogue
+
+    counts = wipe_catalogue()
+    click.echo("Catalogue + calendar wiped.", err=True)
+    for k in ("rules", "obligations", "rule_entities", "rule_snapshots",
+              "comments", "notifications", "activities"):
+        click.echo(f"  {k:<15} {counts.get(k, 0)}", err=True)
+    click.echo(
+        "\nNext: log in as admin, open a license, and use 'Find Regulations' "
+        "to build the catalogue for what actually applies.",
         err=True,
     )
 

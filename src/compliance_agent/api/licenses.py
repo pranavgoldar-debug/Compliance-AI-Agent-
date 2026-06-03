@@ -1403,18 +1403,22 @@ def schedule_all_for_license(
     scheduled, skipped, applicable = _schedule_filings_for_license(
         db, lic, mandatory_only=False
     )
-    log_activity(
-        db,
-        actor_id=actor.id,
-        action="license.scheduled_all",
-        target_type="license",
-        target_id=license_id,
-        payload={
-            "scheduled": scheduled,
-            "skipped_existing": skipped,
-            "applicable": applicable,
-        },
-    )
+    # Only log when something actually landed — this endpoint is now called
+    # automatically every time the licence is opened, so logging no-ops would
+    # flood the activity feed.
+    if scheduled:
+        log_activity(
+            db,
+            actor_id=actor.id,
+            action="license.scheduled_all",
+            target_type="license",
+            target_id=license_id,
+            payload={
+                "scheduled": scheduled,
+                "skipped_existing": skipped,
+                "applicable": applicable,
+            },
+        )
     db.commit()
     return ScheduleAllResponse(
         scheduled=scheduled, skipped_existing=skipped, applicable=applicable
