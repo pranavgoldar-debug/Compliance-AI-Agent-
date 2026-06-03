@@ -557,6 +557,31 @@ _MAX_PROMPT_CHARS = 60_000        # rough char cap to keep Claude prompt managea
 # Find Regulations qualifying questions. Keys match the frontend questionnaire;
 # each maps an answer value to a human line for the prompt. The answers drive
 # Mandatory vs Conditional only — no filing is ever dropped.
+#
+# This dict is OPTIONAL — just nicer labels. `_build_profile_block` falls back
+# to humanising any unknown key/value, so questions added on the frontend work
+# without touching this file.
+
+# Generic answer-value → human text, used when a key isn't in _PROFILE_QUESTIONS
+# (or its value isn't listed). Keeps the frontend the single source of truth.
+_VALUE_LABELS: dict[str, str] = {
+    "yes": "yes",
+    "no": "no",
+    "unsure": "not sure",
+    "na": "not applicable",
+    "below": "below threshold",
+    "above": "above threshold",
+    "monthly": "monthly",
+    "quarterly": "quarterly",
+    "annual": "annual",
+}
+
+
+def _humanize_key(key: str) -> str:
+    """Turn a profile key like 'related_party' into 'Related party'."""
+    return key.replace("_", " ").strip().capitalize()
+
+
 _PROFILE_QUESTIONS: dict[str, dict] = {
     "vat_registered": {
         "label": "VAT / GST registered",
@@ -619,16 +644,25 @@ _PROFILE_QUESTIONS: dict[str, dict] = {
 
 def _build_profile_block(profile: Optional[dict]) -> str:
     """Render the entity's qualifying-question answers into a prompt block that
-    tells Claude how to use them for applicability. Empty when no profile."""
+    tells Claude how to use them for applicability. Empty when no profile.
+
+    Generic: renders WHATEVER keys/values the profile contains. `_PROFILE_
+    QUESTIONS` is only an optional nicer-label override — new questions added on
+    the frontend show up here automatically (key/value humanised), so the
+    questionnaire stays the single source of truth."""
     if not profile:
         return ""
     lines: list[str] = []
-    for key, spec in _PROFILE_QUESTIONS.items():
-        raw = profile.get(key)
-        if not raw:
+    for key, raw in profile.items():
+        if raw in (None, ""):
             continue
-        human = spec["values"].get(str(raw), str(raw))
-        lines.append(f"- {spec['label']}: {human}")
+        spec = _PROFILE_QUESTIONS.get(key)
+        label = spec["label"] if spec else _humanize_key(key)
+        if spec and str(raw) in spec["values"]:
+            human = spec["values"][str(raw)]
+        else:
+            human = _VALUE_LABELS.get(str(raw), str(raw))
+        lines.append(f"- {label}: {human}")
     if not lines:
         return ""
     return (
@@ -644,9 +678,12 @@ def _build_profile_block(profile: Optional[dict]) -> str:
         "documentation is Mandatory; revenue above the threshold -> "
         "threshold-triggered filings are Mandatory.\n"
         "- Mark a filing CONDITIONAL when the profile says it does NOT apply, "
-        "or is silent / 'not sure' — e.g. NOT VAT-registered -> VAT return is "
-        "Conditional (not dropped); no payroll -> payroll returns Conditional. "
-        "Use the applicability_note to say what would trigger it.\n"
+        "is 'not applicable', or is silent / 'not sure' — e.g. NOT "
+        "VAT-registered -> VAT return is Conditional (not dropped); no payroll "
+        "-> payroll returns Conditional. When an answer is 'not applicable', "
+        "add an applicability_note saying the filing does not currently apply "
+        "to this entity. Use the applicability_note to say what would trigger "
+        "each conditional filing.\n"
         "Every finance filing still appears in the output regardless of the "
         "profile — the profile only changes Mandatory vs Conditional."
     )

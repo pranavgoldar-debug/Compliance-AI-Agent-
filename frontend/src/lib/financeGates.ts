@@ -5,8 +5,16 @@
 // the entity (finance_profile) and fed to Claude, which uses them to label each
 // filing Mandatory or Conditional — nothing is ever dropped.
 //
-// Keys here MUST match `_PROFILE_QUESTIONS` in the backend
-// (src/compliance_agent/api/licenses.py) so the prompt renders them.
+// This file is the SINGLE SOURCE OF TRUTH for the questionnaire. The backend
+// (`_build_profile_block` in src/compliance_agent/api/licenses.py) renders
+// whatever keys/values the saved profile contains — humanising anything it
+// doesn't recognise — so you can add / edit / remove questions HERE only,
+// without touching the backend. (`_PROFILE_QUESTIONS` there is just optional
+// nicer labels.)
+//
+// To add a question: append a FilingGate below. To make it jurisdiction-
+// specific, set `jurisdictions`. To branch, add `followups` (shown on "yes").
+// Every yes/no question already offers a "Not applicable" option.
 
 export type GateOption = { value: string; label: string };
 
@@ -34,12 +42,19 @@ export type FilingGate = {
 const YES_NO: GateOption[] = [
   { value: "yes", label: "Yes" },
   { value: "no", label: "No" },
+  { value: "na", label: "Not applicable" },
 ];
-const YES_NO_UNSURE: GateOption[] = [...YES_NO, { value: "unsure", label: "Not sure" }];
+const YES_NO_UNSURE: GateOption[] = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+  { value: "unsure", label: "Not sure" },
+  { value: "na", label: "Not applicable" },
+];
 const BAND: GateOption[] = [
   { value: "below", label: "Below threshold" },
   { value: "above", label: "Above threshold" },
   { value: "unsure", label: "Not sure" },
+  { value: "na", label: "Not applicable" },
 ];
 
 // Ordered list of gates. Jurisdiction filtering decides which ones show; gates
