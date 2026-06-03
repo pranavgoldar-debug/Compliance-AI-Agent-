@@ -40,7 +40,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction, extractFormCode } from "@/lib/format";
+import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
 import type {
   ApplicableRulesResponse,
   Entity,
@@ -1063,9 +1063,6 @@ function AIExtractDialog({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{cleanFilingName(r.name || r.form_name)}</span>
-                          {extractFormCode(r.form_name) && (
-                            <Badge variant="neutral">Form: {extractFormCode(r.form_name)}</Badge>
-                          )}
                           <Badge variant="neutral">{deriveFunction(r.category, r.area)}</Badge>
                           {isTracked(r.name || r.form_name, existingForms) ? (
                             <Badge variant="neutral">Already tracked</Badge>
@@ -1118,19 +1115,6 @@ function AIExtractDialog({
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {r.authority} · {r.category} · {r.frequency}
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1 italic">
-                          {r.due_date_rule}
-                        </div>
-                        {r.payment_rule && (
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            <strong>Payment:</strong> {r.payment_rule}
-                          </div>
-                        )}
-                        {r.applicability_note && (
-                          <div className="text-[11px] text-muted-foreground mt-0.5">
-                            {r.applicability_note}
-                          </div>
-                        )}
                       </div>
                       <Badge
                         variant={
@@ -1701,7 +1685,6 @@ function RegulationsTable({
               <Sel value={cat} onChange={setCat} opts={catOpts} label="" />
             </th>
             <th className="px-3 py-2 text-left font-medium">Obligation</th>
-            <th className="px-3 py-2 text-left font-medium w-[110px]">Form</th>
             <th className="px-3 py-2 text-left font-medium w-[120px]">
               Frequency
               <Sel value={freq} onChange={setFreq} opts={freqOpts} label="" />
@@ -1721,7 +1704,7 @@ function RegulationsTable({
         <tbody className="divide-y divide-border">
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={8} className="px-3 py-6 text-center text-sm text-muted-foreground">
+              <td colSpan={7} className="px-3 py-6 text-center text-sm text-muted-foreground">
                 No filings match these filters.
               </td>
             </tr>
@@ -1756,11 +1739,6 @@ function RegulationsTable({
                     <div className="text-[11px] text-muted-foreground">
                       {r.plain_description}
                     </div>
-                  )}
-                </td>
-                <td className="px-3 py-2 align-top text-xs font-mono">
-                  {extractFormCode(r.form_name) || (
-                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
                 <td className="px-3 py-2 align-top text-xs">{r.frequency}</td>
