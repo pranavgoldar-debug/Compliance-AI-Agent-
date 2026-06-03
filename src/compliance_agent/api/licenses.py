@@ -555,8 +555,8 @@ _MAX_PROMPT_CHARS = 60_000        # rough char cap to keep Claude prompt managea
 
 
 # Find Regulations qualifying questions. Keys match the frontend questionnaire;
-# each maps an answer value to a human line for the prompt. `_drop` lists the
-# answer values that make a whole class of filings clearly inapplicable.
+# each maps an answer value to a human line for the prompt. The answers drive
+# Mandatory vs Conditional only — no filing is ever dropped.
 _PROFILE_QUESTIONS: dict[str, dict] = {
     "vat_registered": {
         "label": "VAT / GST registered",
@@ -600,21 +600,23 @@ def _build_profile_block(profile: Optional[dict]) -> str:
     if not lines:
         return ""
     return (
-        "\n\nCOMPANY PROFILE (admin-provided — use this to decide each filing's "
+        "\n\nCOMPANY PROFILE (admin-provided — use this to set each filing's "
         "applicability):\n"
         + "\n".join(lines)
-        + "\n\nApply this profile:\n"
-        "- OMIT filings that clearly DO NOT apply given the profile — e.g. if "
-        "NOT VAT/GST-registered, drop the VAT/GST return; if NO payroll, drop "
-        "payroll / WPS / withholding returns; if NO related-party or "
-        "cross-border transactions, drop transfer-pricing documentation; if "
-        "revenue is below the threshold, drop filings that only trigger above "
-        "it.\n"
-        "- For filings that DO apply, set applicability Mandatory when the "
-        "profile makes them required, and Conditional only where genuine "
-        "uncertainty remains.\n"
-        "- Where the profile is silent or 'not sure' on a point, KEEP the "
-        "filing and mark it Conditional rather than dropping it."
+        + "\n\nApply this profile to set applicability ONLY — do NOT omit or "
+        "drop any filing; keep the full finance list and just label each one:\n"
+        "- Mark a filing MANDATORY when the profile makes it clearly required "
+        "— e.g. VAT/GST-registered -> VAT/GST return is Mandatory; runs "
+        "payroll -> payroll / WPS / withholding returns are Mandatory; "
+        "related-party or cross-border transactions -> transfer-pricing "
+        "documentation is Mandatory; revenue above the threshold -> "
+        "threshold-triggered filings are Mandatory.\n"
+        "- Mark a filing CONDITIONAL when the profile says it does NOT apply, "
+        "or is silent / 'not sure' — e.g. NOT VAT-registered -> VAT return is "
+        "Conditional (not dropped); no payroll -> payroll returns Conditional. "
+        "Use the applicability_note to say what would trigger it.\n"
+        "Every finance filing still appears in the output regardless of the "
+        "profile — the profile only changes Mandatory vs Conditional."
     )
 
 
