@@ -318,9 +318,17 @@ def create_license(
             )
         )
 
-    # No auto-scheduling on upload — the admin filters the applicable filings
-    # (function / regulator / category) and schedules the selection onto the
-    # calendar explicitly, so it doesn't get messy.
+    # Auto-schedule on upload: put every applicable filing for this licence's
+    # jurisdiction straight onto the calendar, so the admin doesn't have to
+    # schedule them one by one. (FINANCE_ONLY narrows this to Finance filings.)
+    auto_scheduled = 0
+    try:
+        auto_scheduled, _, _ = _schedule_filings_for_license(
+            db, lic, mandatory_only=False
+        )
+    except Exception:  # noqa: BLE001 — never block license creation on this
+        auto_scheduled = 0
+
     log_activity(
         db,
         actor_id=user.id,
@@ -331,6 +339,7 @@ def create_license(
             "entity_id": entity_id,
             "name": lic.name,
             "authority": lic.authority,
+            "auto_scheduled": auto_scheduled,
         },
     )
     db.commit()
