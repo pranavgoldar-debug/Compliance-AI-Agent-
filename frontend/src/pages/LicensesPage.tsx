@@ -945,12 +945,12 @@ function AIExtractDialog({
                 if (diffs.length === 0) return null;
                 return (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
-                    <strong>Conflicts vs your catalogue:</strong> {diffs.length} of{" "}
-                    {response.candidates.length} matched filing
+                    <strong>Differences vs your tracked rules:</strong>{" "}
+                    {diffs.length} of {response.candidates.length} matched filing
                     {diffs.length === 1 ? "" : "s"} have a different due date,
-                    frequency, or mandatory/conditional status than what your
-                    website tracks (marked ⚠ below). Your catalogue is the source
-                    of truth — review each and fix the rule if needed.
+                    frequency, or mandatory/conditional status than what you
+                    currently track (marked ⚠ below). Review each and decide
+                    which is right — neither side is assumed correct.
                   </div>
                 );
               })()}
@@ -994,7 +994,6 @@ function AIExtractDialog({
                 );
                 return (
                   <div className="flex flex-wrap gap-2">
-                    {sel(candFn, setCandFn, ["Finance", "Compliance", "Legal"], "functions")}
                     {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
                     {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
                     {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
@@ -1057,7 +1056,7 @@ function AIExtractDialog({
                           {r.due_date_differs && (
                             <Badge
                               variant="overdue"
-                              title={`Your catalogue says: ${r.catalogue_due_date_rule ?? "—"}`}
+                              title={`Your tracked rule says: ${r.catalogue_due_date_rule ?? "—"}`}
                             >
                               ⚠ Due date differs
                             </Badge>
@@ -1065,7 +1064,7 @@ function AIExtractDialog({
                           {r.frequency_differs && (
                             <Badge
                               variant="overdue"
-                              title={`Your catalogue says: ${r.catalogue_frequency ?? "—"}`}
+                              title={`Your tracked rule says: ${r.catalogue_frequency ?? "—"}`}
                             >
                               ⚠ Frequency differs
                             </Badge>
@@ -1073,7 +1072,7 @@ function AIExtractDialog({
                           {r.applicability_differs && (
                             <Badge
                               variant="overdue"
-                              title={`Your catalogue says: ${r.catalogue_applicability ?? "—"}`}
+                              title={`Your tracked rule says: ${r.catalogue_applicability ?? "—"}`}
                             >
                               ⚠ Mandatory/Conditional differs
                             </Badge>
@@ -1081,7 +1080,7 @@ function AIExtractDialog({
                         </div>
                         {(r.due_date_differs || r.frequency_differs || r.applicability_differs) && (
                           <div className="text-[11px] text-amber-700 mt-1">
-                            Your catalogue (source of truth):{" "}
+                            Your tracked rule:{" "}
                             {[
                               r.due_date_differs && `due — ${r.catalogue_due_date_rule}`,
                               r.frequency_differs && `frequency — ${r.catalogue_frequency}`,

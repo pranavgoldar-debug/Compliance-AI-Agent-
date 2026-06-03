@@ -164,6 +164,48 @@ def _tokens(*texts: str) -> set[str]:
     return out
 
 
+_FORM_CODE_RE = re.compile(r"[A-Z0-9][A-Z0-9]*(?:[-/][A-Z0-9]+)*")
+
+
+def _form_code(text: str) -> str:
+    """Pull official form code(s) (letter+digit tokens like CT600, FSA056,
+    GSTR-3B) out of a filing/form name. Mirror of the frontend extractFormCode."""
+    if not text:
+        return ""
+    seen: list[str] = []
+    for tok in _FORM_CODE_RE.findall(text):
+        if (
+            any(c.isdigit() for c in tok)
+            and any(c.isalpha() for c in tok)
+            and 3 <= len(tok) <= 14
+            and tok not in seen
+        ):
+            seen.append(tok)
+    return " / ".join(seen)
+
+
+def _dedupe_rules(rules: list) -> list:
+    """Collapse near-duplicate rules so the same filing doesn't appear twice.
+    Two rules are "the same" when they share a form code (e.g. two CT600 rows,
+    even if filed under different category labels — a code is unique to one
+    filing within a jurisdiction), or — when there's no code — the same
+    normalised name within a category. Keeps the first occurrence."""
+    seen: set = set()
+    out: list = []
+    for r in rules:
+        code = _form_code(r.form_name or "")
+        if code:
+            key = ("code", code.lower())
+        else:
+            name = re.sub(r"[^a-z0-9]+", "", (r.name or r.form_name or "").lower())
+            key = ("name", name, (r.category or "").strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def _expiry_status(expiry: Optional[date]) -> tuple[str, Optional[int]]:
     if expiry is None:
         return "unknown", None
@@ -851,6 +893,15 @@ def ai_extract_obligations(
 
     candidates: list[dict] = []
     for c in result.rules:
+        # FINANCE_ONLY switch: Claude's extract is also narrowed to Finance
+        # filings now (compliance / legal dropped) — the broadened prompt makes
+        # sure the finance/tax obligations are present, so this isn't empty.
+        if not keep_function(
+            getattr(c, "category", ""),
+            getattr(c, "area", ""),
+            getattr(c, "responsible_function", None),
+        ):
+            continue
         d = c.model_dump()
         match = _match_catalogue(d.get("form_name", "") or "", d.get("name", "") or "")
         if match is not None:
@@ -861,11 +912,9 @@ def ai_extract_obligations(
             if std_name:
                 d["name"] = std_name
             d["matched_standard"] = True
-            # The website is the source of truth for the "fixed" attributes
-            # (due date, frequency, applicability). Don't silently overwrite —
-            # surface the catalogue value + a *_differs flag so the admin can
-            # see every divergence and decide. (granularity is handled in the
-            # prompt: Claude is told to keep a 1:1 match, no merge/split.)
+            # Surface the catalogue value + a *_differs flag where Claude diverges
+            # from your currently-tracked rule, so you can see every difference
+            # and decide which is right (the catalogue is NOT assumed correct).
             d["catalogue_due_date_rule"] = match.due_date_rule
             d["catalogue_frequency"] = match.frequency
             d["catalogue_applicability"] = (
@@ -922,21 +971,24 @@ def applicable_rules(
         raise HTTPException(status_code=404, detail="License not found.")
 
     # 1. Candidate pool: production rules in this jurisdiction.
-    #    FINANCE_ONLY switch: keep only Finance-function rules.
-    pool = [
-        r
-        for r in db.execute(
-            select(Rule)
-            .where(
-                Rule.jurisdiction_code == lic.jurisdiction_code,
-                Rule.status == RuleStatus.production,
+    #    FINANCE_ONLY switch: keep only Finance-function rules. _dedupe_rules
+    #    collapses near-duplicate filings (e.g. two CT600 rows).
+    pool = _dedupe_rules(
+        [
+            r
+            for r in db.execute(
+                select(Rule)
+                .where(
+                    Rule.jurisdiction_code == lic.jurisdiction_code,
+                    Rule.status == RuleStatus.production,
+                )
+                .order_by(Rule.category, Rule.form_name)
             )
-            .order_by(Rule.category, Rule.form_name)
-        )
-        .scalars()
-        .all()
-        if keep_function(r.category, r.area, r.responsible_function)
-    ]
+            .scalars()
+            .all()
+            if keep_function(r.category, r.area, r.responsible_function)
+        ]
+    )
 
     license_tokens = _tokens(lic.authority, lic.license_type, lic.name)
 
@@ -1282,18 +1334,20 @@ def _schedule_filings_for_license(
     licence's jurisdiction (the whole country set is applicable). Skips any
     that already have an obligation on the computed due date. Returns
     (scheduled, skipped_existing, applicable). Does NOT commit."""
-    pool = [
-        r
-        for r in db.execute(
-            select(Rule).where(
-                Rule.jurisdiction_code == lic.jurisdiction_code,
-                Rule.status == RuleStatus.production,
+    pool = _dedupe_rules(
+        [
+            r
+            for r in db.execute(
+                select(Rule).where(
+                    Rule.jurisdiction_code == lic.jurisdiction_code,
+                    Rule.status == RuleStatus.production,
+                )
             )
-        )
-        .scalars()
-        .all()
-        if keep_function(r.category, r.area, r.responsible_function)
-    ]
+            .scalars()
+            .all()
+            if keep_function(r.category, r.area, r.responsible_function)
+        ]
+    )
     today_d = date.today()
     scheduled = skipped = applicable = 0
     for rule in pool:
