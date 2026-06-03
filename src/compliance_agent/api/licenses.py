@@ -562,25 +562,57 @@ _PROFILE_QUESTIONS: dict[str, dict] = {
         "label": "VAT / GST registered",
         "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
     },
-    "has_payroll": {
-        "label": "Runs payroll / has employees",
+    "vat_frequency": {
+        "label": "VAT / GST return frequency",
+        "values": {"monthly": "monthly", "quarterly": "quarterly", "annual": "annual"},
+    },
+    "employs_staff": {
+        "label": "Employs staff on payroll",
         "values": {"yes": "yes", "no": "no"},
     },
-    "revenue_band": {
-        "label": "Annual revenue",
-        "values": {
-            "below": "below the local registration / corporate-tax threshold",
-            "above": "above the local registration / corporate-tax threshold",
-            "unsure": "not sure",
-        },
+    "wps": {
+        "label": "Salaries paid via the Wage Protection System (WPS)",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "social_security": {
+        "label": "Contributes to pension / social security",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "ct_registered": {
+        "label": "Registered for corporate / income tax",
+        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
+    },
+    "ct_income_band": {
+        "label": "Taxable income vs the local corporate-tax threshold",
+        "values": {"below": "below threshold", "above": "above threshold", "unsure": "not sure"},
     },
     "related_party": {
-        "label": "Related-party or cross-border transactions",
+        "label": "Related-party / intra-group transactions",
         "values": {"yes": "yes", "no": "no"},
     },
-    "relevant_activity": {
-        "label": 'Conducts a regulated / "relevant" activity (e.g. ESR)',
+    "tp_threshold": {
+        "label": "Related-party transactions vs the TP documentation threshold",
+        "values": {"below": "below threshold", "above": "above threshold", "unsure": "not sure"},
+    },
+    "licensed_activity": {
+        "label": "Carries on a licensed / regulated financial activity",
         "values": {"yes": "yes", "no": "no"},
+    },
+    "client_funds": {
+        "label": "Holds client / customer funds",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "esr_activity": {
+        "label": 'Conducts a "relevant activity" under ESR',
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "esr_income": {
+        "label": "Earns income from the ESR relevant activity",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "audit_required": {
+        "label": "Statutory audit required (regulator / company size)",
+        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
     },
 }
 

@@ -41,6 +41,11 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
+import {
+  gatesForJurisdiction,
+  followupsForJurisdiction,
+} from "@/lib/financeGates";
+import type { GateOption } from "@/lib/financeGates";
 import type {
   ApplicableRulesResponse,
   Entity,
@@ -806,6 +811,21 @@ function AIExtractDialog({
   const [candFreq, setCandFreq] = useState("");
   const [candAppl, setCandAppl] = useState("");
 
+  // Qualifying-questions step. `phase` is "questionnaire" until we have the
+  // entity's answers, then "extract" (the running / results view).
+  const [phase, setPhase] = useState<"questionnaire" | "extract">("questionnaire");
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  // Fetch the entity to read its saved finance_profile (and jurisdiction).
+  const entityClient = useQueryClient();
+  const entityQuery = useQuery({
+    queryKey: ["entity", license.entity_id],
+    queryFn: () => api.get<Entity>(`/api/entities/${license.entity_id}`),
+    enabled: open,
+  });
+  const juris = entityQuery.data?.jurisdiction_code ?? license.jurisdiction_code;
+  const gates = gatesForJurisdiction(juris);
+
   const extractMutation = useMutation({
     mutationFn: () =>
       api.post<AIExtractResponse>(`/api/licenses/${license.id}/ai-extract`),
@@ -845,6 +865,19 @@ function AIExtractDialog({
     },
   });
 
+  // Save the questionnaire answers onto the entity, then run the extraction.
+  const saveProfileMutation = useMutation({
+    mutationFn: () =>
+      api.patch<Entity>(`/api/entities/${license.entity_id}`, {
+        finance_profile: answers,
+      }),
+    onSuccess: () => {
+      entityClient.invalidateQueries({ queryKey: ["entity", license.entity_id] });
+      // Entering the extract phase triggers the run effect below.
+      setPhase("extract");
+    },
+  });
+
   function reset() {
     setResponse(null);
     setKept(new Set());
@@ -852,15 +885,66 @@ function AIExtractDialog({
     createMutation.reset();
   }
 
-  // Clicking "Find Regulations" opens this dialog — kick off the extraction
-  // straight away so the user lands on the running state, not an extra
-  // "click to start" screen. Re-run is via the "Search again" button.
+  // Decide the opening phase ONCE per open, after the entity loads: if it
+  // already has saved answers, skip straight to the extract (they answered
+  // before → don't nag); otherwise show the questionnaire. The once-guard keeps
+  // a background refetch (or "Edit answers") from snapping the phase back.
+  const phaseDecidedRef = useRef(false);
   useEffect(() => {
-    if (open && !response && !extractMutation.isPending && !extractMutation.isError) {
+    if (!open) {
+      phaseDecidedRef.current = false;
+      return;
+    }
+    if (phaseDecidedRef.current || !entityQuery.data) return;
+    phaseDecidedRef.current = true;
+    const saved = entityQuery.data.finance_profile;
+    if (saved && Object.keys(saved).length > 0) {
+      setAnswers(saved);
+      setPhase("extract");
+    } else {
+      setPhase("questionnaire");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, entityQuery.data]);
+
+  // Once in the extract phase, kick off the run so the user lands on the
+  // running state rather than a "click to start" screen.
+  useEffect(() => {
+    if (
+      open &&
+      phase === "extract" &&
+      !response &&
+      !extractMutation.isPending &&
+      !extractMutation.isError
+    ) {
       extractMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, phase]);
+
+  function answer(key: string, value: string) {
+    setAnswers((a) => ({ ...a, [key]: value }));
+  }
+
+  const renderOptions = (key: string, options: GateOption[]) => (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => answer(key, o.value)}
+          className={cn(
+            "rounded-md border px-2.5 py-1 text-xs transition-colors",
+            answers[key] === o.value
+              ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+              : "border-border text-muted-foreground hover:bg-secondary",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
 
   if (!open) return null;
   return (
@@ -873,20 +957,79 @@ function AIExtractDialog({
               Find Regulations
             </h3>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              reset();
-              onOpenChange(false);
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {phase === "extract" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  reset();
+                  setPhase("questionnaire");
+                }}
+              >
+                Edit answers
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                reset();
+                onOpenChange(false);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-4">
-          {!response ? (
+          {phase === "questionnaire" ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                A few quick questions about{" "}
+                <strong>{entityQuery.data?.name ?? license.entity_name}</strong>{" "}
+                so we can mark each filing mandatory or conditional. Answer what
+                you know — skip the rest.
+              </p>
+              {entityQuery.isLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin text-aspora-600" />
+                  Loading…
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1 scrollbar-thin">
+                  {gates.map((g) => {
+                    const fups = followupsForJurisdiction(g, juris);
+                    return (
+                      <div
+                        key={g.id}
+                        className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                      >
+                        <div className="text-sm font-medium">{g.question}</div>
+                        <div className="text-xs text-muted-foreground mb-2">
+                          Drives: {g.drives}
+                        </div>
+                        {renderOptions(g.key, g.options)}
+                        {answers[g.key] === "yes" && fups.length > 0 && (
+                          <div className="mt-3 space-y-2.5 border-l-2 border-aspora-200 pl-3">
+                            {fups.map((f) => (
+                              <div key={f.key}>
+                                <div className="text-sm">{f.question}</div>
+                                <div className="mt-1.5">
+                                  {renderOptions(f.key, f.options)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : !response ? (
             extractMutation.isError ? (
               <div className="text-sm space-y-3">
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
@@ -1158,7 +1301,39 @@ function AIExtractDialog({
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
-          {!response ? (
+          {phase === "questionnaire" ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  reset();
+                  onOpenChange(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Skip — run without saving any answers (the run effect
+                  // fires on the phase change).
+                  setPhase("extract");
+                }}
+              >
+                Skip
+              </Button>
+              <Button
+                onClick={() => saveProfileMutation.mutate()}
+                disabled={saveProfileMutation.isPending}
+              >
+                {saveProfileMutation.isPending && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                <Sparkles className="h-4 w-4" />
+                Find Regulations
+              </Button>
+            </>
+          ) : !response ? (
             <Button
               variant="outline"
               onClick={() => {

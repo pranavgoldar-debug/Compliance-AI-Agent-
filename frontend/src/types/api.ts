@@ -41,6 +41,7 @@ export interface Entity {
   registration_number: string | null;
   incorporation_date: string | null;
   fiscal_year_end: string | null;
+  finance_profile: Record<string, string> | null;
   country_lead: UserBrief | null;
   archived_at: string | null;
   created_at: string;
