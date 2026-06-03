@@ -693,6 +693,36 @@ def ai_extract_obligations(
     # standard finance/tax/accounting filings any company in the jurisdiction
     # owes. This keeps the AI extract (source of truth) broader than the
     # finance-only website view, rather than narrower.
+    # (A) Ground the extract in the curated catalogue — give Claude the
+    # standard filing names we already track for this jurisdiction so it (a)
+    # reuses those EXACT names and (b) doesn't miss filings the website lists.
+    catalogue = (
+        db.execute(
+            select(Rule).where(
+                Rule.jurisdiction_code == lic.jurisdiction_code,
+                Rule.status == RuleStatus.production,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    catalogue_ref = ""
+    if catalogue:
+        names = sorted(
+            {
+                (r.form_name or r.name or "").strip()
+                for r in catalogue
+                if (r.form_name or r.name)
+            }
+        )
+        catalogue_ref = (
+            "\n\n--- STANDARD FILINGS WE ALREADY TRACK FOR THIS JURISDICTION ---\n"
+            "Where an obligation you list corresponds to one of these, use the "
+            "EXACT name below (do not paraphrase). Make sure every relevant one "
+            "here appears in your output, and add any further obligations you "
+            "know of as new items:\n" + "\n".join(f"- {n}" for n in names)
+        )
+
     finance_addendum = (
         f"\n\nIMPORTANT — also include the standard ongoing FINANCIAL, TAX and "
         f"ACCOUNTING obligations any operating company in "
@@ -716,6 +746,7 @@ def ai_extract_obligations(
             f"obligations. Ignore one-off pre-licensing steps that have "
             f"already happened."
             f"{finance_addendum}"
+            f"{catalogue_ref}"
             f"\n\n--- LICENSE TEXT BEGINS ---\n\n"
         )
         truncated = text[: max(0, _MAX_PROMPT_CHARS - len(primer))]
@@ -736,7 +767,8 @@ def ai_extract_obligations(
             f"CFT obligations, renewals. For each, note whether it is mandatory "
             f"or conditional, and its usual frequency."
             f"{finance_addendum}"
-            f" If you are unsure, mark applicability "
+            f"{catalogue_ref}"
+            f"\n\nIf you are unsure, mark applicability "
             f"accordingly rather than omitting it."
         )
 
@@ -782,6 +814,37 @@ def ai_extract_obligations(
     )
     combined_notes = " ".join(n for n in (extra_note, result.notes) if n) or None
 
+    # (B) Reconcile names against the catalogue. Where a candidate clearly
+    # matches a filing we already track, adopt the catalogue's STANDARD name so
+    # the extract and the website line up (and the cross-check matches cleanly).
+    # `matched_standard` flags which ones were aligned vs genuinely new.
+    def _match_catalogue(*texts: str) -> Optional[Rule]:
+        cand = _tokens(*texts)
+        if not cand:
+            return None
+        best, best_score = None, 0
+        for r in catalogue:
+            shared = cand & _tokens(r.form_name, r.name)
+            if len(shared) > best_score:
+                best, best_score = r, len(shared)
+        # Need a couple of shared meaningful tokens to avoid false matches.
+        return best if best_score >= 2 else None
+
+    candidates: list[dict] = []
+    for c in result.rules:
+        d = c.model_dump()
+        match = _match_catalogue(d.get("form_name", "") or "", d.get("name", "") or "")
+        if match is not None:
+            std = match.form_name or match.name
+            if std:
+                d["form_name"] = std
+                if match.name:
+                    d["name"] = match.name
+            d["matched_standard"] = True
+        else:
+            d["matched_standard"] = False
+        candidates.append(d)
+
     # NOTE: the AI extract is the comprehensive "source of truth" / cross-check
     # tool, so it is deliberately NOT narrowed by the FINANCE_ONLY switch — it
     # surfaces every obligation Claude finds (finance + compliance + legal).
@@ -798,7 +861,7 @@ def ai_extract_obligations(
         # rules created from these candidates get a code that fits the column.
         jurisdiction_hint=lic.jurisdiction_code,
         extracted_chars=len(text),
-        candidates=[c.model_dump() for c in result.rules],
+        candidates=candidates,
         notes=combined_notes,
     )
 
