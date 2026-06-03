@@ -1456,14 +1456,7 @@ export function LicenseDetailBody({
                       <Skeleton key={i} className="h-14 w-full" />
                     ))}
                   </div>
-                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? (
-                  isAdmin ? (
-                    <Button size="sm" onClick={() => setAiOpen(true)}>
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Find Regulations
-                    </Button>
-                  ) : null
-                ) : (
+                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? null : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
                     <TrackingCounts counts={rulesQuery.data.counts} />
                     <div className="relative">
