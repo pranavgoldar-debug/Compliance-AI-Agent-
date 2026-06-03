@@ -1427,11 +1427,6 @@ export function LicenseDetailBody({
                     Applicable regulations
                   </div>
                   <div className="flex items-center gap-2">
-                    {rulesQuery.data && (
-                      <div className="text-xs text-muted-foreground">
-                        {rulesQuery.data.direct.length} applicable to this license
-                      </div>
-                    )}
                     {isAdmin && (
                       <Button
                         size="sm"
