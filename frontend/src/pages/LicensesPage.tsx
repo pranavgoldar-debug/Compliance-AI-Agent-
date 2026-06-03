@@ -1205,13 +1205,6 @@ export function LicenseDetailBody({
     onSuccess: () => onChanged(),
   });
 
-  const genCatalogue = useMutation({
-    mutationFn: () =>
-      api.post<{ created: number; skipped: number; available: boolean; notes?: string | null }>(
-        `/api/licenses/${license.id}/generate-catalogue`,
-      ),
-    onSuccess: () => rulesQuery.refetch(),
-  });
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
@@ -1439,39 +1432,15 @@ export function LicenseDetailBody({
                     <div>
                       No finance filings tracked for{" "}
                       <strong>{license.jurisdiction_code?.toUpperCase()}</strong>{" "}
-                      yet — your catalogue has no data for this country.
+                      yet — your catalogue has no data for this country. Use{" "}
+                      <strong>Extract with AI</strong> to have Claude list the
+                      filings, then tick the ones to add.
                     </div>
                     {isAdmin && (
-                      <div>
-                        <Button
-                          size="sm"
-                          onClick={() => genCatalogue.mutate()}
-                          disabled={genCatalogue.isPending}
-                        >
-                          {genCatalogue.isPending ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3.5 w-3.5" />
-                          )}
-                          Generate finance catalogue with AI
-                        </Button>
-                        {genCatalogue.isSuccess && (
-                          <div className="mt-2 text-xs text-foreground">
-                            Added{" "}
-                            <strong>{genCatalogue.data?.created ?? 0}</strong>{" "}
-                            finance filing(s) from AI
-                            {genCatalogue.data?.skipped
-                              ? ` (skipped ${genCatalogue.data.skipped} already-tracked / non-finance)`
-                              : ""}
-                            . They're now in your catalogue and on the calendar.
-                          </div>
-                        )}
-                        {genCatalogue.isError && (
-                          <div className="mt-2 text-xs text-destructive">
-                            {(genCatalogue.error as Error).message}
-                          </div>
-                        )}
-                      </div>
+                      <Button size="sm" onClick={() => setAiOpen(true)}>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Extract with AI
+                      </Button>
                     )}
                   </div>
                 ) : (
