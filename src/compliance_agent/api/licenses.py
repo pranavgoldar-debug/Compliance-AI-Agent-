@@ -184,21 +184,25 @@ def _form_code(text: str) -> str:
     return " / ".join(seen)
 
 
+def _rule_key(name: str, form_name: str) -> tuple:
+    """Dedup identity for a filing. Uses the form code ONLY when it leads the
+    name (e.g. 'CT600 — Corporation Tax Return') — a code merely mentioned in
+    passing ('PAYE RTI … + P11D', 'EBA Fraud Reporting … under PSD2') must NOT
+    collapse two genuinely different filings, so those fall back to the name."""
+    code = (_form_code(form_name or "").split(" / ")[0]).strip()
+    lead = re.sub(r"^[^A-Za-z0-9]+", "", form_name or "")
+    if code and lead.upper().startswith(code.upper()):
+        return ("code", code.lower())
+    return ("name", re.sub(r"[^a-z0-9]+", "", (name or form_name or "").lower()))
+
+
 def _dedupe_rules(rules: list) -> list:
-    """Collapse near-duplicate rules so the same filing doesn't appear twice.
-    Two rules are "the same" when they share a form code (e.g. two CT600 rows,
-    even if filed under different category labels — a code is unique to one
-    filing within a jurisdiction), or — when there's no code — the same
-    normalised name within a category. Keeps the first occurrence."""
+    """Collapse near-duplicate rules so the same filing doesn't appear twice
+    (e.g. two CT600 rows). Conservative — see _rule_key. Keeps the first."""
     seen: set = set()
     out: list = []
     for r in rules:
-        code = _form_code(r.form_name or "")
-        if code:
-            key = ("code", code.lower())
-        else:
-            name = re.sub(r"[^a-z0-9]+", "", (r.name or r.form_name or "").lower())
-            key = ("name", name, (r.category or "").strip().lower())
+        key = _rule_key(r.name or "", r.form_name or "")
         if key in seen:
             continue
         seen.add(key)
@@ -966,15 +970,6 @@ class GenerateCatalogueResponse(BaseModel):
     skipped: int
     jurisdiction_code: str
     notes: Optional[str] = None
-
-
-def _rule_key(name: str, form_name: str) -> tuple:
-    """Dedup identity for a filing: its form code if it has one, else its
-    normalised name."""
-    code = _form_code(form_name or "")
-    if code:
-        return ("code", code.lower())
-    return ("name", re.sub(r"[^a-z0-9]+", "", (name or form_name or "").lower()))
 
 
 @router.post(

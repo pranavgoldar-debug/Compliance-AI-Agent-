@@ -442,17 +442,6 @@ def _build() -> list[FintechFiling]:
         ),
         FintechFiling(
             s_no=0,
-            category="Direct Tax",
-            area="Corporation Tax",
-            form_name="CT600 — Corporation Tax Return",
-            authority="HMRC",
-            frequency="Annual",
-            due_date_rule="Within 12 months of the end of the accounting period.",
-            payment_due="9 months and 1 day after the end of the accounting period (instalments for large companies).",
-            applicability="Mandatory",
-        ),
-        FintechFiling(
-            s_no=0,
             category="Corporate",
             area="Statutory Accounts",
             form_name="Companies House — Statutory Financial Statements",
