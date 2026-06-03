@@ -811,8 +811,17 @@ function AIExtractDialog({
       api.post<AIExtractResponse>(`/api/licenses/${license.id}/ai-extract`),
     onSuccess: (data) => {
       setResponse(data);
-      // Default to all candidates ticked.
-      setKept(new Set(data.candidates.map((_, i) => i)));
+      // Default-tick ONLY the genuinely new filings (not already in your
+      // tracked list). So "Search again" with nothing new ticks nothing —
+      // it won't create duplicates of what you already track.
+      setKept(
+        new Set(
+          data.candidates
+            .map((c, i) => ({ c, i }))
+            .filter(({ c }) => !isTracked(c.name || c.form_name, existingForms))
+            .map(({ i }) => i),
+        ),
+      );
     },
   });
 
@@ -902,36 +911,47 @@ function AIExtractDialog({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="text-sm">
-                Found <strong>{response.candidates.length}</strong> candidate{" "}
-                obligation{response.candidates.length === 1 ? "" : "s"}
-                {response.from_document === false
-                  ? " from the regulator + license type (no PDF read)"
-                  : ""}
-                . Tick the ones to create — they'll land in{" "}
-                <strong>Compliance Rules → Staging</strong> for an admin to
-                approve.
-              </div>
               {(() => {
-                const missing = response.candidates.filter(
+                const newOnes = response.candidates.filter(
                   (r) => !isTracked(r.name || r.form_name, existingForms),
                 );
+                const trackedCount = response.candidates.length - newOnes.length;
                 return (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    <strong>Cross-check vs your tracked list:</strong>{" "}
-                    {missing.length === 0 ? (
-                      <>everything the AI found is already in your{" "}
-                      {existingForms.length} tracked filing
-                      {existingForms.length === 1 ? "" : "s"}. ✅</>
-                    ) : (
-                      <>
-                        {missing.length} of {response.candidates.length} are{" "}
-                        <strong>not in your {existingForms.length} tracked
-                        filings</strong> (marked “Missing” below) — verify each
-                        before assuming it applies.
-                      </>
-                    )}
-                  </div>
+                  <>
+                    <div className="text-sm">
+                      Claude found <strong>{response.candidates.length}</strong>{" "}
+                      filing{response.candidates.length === 1 ? "" : "s"}
+                      {response.from_document === false
+                        ? " from the regulator + license type (no PDF read)"
+                        : ""}
+                      : <strong>{newOnes.length} new</strong> (ticked below),{" "}
+                      {trackedCount} already tracked.
+                    </div>
+                    <div
+                      className={`rounded-lg border px-3 py-2 text-xs ${
+                        newOnes.length === 0
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                          : "border-amber-200 bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      {newOnes.length === 0 ? (
+                        <>
+                          <strong>Nothing new.</strong> Everything Claude found is
+                          already in your catalogue — nothing is ticked, so
+                          nothing will be added. Re-run "Search again" anytime;
+                          only genuinely new regulations get ticked.
+                        </>
+                      ) : (
+                        <>
+                          <strong>{newOnes.length} new</strong> filing
+                          {newOnes.length === 1 ? "" : "s"} (marked{" "}
+                          <strong>NEW</strong> below) are ticked to add as
+                          Staging. {trackedCount} already-tracked filing
+                          {trackedCount === 1 ? "" : "s"} are left unticked.
+                        </>
+                      )}
+                    </div>
+                  </>
                 );
               })()}
               {(() => {
@@ -1050,7 +1070,7 @@ function AIExtractDialog({
                           {isTracked(r.name || r.form_name, existingForms) ? (
                             <Badge variant="neutral">Already tracked</Badge>
                           ) : (
-                            <Badge variant="alert">Missing from your list</Badge>
+                            <Badge variant="alert">NEW</Badge>
                           )}
                           {r.due_date_differs && (
                             <Badge

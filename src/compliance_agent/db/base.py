@@ -212,6 +212,8 @@ def _add_missing_columns() -> None:
             ("clickup_task_url", varchar(512)),
             # Finance-side beneficiary / bank account free text.
             ("beneficiary_details", text_type),
+            # Provenance: which licence auto-scheduled this obligation.
+            ("license_id", "INTEGER"),
         ],
         # Phase 7: source provenance on rules
         "rules": [

@@ -290,6 +290,13 @@ class Obligation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     rule_id: Mapped[int] = mapped_column(ForeignKey("rules.id"), nullable=False, index=True)
     entity_id: Mapped[int] = mapped_column(ForeignKey("entities.id"), nullable=False, index=True)
+    # The licence this obligation was scheduled from (when auto-scheduled).
+    # Lets us remove a licence's calendar entries when the licence is deleted,
+    # while leaving the underlying rule in the catalogue. Nullable: manually
+    # created obligations and legacy rows don't carry it.
+    license_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("licenses.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     period_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)  # "Apr 2026", "Q1 FY26"

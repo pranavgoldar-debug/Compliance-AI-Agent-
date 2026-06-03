@@ -21,6 +21,7 @@ Matching rules to a license:
 """
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -28,7 +29,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import or_, select
+from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
@@ -36,10 +37,14 @@ from compliance_agent.classification import FINANCE_ONLY, derive_function, keep_
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Activity,
     Applicability,
+    Comment,
     Department,
+    Document,
     Entity,
     License,
+    Notification,
     Obligation,
     ObligationStatus,
     Rule,
@@ -440,6 +445,34 @@ def delete_license(
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
     path = lic.storage_path
+
+    # Remove this licence's calendar entries (the obligations it auto-scheduled)
+    # plus their dependent rows — but LEAVE the underlying rules in the
+    # catalogue, so re-adding the licence later just re-schedules them.
+    ob_ids = (
+        db.execute(select(Obligation.id).where(Obligation.license_id == license_id))
+        .scalars()
+        .all()
+    )
+    removed_obligations = len(ob_ids)
+    if ob_ids:
+        db.execute(sa_delete(Comment).where(Comment.obligation_id.in_(ob_ids)))
+        db.execute(
+            sa_delete(Notification).where(Notification.obligation_id.in_(ob_ids))
+        )
+        db.execute(
+            sa_update(Document)
+            .where(Document.obligation_id.in_(ob_ids))
+            .values(obligation_id=None)
+        )
+        db.execute(
+            sa_delete(Activity).where(
+                Activity.target_type == "obligation",
+                Activity.target_id.in_(ob_ids),
+            )
+        )
+        db.execute(sa_delete(Obligation).where(Obligation.id.in_(ob_ids)))
+
     db.delete(lic)
     log_activity(
         db,
@@ -447,6 +480,7 @@ def delete_license(
         action="license.deleted",
         target_type="license",
         target_id=license_id,
+        payload={"removed_obligations": removed_obligations},
     )
     db.commit()
     if path:
@@ -1149,14 +1183,102 @@ class ScheduleRuleResponse(BaseModel):
     assignee_id: Optional[int]
 
 
+_MONTH_LOOKUP = {
+    **{m.lower(): i for i, m in enumerate(calendar.month_name) if m},
+    **{m.lower(): i for i, m in enumerate(calendar.month_abbr) if m},
+}
+
+
+def _clamp_day(year: int, month: int, day: int) -> date:
+    """Build a date, clamping the day to the month's length (e.g. 31 → 30)."""
+    last = calendar.monthrange(year, month)[1]
+    return date(year, month, min(max(day, 1), last))
+
+
+def _next_on_day_of_month(base: date, day: int) -> date:
+    """Next occurrence of `day`-of-month on/after `base`."""
+    cand = _clamp_day(base.year, base.month, day)
+    if cand >= base:
+        return cand
+    ny, nm = (base.year + 1, 1) if base.month == 12 else (base.year, base.month + 1)
+    return _clamp_day(ny, nm, day)
+
+
 def _next_due_for_rule(rule: Rule, base: date) -> date:
-    """Pick a sensible default due date for a manually-scheduled obligation
-    when the admin doesn't pass one. Keeps it close enough that the alert
-    window will still fire."""
+    """Best-effort REAL statutory deadline, parsed from the rule's
+    `due_date_rule` text, instead of a naive "today + interval". Handles the
+    common shapes: "by the 25th of the following month", explicit calendar
+    dates ("by 30 Jun", "31 Dec"), and "Nth day of the Mth month after the
+    period end". Fiscal-relative rules assume a calendar (Dec-31) year-end,
+    since we don't track each entity's financial year here. Falls back to an
+    interval only when nothing parseable is found."""
+    low = (rule.due_date_rule or "").lower()
     freq = (rule.frequency or "").lower()
-    if "monthly" in freq:
+
+    # Monthly: anchor on the day-of-month it's due ("by the 25th of the
+    # following month"), NOT today + 30 days.
+    if "month" in freq:
+        m = re.search(
+            r"(\d{1,2})\s*(?:st|nd|rd|th)\s+of\s+(?:the\s+)?(?:following|next|subsequent)\s+month",
+            low,
+        ) or re.search(r"by\s+the\s+(\d{1,2})\s*(?:st|nd|rd|th)\b", low)
+        if m:
+            return _next_on_day_of_month(base, int(m.group(1)))
         return base + timedelta(days=30)
-    if "quarterly" in freq:
+
+    # Explicit calendar date(s): "30 Jun", "Jun 30", "25 Jul / 25 Jan" → pick
+    # the nearest future one. Used for annual / half-yearly / quarterly filings.
+    cal: list[tuple[int, int]] = []
+    for mo in re.finditer(
+        r"(\d{1,2})\s*(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*",
+        low,
+    ):
+        mon = _MONTH_LOOKUP.get(mo.group(2))
+        if mon:
+            cal.append((mon, int(mo.group(1))))
+    for mo in re.finditer(
+        r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\b", low
+    ):
+        mon = _MONTH_LOOKUP.get(mo.group(1))
+        if mon:
+            cal.append((mon, int(mo.group(2))))
+    if cal:
+        cands = [
+            _clamp_day(yr, mon, d)
+            for mon, d in cal
+            for yr in (base.year, base.year + 1)
+        ]
+        future = [c for c in cands if c >= base]
+        if future:
+            return min(future)
+
+    # "15th day of the 6th month after the end of the tax period" — assume a
+    # calendar year-end, so month N maps directly.
+    m = re.search(
+        r"(\d{1,2})\s*(?:st|nd|rd|th)?\s+day\s+of\s+the\s+(\d{1,2})\s*(?:st|nd|rd|th)?\s+month",
+        low,
+    )
+    if m and 1 <= int(m.group(2)) <= 12:
+        day, mon = int(m.group(1)), int(m.group(2))
+        for yr in (base.year, base.year + 1):
+            c = _clamp_day(yr, mon, day)
+            if c >= base:
+                return c
+
+    # "within N months of ... close / period end" — assume Dec-31 year-end.
+    m = re.search(r"within\s+(\d{1,2})\s+months?", low)
+    if m:
+        n = int(m.group(1))
+        for end_year in (base.year - 1, base.year):
+            total = 12 + n  # months from Jan of end_year to (Dec + n)
+            yr = end_year + (total - 1) // 12
+            mon = (total - 1) % 12 + 1
+            c = _clamp_day(yr, mon, calendar.monthrange(yr, mon)[1])
+            if c >= base:
+                return c
+
+    # Nothing parseable — fall back to a sensible interval.
+    if "quarter" in freq:
         return base + timedelta(days=90)
     if "half" in freq:
         return base + timedelta(days=180)
@@ -1374,6 +1496,7 @@ def _schedule_filings_for_license(
             Obligation(
                 rule_id=rule.id,
                 entity_id=lic.entity_id,
+                license_id=lic.id,
                 due_date=due,
                 status=ObligationStatus.not_started,
                 department=Department.compliance,
