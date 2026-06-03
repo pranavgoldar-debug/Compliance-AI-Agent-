@@ -288,6 +288,37 @@ def restore_catalogue(
     return RestoreCatalogueResult(rules_total=total)
 
 
+class WipeCatalogueResult(BaseModel):
+    rules: int
+    obligations: int
+
+
+@router.post("/wipe-catalogue", response_model=WipeCatalogueResult)
+def wipe_catalogue_endpoint(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> WipeCatalogueResult:
+    """Admin-only: empty the catalogue + calendar — delete EVERY rule and
+    obligation (and their dependent rows). Keeps users / entities / licenses.
+    For the AI-first flow: start clean, then rebuild via 'Find Regulations' →
+    approve to production. No server shell needed."""
+    from compliance_agent.db.seed import wipe_catalogue
+
+    counts = wipe_catalogue()
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="rules.wipe_catalogue",
+        target_type="rule",
+        target_id=None,
+        payload=counts,
+    )
+    db.commit()
+    return WipeCatalogueResult(
+        rules=counts.get("rules", 0), obligations=counts.get("obligations", 0)
+    )
+
+
 class BackfillUrlsResult(BaseModel):
     checked: int
     source_filled: int

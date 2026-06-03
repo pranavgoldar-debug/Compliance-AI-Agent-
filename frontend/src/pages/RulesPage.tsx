@@ -268,6 +268,24 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
+  const wipeMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ rules: number; obligations: number }>(
+        "/api/rules/wipe-catalogue",
+      ),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["license-rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        `Catalogue cleared. Deleted ${r.rules} rule(s) and ${r.obligations} calendar filing(s). Users, entities and licenses are untouched.\n\nNow open a license and use "Find Regulations" to rebuild the catalogue.`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <Card className="overflow-hidden">
       {isAdmin && (
@@ -276,6 +294,27 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
             Backfill regulator links, or clean up rules you added recently.
           </span>
           <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={wipeMutation.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Clear the ENTIRE catalogue? This deletes every rule and every calendar filing (obligations). Users, entities and licenses stay.\n\nThis is for starting clean with the AI-first flow — rebuild via 'Find Regulations'. Cannot be undone.",
+                  )
+                ) {
+                  wipeMutation.mutate();
+                }
+              }}
+              title="Delete all rules + calendar entries. Users/entities/licenses stay."
+            >
+              {wipeMutation.isPending && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              Clear all rules
+            </Button>
             <Button
               variant="outline"
               size="sm"
