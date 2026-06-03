@@ -26,7 +26,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import slack_service
-from compliance_agent.api._helpers import lead_time_days, reminder_offsets_days, today
+from compliance_agent.api._helpers import (
+    lead_time_days,
+    reminder_offsets_days,
+    reminder_offsets_for_frequency,
+    today,
+)
 from compliance_agent.db import (
     EffortBand,
     Notification,
@@ -180,8 +185,14 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
         slack_on = slack_service.is_configured(db)
 
         for ob in find_due_for_reminder(db):
-            band = ob.effort_band or EffortBand.w4
-            offsets = reminder_offsets_days(band)
+            # Reminder cadence is driven by the filing's FREQUENCY (Monthly→7d,
+            # Quarterly→30d, Annual→45d); fall back to the effort-band offsets
+            # when the rule has no usable frequency.
+            freq = ob.rule.frequency if ob.rule else ""
+            offsets = reminder_offsets_for_frequency(freq)
+            if not offsets:
+                band = ob.effort_band or EffortBand.w4
+                offsets = reminder_offsets_days(band)
             days_left = (ob.due_date - today_d).days
 
             offset = _trigger_offset(offsets, days_left)

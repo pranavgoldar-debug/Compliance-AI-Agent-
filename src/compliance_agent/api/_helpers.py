@@ -7,6 +7,8 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from compliance_agent.classification import derive_function
+
 from compliance_agent.db import (
     Activity,
     EFFORT_BAND_DAYS,
@@ -59,9 +61,40 @@ def lead_time_days(band: EffortBand) -> int:
     return max(reminder_offsets_days(band))
 
 
+def reminder_offsets_for_frequency(frequency: str) -> list[int]:
+    """Advance-notice offsets (days before due) driven by the filing's
+    FREQUENCY, per the revamp feedback:
+
+      Monthly    →  7 days before   (one week)
+      Quarterly  →  30 days before  (one month)
+      Annual     →  45 days before
+
+    Half-yearly and other cadences get sensible defaults. Returns None-ish
+    behaviour ([]) only for cadences with no fixed due date (event-based,
+    one-time, continuous, per-consignment) where date reminders don't apply.
+    """
+    f = (frequency or "").lower()
+    if any(k in f for k in ("event", "one-time", "one time", "continuous", "consignment", "ad hoc", "ad-hoc")):
+        return []
+    if "month" in f and "half" not in f:  # monthly (not "half-yearly")
+        return [7]
+    if "quarter" in f:
+        return [30]
+    if "half" in f or "semi" in f or "bi-annual" in f or "biannual" in f:
+        return [30, 15]
+    if "annual" in f or "year" in f:
+        return [45]
+    if "week" in f:
+        return [3]
+    return [30]
+
+
+
 _REMINDER_OFFSETS: dict[EffortBand, list[int]] = {
+    # Aspora policy — first number = how early the FIRST reminder fires:
+    #   Monthly   → 1 week before · Quarterly → 1 month before · Annual → 45 days
     EffortBand.w1: [7],
-    EffortBand.w2: [25, 15],
+    EffortBand.w2: [30, 15],
     EffortBand.w4: [30, 15],
     EffortBand.w8: [45, 30],
     EffortBand.w12: [60, 30],
@@ -122,9 +155,16 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
         rule_tax_type=o.rule.tax_type,
+        rule_responsible_function=(
+            o.rule.responsible_function
+            or derive_function(o.rule.category, o.rule.area)
+        ),
         rule_frequency=o.rule.frequency,
         rule_due_date_rule=o.rule.due_date_rule,
-        rule_source_url=None,  # populated later when we capture source URLs
+        rule_source_url=o.rule.source_url,
+        rule_submission_url=o.rule.submission_url,
+        rule_source_changed_at=o.rule.source_changed_at,
+        rule_payment_rule=o.rule.payment_rule,
         entity_name=o.entity.name,
         entity_jurisdiction_code=o.entity.jurisdiction_code,
         due_date=o.due_date,
@@ -138,6 +178,7 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         payment_amount=o.payment_amount,
         payment_reference=o.payment_reference,
         clickup_task_url=o.clickup_task_url,
+        beneficiary_details=o.beneficiary_details,
         is_awaiting_payment=is_awaiting_payment(o),
         notes=o.notes,
         days_remaining=days_remaining(o.due_date),
@@ -163,6 +204,9 @@ def serialize_calendar_obligation(o: Obligation) -> CalendarObligation:
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
         rule_tax_type=o.rule.tax_type,
+        rule_applicability=(
+            o.rule.applicability.value if o.rule.applicability else "Mandatory"
+        ),
         effort_band=band,
         assignee=serialize_user(o.assignee),
         is_overdue=is_overdue(o.due_date, o.status),

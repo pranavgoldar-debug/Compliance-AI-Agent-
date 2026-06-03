@@ -12,6 +12,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { CalendarPage } from "@/pages/CalendarPage";
 import { EntitiesPage } from "@/pages/EntitiesPage";
 import { EntityDetailPage } from "@/pages/EntityDetailPage";
+import { LicenseDetailPage } from "@/pages/LicenseDetailPage";
 import { TasksPage } from "@/pages/TasksPage";
 import { RulesPage } from "@/pages/RulesPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -24,7 +25,11 @@ import { LicensesPage } from "@/pages/LicensesPage";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      // Longer staleTime → cached lists render instantly on tab switch
+      // (no spinner) while a background refetch updates them. Pages that
+      // need fresher data override this per-query.
+      staleTime: 2 * 60_000,
+      gcTime: 10 * 60_000,
       retry: 1,
       refetchOnWindowFocus: false,
     },
@@ -52,6 +57,7 @@ export default function App() {
                 {/* Flat IA — 4 daily-use pages at the top level */}
                 <Route index element={<DashboardPage />} />
                 <Route path="licenses" element={<LicensesPage />} />
+                <Route path="licenses/:licenseId" element={<LicenseDetailPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
                 {/* Combined Compliance & Finance — one Tasks page where
                     both teams work. The Awaiting payment chip is the

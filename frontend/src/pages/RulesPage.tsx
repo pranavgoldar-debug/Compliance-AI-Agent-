@@ -1,7 +1,7 @@
 // Compliance Rules — admin manages the rule templates that generate per-entity
 // obligations. Two tabs: Production (flat table) and Staging (side-by-side
 // review cards with confidence indicators).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
@@ -21,12 +21,20 @@ import {
 import { RuleChangeCheckDialog } from "@/components/RuleChangeCheckDialog";
 import { ImportRulesDialog } from "@/components/ImportRulesDialog";
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -221,8 +229,123 @@ export function RulesPage() {
 // ---------------------------------------------------------------------------
 function ProductionTable({ rules }: { rules: Rule[] }) {
   const [checking, setChecking] = useState<Rule | null>(null);
+  const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
+  const cleanupMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ deleted_rules: number; deleted_obligations: number }>(
+        "/api/rules/cleanup-recent-production?hours=24&mine_only=true",
+      ),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        `Removed ${r.deleted_rules} draft rule(s) and ${r.deleted_obligations} filing(s) you added in the last 24 hours. Production catalogue rules were left untouched.`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  const backfillMutation = useMutation({
+    mutationFn: () =>
+      api.post<{
+        checked: number;
+        source_filled: number;
+        submission_filled: number;
+        skipped_no_match: number;
+      }>("/api/rules/backfill-source-urls"),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      window.alert(
+        `Regulator URLs filled.\nChecked: ${r.checked}\nSource links added: ${r.source_filled}\nSubmission links added: ${r.submission_filled}\nNo authority match: ${r.skipped_no_match}`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  const wipeMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ rules: number; obligations: number }>(
+        "/api/rules/wipe-catalogue",
+      ),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["license-rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        `Catalogue cleared. Deleted ${r.rules} rule(s) and ${r.obligations} calendar filing(s). Users, entities and licenses are untouched.\n\nNow open a license and use "Find Regulations" to rebuild the catalogue.`,
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <Card className="overflow-hidden">
+      {isAdmin && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-secondary/20">
+          <span className="text-xs text-muted-foreground">
+            Backfill regulator links, or clean up rules you added recently.
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={wipeMutation.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Clear the ENTIRE catalogue? This deletes every rule and every calendar filing (obligations). Users, entities and licenses stay.\n\nThis is for starting clean with the AI-first flow — rebuild via 'Find Regulations'. Cannot be undone.",
+                  )
+                ) {
+                  wipeMutation.mutate();
+                }
+              }}
+              title="Delete all rules + calendar entries. Users/entities/licenses stay."
+            >
+              {wipeMutation.isPending && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              Clear all rules
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={backfillMutation.isPending}
+              onClick={() => backfillMutation.mutate()}
+              title="Fill every rule's regulator 'View regulation' + 'Submit & pay' links from the authority table"
+            >
+              {backfillMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Backfill regulator URLs
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={cleanupMutation.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Delete the DRAFT (staging / AI-extracted) rules you created in the last 24 hours, and any filings scheduled from them? Production catalogue rules are NOT touched. Uploaded documents are kept. This can't be undone.",
+                  )
+                ) {
+                  cleanupMutation.mutate();
+                }
+              }}
+            >
+              {cleanupMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Clean up draft rules I added (last 24h)
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[1200px]">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -264,15 +387,22 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   {fmtRelative(r.updated_at)}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
-                  {r.source_changed_at ? (
-                    <Badge variant="alert" title={`Source changed ${fmtRelative(r.source_changed_at)}`}>
-                      Changed
-                    </Badge>
-                  ) : r.source_url ? (
-                    <span className="text-muted-foreground">tracked</span>
-                  ) : (
-                    <span className="text-muted-foreground italic">no URL</span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingUrlRule(r)}
+                    className="text-left hover:underline"
+                    title="Click to set or edit the regulator portal URL"
+                  >
+                    {r.source_changed_at ? (
+                      <Badge variant="alert" title={`Source changed ${fmtRelative(r.source_changed_at)}`}>
+                        Changed
+                      </Badge>
+                    ) : r.source_url ? (
+                      <span className="text-aspora-700">tracked ✎</span>
+                    ) : (
+                      <span className="text-amber-700 italic">+ add URL</span>
+                    )}
+                  </button>
                 </td>
                 <td className="px-3 py-2.5 text-right">
                   <Button
@@ -280,6 +410,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                     size="sm"
                     onClick={() => setChecking(r)}
                     title="Check the regulator page for changes"
+                    disabled={!r.source_url}
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
@@ -299,6 +430,13 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
           rule={checking}
           open={!!checking}
           onOpenChange={(v) => !v && setChecking(null)}
+        />
+      )}
+      {editingUrlRule && (
+        <EditRuleUrlDialog
+          rule={editingUrlRule}
+          open={!!editingUrlRule}
+          onOpenChange={(v) => !v && setEditingUrlRule(null)}
         />
       )}
     </Card>
@@ -385,10 +523,20 @@ function StagingCard({ rule }: { rule: Rule }) {
     mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { status: "archived" }),
     onSuccess: refresh,
   });
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/api/rules/${rule.id}`),
+    onSuccess: refresh,
+  });
   const busy =
-    saveMutation.isPending || promoteMutation.isPending || rejectMutation.isPending;
+    saveMutation.isPending ||
+    promoteMutation.isPending ||
+    rejectMutation.isPending ||
+    deleteMutation.isPending;
   const err =
-    saveMutation.error || promoteMutation.error || rejectMutation.error;
+    saveMutation.error ||
+    promoteMutation.error ||
+    rejectMutation.error ||
+    deleteMutation.error;
 
   return (
     <Card className="overflow-hidden">
@@ -417,11 +565,24 @@ function StagingCard({ rule }: { rule: Rule }) {
 
       {open && (
         <CardContent className="p-0 border-t border-border">
-          <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
-            {/* Left — editable extracted fields */}
+          <div>
+            {/* Editable extracted fields (full width) */}
             <div className="p-5 space-y-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
-                AI-extracted fields {editing && <span className="text-aspora-600">(editing)</span>}
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2 flex items-center justify-between">
+                <span>
+                  AI-extracted fields {editing && <span className="text-aspora-600">(editing)</span>}
+                </span>
+                {rule.source_url && (
+                  <a
+                    href={rule.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-aspora-700 hover:underline normal-case tracking-normal"
+                  >
+                    View original regulation
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
               </div>
               <ExtractedField label="Form name" value={draft.form_name} editing={editing} onChange={(v) => set("form_name", v)} />
               <ExtractedField label="Authority" value={draft.authority} editing={editing} onChange={(v) => set("authority", v)} />
@@ -433,37 +594,6 @@ function StagingCard({ rule }: { rule: Rule }) {
               <ExtractedField label="Applicability" value={draft.applicability} options={APPLICABILITY_OPTIONS} editing={editing} onChange={(v) => set("applicability", v)} />
               <ExtractedField label="Applicability note" value={draft.applicability_note} multiline editing={editing} onChange={(v) => set("applicability_note", v)} />
               <ExtractedField label="Tax type" value={draft.tax_type} options={TAX_TYPE_OPTIONS} editing={editing} onChange={(v) => set("tax_type", v)} />
-            </div>
-
-            {/* Right — original source text proxy */}
-            <div className="p-5 space-y-2 bg-secondary/20">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium flex items-center justify-between mb-2">
-                <span>Source — original regulation</span>
-                {rule.source_url ? (
-                  <a
-                    href={rule.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-aspora-700 hover:underline"
-                  >
-                    Open in tab
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60">
-                    No source URL
-                  </span>
-                )}
-              </div>
-              <div className="rounded-lg border border-border bg-background px-3 py-3 text-xs leading-relaxed font-mono whitespace-pre-wrap text-muted-foreground max-h-[320px] overflow-auto scrollbar-thin">
-                {rule.due_date_rule || "—"}
-                {"\n\n"}
-                {rule.applicability_note || "(no applicability note)"}
-                {"\n\n"}
-                <span className="italic text-muted-foreground/70">
-                  When this rule was extracted by Claude, the full source text was the regulatory excerpt above. Per-field provenance + side-by-side diff vs an existing rule lands in Phase 5.
-                </span>
-              </div>
             </div>
           </div>
 
@@ -510,6 +640,24 @@ function StagingCard({ rule }: { rule: Rule }) {
                   >
                     {rejectMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     Reject
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Permanently delete "${rule.form_name}"?\n\nThis also removes any filings scheduled from it. Uploaded documents are kept. This can't be undone.`,
+                        )
+                      ) {
+                        deleteMutation.mutate();
+                      }
+                    }}
+                  >
+                    {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Delete
                   </Button>
                   <Button size="sm" disabled={busy} onClick={() => promoteMutation.mutate()}>
                     {promoteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -583,5 +731,130 @@ function ExtractedField({
         />
       )}
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// EditRuleUrlDialog — small inline editor for the source_url on a Rule.
+// Lets admins capture the regulator's portal / template page so the
+// "Submit on regulator's portal →" button on every obligation deep-
+// links somewhere useful.
+// ---------------------------------------------------------------------------
+function EditRuleUrlDialog({
+  rule,
+  open,
+  onOpenChange,
+}: {
+  rule: Rule;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [url, setUrl] = useState(rule.source_url ?? "");
+  const [submitUrl, setSubmitUrl] = useState(rule.submission_url ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setUrl(rule.source_url ?? "");
+      setSubmitUrl(rule.submission_url ?? "");
+      setError(null);
+    }
+  }, [open, rule]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.patch<Rule>(`/api/rules/${rule.id}`, {
+        source_url: url.trim() || null,
+        submission_url: submitUrl.trim() || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  const okUrl = (v: string) => !v.trim() || /^https?:\/\//i.test(v.trim());
+  const valid = okUrl(url) && okUrl(submitUrl);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>Regulator links for {rule.form_name}</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-4">
+          <div className="text-sm text-muted-foreground">
+            These two links appear on every obligation generated from this
+            rule (filed with <strong>{rule.authority}</strong>).
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium">
+              Regulation / template page
+            </label>
+            <Input
+              autoFocus
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.incometax.gov.in/iec/foportal/"
+              className="font-mono text-xs"
+            />
+            {!okUrl(url) && (
+              <div className="text-[11px] text-red-700">
+                URL must start with http:// or https://
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Everyone sees this as <strong>“View regulation &amp; template”</strong>.
+              Read the rules + grab the filing template here.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium">
+              Government submission portal (where you actually file + pay)
+            </label>
+            <Input
+              value={submitUrl}
+              onChange={(e) => setSubmitUrl(e.target.value)}
+              placeholder="https://eportal.incometax.gov.in/iec/foservices/"
+              className="font-mono text-xs"
+            />
+            {!okUrl(submitUrl) && (
+              <div className="text-[11px] text-red-700">
+                URL must start with http:// or https://
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Admins see this as <strong>“Submit &amp; pay on regulator’s portal →”</strong>.
+              This is your actual government e-filing link. Leave empty and the
+              submit button falls back to the regulation page above.
+            </p>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !valid}
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save links
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

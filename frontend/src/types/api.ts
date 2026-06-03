@@ -17,11 +17,19 @@ export type TaxType = "Direct Tax" | "Indirect Tax" | "Not a Tax";
 
 export type EffortBand = "1w" | "2w" | "4w" | "8w" | "12w";
 
+export type Department =
+  | "compliance"
+  | "finance"
+  | "legal"
+  | "risk"
+  | "operations";
+
 export interface UserBrief {
   id: number;
   email: string;
   full_name: string;
   role: Role;
+  department?: Department | null;
 }
 
 export interface Entity {
@@ -58,6 +66,7 @@ export interface Rule {
   tax_type: TaxType;
   status: RuleStatus;
   source_url: string | null;
+  submission_url: string | null;
   source_text: string | null;
   source_changed_at: string | null;
   entity_ids: number[];
@@ -74,9 +83,13 @@ export interface Obligation {
   rule_authority: string;
   rule_category: string;
   rule_tax_type: TaxType;
+  rule_responsible_function: string | null;
   rule_frequency: string;
   rule_due_date_rule: string | null;
   rule_source_url: string | null;
+  rule_submission_url: string | null;
+  rule_source_changed_at: string | null;
+  rule_payment_rule: string | null;
   entity_name: string;
   entity_jurisdiction_code: string;
   due_date: string;
@@ -90,6 +103,7 @@ export interface Obligation {
   payment_amount: string | null;
   payment_reference: string | null;
   clickup_task_url: string | null;
+  beneficiary_details: string | null;
   is_awaiting_payment: boolean;
   notes: string | null;
   days_remaining: number;
@@ -112,6 +126,7 @@ export interface CalendarObligation {
   rule_authority: string;
   rule_category: string;
   rule_tax_type: TaxType;
+  rule_applicability: string;
   effort_band: EffortBand;
   assignee: UserBrief | null;
   is_overdue: boolean;
@@ -148,19 +163,18 @@ export interface Comment {
 // Phase 5 — documents, activities, users
 // ---------------------------------------------------------------------------
 export type DocumentCategory =
-  | "Formation"
   | "Filings"
+  | "Templates"
+  // Legacy values kept so existing rows render. Don't surface in pickers.
+  | "Formation"
   | "Contracts"
   | "Expert notes"
   | "Other";
 
-export const DOCUMENT_CATEGORIES: DocumentCategory[] = [
-  "Formation",
-  "Filings",
-  "Contracts",
-  "Expert notes",
-  "Other",
-];
+// Categories shown as upload targets / cards. Trimmed to the two that
+// actually matter for the current workflow — filings (proofs of filing)
+// and templates (blank forms and reusable assets).
+export const DOCUMENT_CATEGORIES: DocumentCategory[] = ["Filings", "Templates"];
 
 export interface DocumentOut {
   id: number;
@@ -173,6 +187,7 @@ export interface DocumentOut {
   size_bytes: number;
   category: DocumentCategory;
   tags: string | null;
+  url: string | null;
   uploaded_by: UserBrief | null;
   created_at: string;
 }
@@ -193,6 +208,7 @@ export interface UserOut {
   email: string;
   full_name: string;
   role: Role;
+  department: Department | null;
   is_active: boolean;
   created_at: string;
   last_login_at: string | null;
@@ -206,7 +222,8 @@ export type NotificationKind =
   | "assigned"
   | "overdue"
   | "alert_window"
-  | "status_change";
+  | "status_change"
+  | "payment_request";
 
 export interface NotificationOut {
   id: number | null;
@@ -223,6 +240,7 @@ export interface NotificationOut {
 export interface SystemInfo {
   mode: "live" | "mock";
   ai_available: boolean;
+  backend: "anthropic" | "openrouter" | "mock";
   version: string;
 }
 
@@ -400,10 +418,14 @@ export interface LicenseRuleHit {
   due_date_rule: string;
   payment_rule: string | null;
   applicability: string;
+  responsible_function: string | null;
+  plain_description: string | null;
+  tax_type: string;
   relevance: "direct" | "entity";
   match_reason: string | null;
   next_obligation_id: number | null;
   next_due_date: string | null;
+  projected_due_date: string | null;
   next_status: string | null;
   next_assignee: LicenseAssignee | null;
   days_to_next: number | null;

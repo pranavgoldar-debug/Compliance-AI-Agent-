@@ -102,6 +102,11 @@ def list_notifications(
         .options(joinedload(Obligation.rule), joinedload(Obligation.entity))
     ).scalars().unique().all()
 
+    # Derived notifications use "now" as created_at — using the obligation's
+    # due_date (which can be 40+ days in the future) pushed them above real
+    # persisted notifications and made the inbox look like nothing was
+    # happening when there was actually fresh activity to read.
+    now = datetime.now(tz=timezone.utc)
     for ob in my_open:
         band = ob.effort_band or EffortBand.w4
         if is_overdue(ob.due_date, ob.status):
@@ -114,7 +119,7 @@ def list_notifications(
                     link_url=f"/obligations/{ob.id}",
                     obligation_id=ob.id,
                     read=False,
-                    created_at=datetime.combine(ob.due_date, datetime.min.time(), tzinfo=timezone.utc),
+                    created_at=now,
                 )
             )
         elif is_in_alert_window(ob.due_date, ob.status, band):
@@ -127,11 +132,23 @@ def list_notifications(
                     link_url=f"/obligations/{ob.id}",
                     obligation_id=ob.id,
                     read=False,
-                    created_at=datetime.combine(ob.due_date, datetime.min.time(), tzinfo=timezone.utc),
+                    created_at=now,
                 )
             )
 
-    out.sort(key=lambda n: (n.read, -n.created_at.timestamp(), -(n.id or 0)))
+    # Sort: unread persisted first (real news), then everything else newest-first.
+    # Derived items go behind real notifications within the same "unread" bucket
+    # by giving them a synthetic id of -1 so they tiebreak last.
+    def _sort_key(n: NotificationOut) -> tuple:
+        is_derived = n.id is None
+        return (
+            n.read,                      # unread first
+            is_derived,                  # persisted before derived
+            -n.created_at.timestamp(),   # newest first
+            -(n.id or 0),
+        )
+
+    out.sort(key=_sort_key)
     return out[:60]
 
 
@@ -206,11 +223,10 @@ def emit_assignment(
     )
     # Side-channel fan-out (best-effort, never raises).
     if assignee.notify_slack and slack_service.is_configured(db):
-        slack_service.post(
-            slack_service.assignment_message(
-                obligation=obligation, assignee=assignee, actor=actor
-            )
+        msg = slack_service.assignment_blocks(
+            obligation=obligation, assignee=assignee, actor=actor
         )
+        slack_service.post(msg["text"], blocks=msg["blocks"])
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
     if assignee.notify_email and smtp_configured():
@@ -315,11 +331,68 @@ def emit_mentions(
             )
         )
         if u.notify_slack and slack_on:
-            slack_service.post(
-                slack_service.mention_message(
-                    obligation=obligation, mentioned=u, actor=actor, body=body
-                )
+            msg = slack_service.mention_blocks(
+                obligation=obligation, mentioned=u, actor=actor, body=body
             )
+            slack_service.post(msg["text"], blocks=msg["blocks"])
+
+
+def emit_payment_request(
+    db: Session,
+    *,
+    obligation: Obligation,
+    actor: User,
+) -> None:
+    """Filing's been approved and the rule has a payment leg — explicitly
+    ping the finance team (admins) that they need to pay. Without this, the
+    "Awaiting payment" chip on Tasks is invisible until somebody thinks to
+    look at it; this turns the hand-off into a real notification.
+
+    Targets all active admins (they're the payment approvers). Also fires a
+    workspace Slack ping if configured.
+    """
+    from compliance_agent.db import Role
+
+    rule = obligation.rule
+    entity = obligation.entity
+    form = rule.form_name if rule else "Compliance item"
+    entity_name = entity.name if entity else "—"
+    amount_hint = (rule.payment_rule or "").strip() if rule else ""
+
+    admins = (
+        db.execute(
+            select(User).where(User.role == Role.admin, User.is_active.is_(True))
+        )
+        .scalars()
+        .all()
+    )
+    title = f"Payment requested — {form}"
+    body = (
+        f"{entity_name} · filing approved by "
+        f"{actor.full_name or actor.email}. Log the payment + UTR to close it out."
+    )
+    if amount_hint:
+        body = f"{body}\nPayment rule: {amount_hint}"
+
+    for admin in admins:
+        # Skip the actor themselves — they just approved it, they know.
+        if admin.id == actor.id:
+            continue
+        db.add(
+            Notification(
+                user_id=admin.id,
+                kind=NotificationKind.payment_request,
+                title=title,
+                body=body,
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=actor.id,
+            )
+        )
+
+    if slack_service.is_configured(db):
+        msg = slack_service.payment_request_blocks(obligation=obligation, actor=actor)
+        slack_service.post(msg["text"], blocks=msg["blocks"])
 
 
 def emit_status_change(
@@ -330,27 +403,44 @@ def emit_status_change(
     new_status: ObligationStatus,
     actor: User,
 ) -> None:
-    """Notify the right people on terminal status transitions:
-      - completed       → ping the assignee (if not them)
-      - pending_review  → ping ALL admins (their queue) + the assignee
+    """Notify the right people on status transitions:
+      - completed                → ping the assignee (if not them)
+      - pending_review           → ping ALL admins (their queue) + the assignee
+      - any change by employee   → ping ALL admins so they always see what's
+                                   moving in their team's queue
     """
-    if new_status not in (
+    from compliance_agent.db import Role
+
+    actor_is_admin = actor.role == Role.admin
+    notify_admins = new_status == ObligationStatus.pending_review or not actor_is_admin
+    notify_assignee = new_status in (
         ObligationStatus.completed,
         ObligationStatus.pending_review,
-    ):
+    )
+
+    if not notify_admins and not notify_assignee:
         return
-    label = {
-        ObligationStatus.completed: "completed",
+
+    label_map = {
+        ObligationStatus.not_started: "moved to not started",
+        ObligationStatus.in_progress: "moved to in progress",
         ObligationStatus.pending_review: "submitted for review",
-    }[new_status]
+        ObligationStatus.completed: "completed",
+        ObligationStatus.not_applicable: "marked not applicable",
+    }
+    label = label_map.get(new_status, f"changed status to {new_status.value}")
     body = (
         f"{obligation.rule.form_name} — {obligation.entity.name}"
         if obligation.rule and obligation.entity
         else None
     )
 
-    # 1. Ping the assignee (if they didn't make the change themselves).
-    if assignee is not None and assignee.id != actor.id:
+    # 1. Ping the assignee on terminal transitions (completed / pending_review).
+    if (
+        notify_assignee
+        and assignee is not None
+        and assignee.id != actor.id
+    ):
         db.add(
             Notification(
                 user_id=assignee.id,
@@ -363,11 +453,10 @@ def emit_status_change(
             )
         )
 
-    # 2. On pending_review, also wake up every admin so the verification
-    # queue gets attention. Don't ping the actor (they just submitted it).
-    if new_status == ObligationStatus.pending_review:
-        from compliance_agent.db import Role
-
+    # 2. Wake up every admin when the actor is an employee (so admins always
+    # see what their team is doing) OR on a pending_review submission (always).
+    # Skip the actor themselves.
+    if notify_admins:
         admins = (
             db.execute(
                 select(User).where(User.role == Role.admin, User.is_active.is_(True))
@@ -375,14 +464,27 @@ def emit_status_change(
             .scalars()
             .all()
         )
+        admin_title = (
+            f"{actor.full_name or actor.email} submitted for review"
+            if new_status == ObligationStatus.pending_review
+            else f"{actor.full_name or actor.email} {label}"
+        )
         for admin in admins:
             if admin.id == actor.id:
+                continue
+            # Don't double-notify if the admin is also the assignee — already
+            # got a ping in step 1.
+            if (
+                notify_assignee
+                and assignee is not None
+                and admin.id == assignee.id
+            ):
                 continue
             db.add(
                 Notification(
                     user_id=admin.id,
                     kind=NotificationKind.status_change,
-                    title=f"{actor.full_name or actor.email} submitted for review",
+                    title=admin_title,
                     body=body,
                     link_url=f"/obligations/{obligation.id}",
                     obligation_id=obligation.id,
@@ -390,14 +492,15 @@ def emit_status_change(
                 )
             )
 
-        # Slack ping for the workspace channel on submit-for-review too.
-        if slack_service.is_configured(db):
-            form = obligation.rule.form_name if obligation.rule else "Compliance item"
-            entity = obligation.entity.name if obligation.entity else "—"
-            slack_service.post(
-                f":eyes: *{form}* ({entity}) submitted for review by "
-                f"{actor.full_name or actor.email} — admins, please verify."
+        # Slack ping for the workspace channel on submit-for-review.
+        if (
+            new_status == ObligationStatus.pending_review
+            and slack_service.is_configured(db)
+        ):
+            msg = slack_service.submit_for_review_blocks(
+                obligation=obligation, actor=actor
             )
+            slack_service.post(msg["text"], blocks=msg["blocks"])
 
     # Slack: channel-wide "marked filed" for completed transitions.
     if (
@@ -406,6 +509,5 @@ def emit_status_change(
         and assignee.notify_slack
         and slack_service.is_configured(db)
     ):
-        slack_service.post(
-            slack_service.filed_message(obligation=obligation, actor=actor)
-        )
+        msg = slack_service.filed_blocks(obligation=obligation, actor=actor)
+        slack_service.post(msg["text"], blocks=msg["blocks"])

@@ -3,12 +3,14 @@
 // grouped by date (sticky date headers), with CSV export.
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   Download,
   History,
+  Loader2,
   Search,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +37,7 @@ const ACTION_BUCKETS: { label: string; prefixes: string[] }[] = [
 
 
 export function AuditLogPage() {
+  const queryClient = useQueryClient();
   const [q, setQ] = useState("");
   const [actorIds, setActorIds] = useState<number[]>([]);
   const [entityIds, setEntityIds] = useState<number[]>([]);
@@ -45,6 +48,11 @@ export function AuditLogPage() {
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
     queryFn: () => api.get<UserBrief[]>("/api/users"),
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: () => api.delete<{ deleted: number }>("/api/activities"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["audit-log"] }),
   });
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
@@ -124,12 +132,35 @@ export function AuditLogPage() {
         title="Audit Log"
         description="Immutable record of every state change. Admin only."
         actions={
-          <Button variant="outline" asChild>
-            <a href="/api/activities/export" download>
-              <Download className="h-4 w-4" />
-              Export CSV
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" asChild>
+              <a href="/api/activities/export" download>
+                <Download className="h-4 w-4" />
+                Export CSV
+              </a>
+            </Button>
+            <Button
+              variant="outline"
+              className="text-red-600"
+              disabled={clearMutation.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Clear the entire activity log? This is irreversible. Export a CSV first if you want a copy.",
+                  )
+                ) {
+                  clearMutation.mutate();
+                }
+              }}
+            >
+              {clearMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Clear log
+            </Button>
+          </div>
         }
       />
 

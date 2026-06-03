@@ -54,7 +54,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { InlineStatusMenu } from "@/components/InlineStatusMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { JURISDICTIONS, fmtDate } from "@/lib/format";
+import { JURISDICTIONS, fmtDate, cleanFilingName } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
 import type {
@@ -81,19 +81,32 @@ const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
 ];
 
 const TAX_TYPES = ["Direct Tax", "Indirect Tax", "Not a Tax"];
+const APPLICABILITIES = ["Mandatory", "Conditional", "Sector-specific"];
 
 
 interface Filters {
   entityIds: number[];
   jurisdictions: string[];
   taxTypes: string[];
+  applicabilities: string[];
+  authorities: string[];
+  categories: string[];
   statuses: ObligationStatus[];
   assigneeIds: number[];
 }
 
 
 function emptyFilters(): Filters {
-  return { entityIds: [], jurisdictions: [], taxTypes: [], statuses: [], assigneeIds: [] };
+  return {
+    entityIds: [],
+    jurisdictions: [],
+    taxTypes: [],
+    applicabilities: [],
+    authorities: [],
+    categories: [],
+    statuses: [],
+    assigneeIds: [],
+  };
 }
 
 
@@ -166,18 +179,55 @@ export function CalendarPage() {
     filters.entityIds.length +
     filters.jurisdictions.length +
     filters.taxTypes.length +
+    filters.applicabilities.length +
+    filters.authorities.length +
+    filters.categories.length +
     filters.statuses.length +
     filters.assigneeIds.length;
+
+  // Distinct authorities + categories present in the loaded range — drive the
+  // Authority / Category filter options. Derived from the server-fetched items
+  // (before client-side filtering) so options never disappear as you select.
+  const authorityOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of items) if (o.rule_authority) set.add(o.rule_authority);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of items) if (o.rule_category) set.add(o.rule_category);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  // Applicability + Authority + Category filters, applied client-side on
+  // already-loaded data. Empty = show all.
+  const filteredItems = useMemo(() => {
+    let out = items;
+    if (filters.applicabilities.length > 0) {
+      const set = new Set(filters.applicabilities);
+      out = out.filter((o) => set.has(o.rule_applicability));
+    }
+    if (filters.authorities.length > 0) {
+      const set = new Set(filters.authorities);
+      out = out.filter((o) => set.has(o.rule_authority));
+    }
+    if (filters.categories.length > 0) {
+      const set = new Set(filters.categories);
+      out = out.filter((o) => set.has(o.rule_category));
+    }
+    return out;
+  }, [items, filters.applicabilities, filters.authorities, filters.categories]);
 
   // Build a date -> obligations map for the heatmap.
   const byDate = useMemo(() => {
     const map = new Map<string, CalendarObligation[]>();
-    for (const ob of items) {
+    for (const ob of filteredItems) {
       if (!map.has(ob.due_date)) map.set(ob.due_date, []);
       map.get(ob.due_date)!.push(ob);
     }
     return map;
-  }, [items]);
+  }, [filteredItems]);
 
   return (
     <div className="space-y-4">
@@ -265,6 +315,26 @@ export function CalendarPage() {
             onChange={(vals) => setFilters((f) => ({ ...f, taxTypes: vals }))}
           />
           <MultiSelectFilter
+            label="Applicability"
+            options={APPLICABILITIES.map((a) => ({ value: a, label: a }))}
+            selected={filters.applicabilities}
+            onChange={(vals) => setFilters((f) => ({ ...f, applicabilities: vals }))}
+          />
+          <MultiSelectFilter
+            label="Authority"
+            options={authorityOptions.map((a) => ({ value: a, label: a }))}
+            selected={filters.authorities}
+            onChange={(vals) => setFilters((f) => ({ ...f, authorities: vals }))}
+            searchable
+          />
+          <MultiSelectFilter
+            label="Category"
+            options={categoryOptions.map((c) => ({ value: c, label: c }))}
+            selected={filters.categories}
+            onChange={(vals) => setFilters((f) => ({ ...f, categories: vals }))}
+            searchable
+          />
+          <MultiSelectFilter
             label="Status"
             options={STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
             selected={filters.statuses}
@@ -296,7 +366,7 @@ export function CalendarPage() {
             </>
           )}
           <div className="ml-auto text-xs text-muted-foreground tabular-nums">
-            {items.length} item{items.length === 1 ? "" : "s"} in range
+            {filteredItems.length} item{filteredItems.length === 1 ? "" : "s"} in range
           </div>
         </div>
       </div>
@@ -314,7 +384,7 @@ export function CalendarPage() {
           onNext={() => setCursor(addMonths(cursor, 1))}
         />
       ) : (
-        <ListView items={items} isLoading={isLoading} />
+        <ListView items={filteredItems} isLoading={isLoading} />
       )}
     </div>
   );
@@ -665,7 +735,7 @@ function HeatmapView({
                             key={ob.id}
                             className="text-[10px] leading-tight truncate text-muted-foreground"
                           >
-                            {ob.entity_name.replace(/^Aspora\s+/, "")} · {ob.rule_form_name}
+                            {ob.entity_name.replace(/^Aspora\s+/, "")} · {cleanFilingName(ob.rule_form_name)}
                           </div>
                         ))}
                         {items.length > 2 && (
@@ -681,7 +751,7 @@ function HeatmapView({
                       <div className="font-semibold mb-1">{format(day, "EEE, d MMM")}</div>
                       {items.slice(0, 5).map((ob) => (
                         <div key={ob.id} className="opacity-90">
-                          • {ob.entity_name} — {ob.rule_form_name}
+                          • {ob.entity_name} — {cleanFilingName(ob.rule_form_name)}
                         </div>
                       ))}
                       {items.length > 5 && (
@@ -732,7 +802,7 @@ function DayDetailPanel({ date, items }: { date: Date; items: CalendarObligation
                 <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
                 <span className="truncate">{ob.entity_name}</span>
               </div>
-              <div className="font-medium text-sm leading-tight truncate">{ob.rule_form_name}</div>
+              <div className="font-medium text-sm leading-tight truncate">{cleanFilingName(ob.rule_form_name)}</div>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 <Badge
                   variant={
@@ -887,7 +957,7 @@ function ListView({
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <div className="font-medium">{ob.rule_form_name}</div>
+                      <div className="font-medium">{cleanFilingName(ob.rule_form_name)}</div>
                       <div className="text-xs text-muted-foreground truncate">{ob.rule_authority}</div>
                     </td>
                     <td className="px-3 py-2.5">

@@ -62,7 +62,9 @@ const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.Compo
   { key: "jurisdictions", label: "Jurisdictions", adminOnly: true, icon: Globe },
   { key: "alerts", label: "Alert policies", adminOnly: true, icon: ListChecks },
   { key: "retention", label: "Audit retention", adminOnly: true, icon: Trash2 },
-  { key: "api", label: "API & Webhooks", adminOnly: true, icon: Key },
+  // "api" / "API & Webhooks" tab is hidden until the endpoints exist.
+  // Re-add the entry above with the same shape once tokens + webhook
+  // delivery ship for real.
 ];
 
 
@@ -122,7 +124,6 @@ export function SettingsPage() {
           {tab === "jurisdictions" && isAdmin && <JurisdictionsTab />}
           {tab === "alerts" && isAdmin && <AlertPoliciesTab />}
           {tab === "retention" && isAdmin && <RetentionTab />}
-          {tab === "api" && isAdmin && <ApiTab />}
         </div>
       </div>
     </div>
@@ -204,21 +205,21 @@ function ProfileTab({ user }: { user: UserBrief }) {
           <ToggleRow
             icon={<Slack className="h-4 w-4" />}
             label="Slack alerts"
-            description="Channel-wide pings on overdue / assignment / mention. Requires workspace Slack to be connected."
+            description="Pings the workspace channel on assignment / submit-for-review / overdue. Needs an admin to paste a webhook URL under Settings → Integrations."
             checked={prefs?.notify_slack ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_slack: v })}
           />
           <ToggleRow
             icon={<Mail className="h-4 w-4" />}
             label="Email"
-            description="Password resets + (when configured) overdue + assignment emails to your inbox."
+            description="Password resets + reminder pings to your inbox. Needs SMTP_HOST / SMTP_USER / SMTP_PASSWORD env vars on the server."
             checked={prefs?.notify_email ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_email: v })}
           />
           <ToggleRow
             icon={<CalendarIcon className="h-4 w-4" />}
             label="Google Calendar events"
-            description="Adds an all-day event on each due date. Coming next round."
+            description="Not yet wired. Use the Calendar tab in-app to see every due date for now."
             checked={calOn}
             onChange={setCalOn}
           />
@@ -479,15 +480,17 @@ function UsersTab() {
             <div className="h-10 bg-secondary/50 animate-pulse rounded" />
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-secondary/30 text-[11px] uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-5 py-2.5 text-left font-medium">Name</th>
                 <th className="px-5 py-2.5 text-left font-medium">Email</th>
                 <th className="px-5 py-2.5 text-left font-medium">Role</th>
+                <th className="px-5 py-2.5 text-left font-medium">Team</th>
                 <th className="px-5 py-2.5 text-left font-medium">Last active</th>
                 <th className="px-5 py-2.5 text-left font-medium">Status</th>
-                <th className="px-5 py-2.5 text-right font-medium">Actions</th>
+                <th className="px-5 py-2.5 pr-6 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -514,6 +517,15 @@ function UsersTab() {
                       {u.role}
                     </Badge>
                   </td>
+                  <td className="px-5 py-3">
+                    {u.department ? (
+                      <Badge variant="neutral" className="capitalize">
+                        {u.department}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">
                     {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
                   </td>
@@ -524,7 +536,7 @@ function UsersTab() {
                       <Badge variant="neutral">Inactive</Badge>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 pr-6 text-right whitespace-nowrap">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -539,6 +551,7 @@ function UsersTab() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </CardContent>
 
@@ -769,6 +782,7 @@ function EditUserDialog({
   const queryClient = useQueryClient();
   const [fullName, setFullName] = useState(user?.full_name ?? "");
   const [role, setRole] = useState<Role>(user?.role ?? "employee");
+  const [department, setDepartment] = useState<string>(user?.department ?? "");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
@@ -778,6 +792,7 @@ function EditUserDialog({
     if (user) {
       setFullName(user.full_name);
       setRole(user.role);
+      setDepartment(user.department ?? "");
       setNewPassword("");
       setError(null);
       setConfirmDeactivate(false);
@@ -790,6 +805,9 @@ function EditUserDialog({
       const body: Record<string, unknown> = {};
       if (fullName !== user.full_name) body.full_name = fullName;
       if (role !== user.role) body.role = role;
+      if ((department || null) !== (user.department || null)) {
+        body.department = department; // "" clears it server-side
+      }
       if (newPassword) body.password = newPassword;
       return api.patch<UserOut>(`/api/users/admin/${user.id}`, body);
     },
@@ -823,7 +841,7 @@ function EditUserDialog({
 
   return (
     <Dialog open={!!user} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent size="sm">
+      <DialogContent size="md" className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit user — {user.email}</DialogTitle>
         </DialogHeader>
@@ -852,6 +870,22 @@ function EditUserDialog({
                 You can't demote your own account.
               </p>
             )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Team</label>
+            <select
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">— None —</option>
+              <option value="compliance">Compliance</option>
+              <option value="finance">Finance</option>
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Compliance prepares filings, finance logs payments. Pick
+              "None" for admins or non-team accounts.
+            </p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Reset password</label>
@@ -1120,10 +1154,33 @@ function SlackCard() {
                 placeholder="https://hooks.slack.com/services/T…/B…/…"
                 className="font-mono text-xs mt-1"
               />
+              {webhook.trim() &&
+                !webhook.trim().startsWith("https://hooks.slack.com/") && (
+                  <div className="mt-1 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                    That doesn't look like a webhook URL. A webhook starts with{" "}
+                    <span className="font-mono">https://hooks.slack.com/services/</span> —
+                    a channel link like <span className="font-mono">slack.com/archives/…</span>{" "}
+                    won't work.
+                  </div>
+                )}
               <p className="text-[11px] text-muted-foreground mt-1">
-                Slack → your workspace → Apps → search "Incoming Webhooks" → Add Configuration →
-                pick a channel → copy the Webhook URL.
+                Get one at{" "}
+                <a
+                  href="https://api.slack.com/apps"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-aspora-700 hover:underline"
+                >
+                  api.slack.com/apps
+                </a>{" "}
+                → Create New App → From scratch → enable "Incoming Webhooks"
+                → "Add New Webhook to Workspace" → pick a channel → copy URL.
               </p>
+              {saveMutation.error && (
+                <div className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                  {(saveMutation.error as Error).message}
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">
@@ -1149,7 +1206,12 @@ function SlackCard() {
                     enabled: true,
                   })
                 }
-                disabled={saveMutation.isPending || (!webhook.trim() && !cfg.configured)}
+                disabled={
+                  saveMutation.isPending ||
+                  (!webhook.trim() && !cfg.configured) ||
+                  (webhook.trim().length > 0 &&
+                    !webhook.trim().startsWith("https://hooks.slack.com/"))
+                }
               >
                 {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Save
@@ -1429,7 +1491,7 @@ function GmailCard() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <div className="font-semibold">Email (Resend or SMTP)</div>
+              <div className="font-semibold">Email (Gmail API)</div>
               <Badge variant="neutral">Config via .env</Badge>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
@@ -1440,12 +1502,12 @@ function GmailCard() {
         </div>
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          <strong>On Render?</strong> Render blocks outbound SMTP ports, so smtp.gmail.com fails
-          with “Network is unreachable”. Send over an HTTPS API instead (port 443 isn’t blocked).
+          <strong>Your own Gmail, no third party.</strong> We send over the Gmail HTTPS API
+          (port 443), so Render's SMTP-port block doesn't matter — no Brevo / Resend / SMTP needed.
         </div>
 
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
-          <div className="font-medium">Your Gmail only, no third party: Gmail API</div>
+          <div className="font-medium">Set up Gmail API (one-time)</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
             <li>
               Google Cloud Console → new project → enable the <strong>Gmail API</strong>.
@@ -1474,41 +1536,6 @@ GMAIL_SENDER=you@aspora.com`}
               </pre>
             </li>
           </ol>
-          <div className="font-medium pt-1">Easiest (no DNS, email anyone): Brevo</div>
-          <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
-            <li>
-              Sign up at <span className="font-mono">brevo.com</span> (free: 300 emails/day).
-            </li>
-            <li>
-              Senders &amp; IP → <strong>Senders</strong> → add{" "}
-              <span className="font-mono">compliance@aspora.com</span> → click the confirmation
-              link Brevo emails you. (No DNS needed — this single verified sender can email anyone.)
-            </li>
-            <li>
-              SMTP &amp; API → <strong>API Keys</strong> → create one (<span className="font-mono">xkeysib-…</span>).
-            </li>
-            <li>
-              Set these env vars (Render → Environment), then redeploy:
-              <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
-{`BREVO_API_KEY=xkeysib-xxxxxxxx
-BREVO_FROM=compliance@aspora.com
-BREVO_FROM_NAME=Aspora Compliance`}
-              </pre>
-            </li>
-          </ol>
-          <div className="font-medium pt-1">Alternative: Resend (verify aspora.com domain via DNS)</div>
-          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
-{`RESEND_API_KEY=re_xxxxxxxx
-RESEND_FROM="Aspora Compliance <compliance@aspora.com>"`}
-          </pre>
-          <div className="font-medium pt-1">SMTP (local / non-Render only)</div>
-          <pre className="mt-1 bg-background border border-border rounded p-2 text-[11px] font-mono whitespace-pre-wrap">
-{`SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=you@aspora.com
-SMTP_PASSWORD=<the 16-char app password>
-SMTP_FROM="Aspora Compliance <you@aspora.com>"`}
-          </pre>
         </div>
 
         <div className="flex items-end gap-2">
@@ -1718,47 +1745,6 @@ function AlertPoliciesTab() {
 // ---------------------------------------------------------------------------
 // API & Webhooks
 // ---------------------------------------------------------------------------
-function ApiTab() {
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-semibold">API keys</h3>
-          <p className="text-xs text-muted-foreground">
-            Personal access tokens for programmatic access to the Compliance OS API.
-          </p>
-          <div className="flex items-center gap-2">
-            <Input value="aspora_pk_•••••••••••••••••••" readOnly className="font-mono text-xs" />
-            <Button variant="outline" disabled>
-              Reveal
-            </Button>
-            <Button variant="outline" disabled>
-              Rotate
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-semibold">Webhook endpoints</h3>
-          <EmptyState
-            icon={<Key className="h-5 w-5" />}
-            title="No webhooks configured"
-            description="Add a webhook URL to get a POST whenever an obligation changes status or a rule is promoted."
-            action={
-              <Button variant="outline" disabled>
-                <Plus className="h-3.5 w-3.5" />
-                Add webhook
-              </Button>
-            }
-          />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-
 // ---------------------------------------------------------------------------
 // Audit retention
 // ---------------------------------------------------------------------------

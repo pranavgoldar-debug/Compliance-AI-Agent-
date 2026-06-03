@@ -21,6 +21,7 @@ Matching rules to a license:
 """
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -28,16 +29,22 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import or_, select
+from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
+from compliance_agent.classification import FINANCE_ONLY, derive_function, keep_function
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Activity,
+    Applicability,
+    Comment,
     Department,
+    Document,
     Entity,
     License,
+    Notification,
     Obligation,
     ObligationStatus,
     Rule,
@@ -98,11 +105,18 @@ class LicenseRuleHit(_Base):
     due_date_rule: str
     payment_rule: Optional[str] = None
     applicability: str
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
+    tax_type: str = "Not a Tax"
     relevance: str  # "direct" | "entity"
     match_reason: Optional[str] = None
     # Tracking — the next upcoming obligation for (this rule, license.entity).
     next_obligation_id: Optional[int] = None
     next_due_date: Optional[date] = None
+    # Estimated next deadline derived from the rule's frequency — shown the
+    # moment a licence is uploaded, before anything is scheduled, so every
+    # obligation carries a date.
+    projected_due_date: Optional[date] = None
     next_status: Optional[str] = None
     next_assignee: Optional[LicenseAssignee] = None
     days_to_next: Optional[int] = None
@@ -152,6 +166,52 @@ def _tokens(*texts: str) -> set[str]:
             tok = m.lower()
             if len(tok) >= 3 and tok not in _STOPWORDS:
                 out.add(tok)
+    return out
+
+
+_FORM_CODE_RE = re.compile(r"[A-Z0-9][A-Z0-9]*(?:[-/][A-Z0-9]+)*")
+
+
+def _form_code(text: str) -> str:
+    """Pull official form code(s) (letter+digit tokens like CT600, FSA056,
+    GSTR-3B) out of a filing/form name. Mirror of the frontend extractFormCode."""
+    if not text:
+        return ""
+    seen: list[str] = []
+    for tok in _FORM_CODE_RE.findall(text):
+        if (
+            any(c.isdigit() for c in tok)
+            and any(c.isalpha() for c in tok)
+            and 3 <= len(tok) <= 14
+            and tok not in seen
+        ):
+            seen.append(tok)
+    return " / ".join(seen)
+
+
+def _rule_key(name: str, form_name: str) -> tuple:
+    """Dedup identity for a filing. Uses the form code ONLY when it leads the
+    name (e.g. 'CT600 — Corporation Tax Return') — a code merely mentioned in
+    passing ('PAYE RTI … + P11D', 'EBA Fraud Reporting … under PSD2') must NOT
+    collapse two genuinely different filings, so those fall back to the name."""
+    code = (_form_code(form_name or "").split(" / ")[0]).strip()
+    lead = re.sub(r"^[^A-Za-z0-9]+", "", form_name or "")
+    if code and lead.upper().startswith(code.upper()):
+        return ("code", code.lower())
+    return ("name", re.sub(r"[^a-z0-9]+", "", (name or form_name or "").lower()))
+
+
+def _dedupe_rules(rules: list) -> list:
+    """Collapse near-duplicate rules so the same filing doesn't appear twice
+    (e.g. two CT600 rows). Conservative — see _rule_key. Keeps the first."""
+    seen: set = set()
+    out: list = []
+    for r in rules:
+        key = _rule_key(r.name or "", r.form_name or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
     return out
 
 
@@ -260,18 +320,13 @@ def create_license(
     issue_date: Optional[str] = Form(None),
     expiry_date: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),
 ) -> LicenseOut:
     entity = db.get(Entity, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found.")
-    if file is None or not file.filename:
-        raise HTTPException(
-            status_code=400,
-            detail="A license file (PDF) is required.",
-        )
 
     lic = License(
         entity_id=entity_id,
@@ -286,14 +341,45 @@ def create_license(
         created_by_id=user.id,
     )
 
-    storage_path, size = storage.save_bytes(entity_id, file.filename, file.file)
-    lic.filename = file.filename
-    lic.storage_path = storage_path
-    lic.size_bytes = size
-    lic.content_type = file.content_type
+    if file is not None and file.filename:
+        storage_path, size = storage.save_bytes(entity_id, file.filename, file.file)
+        lic.filename = file.filename
+        lic.storage_path = storage_path
+        lic.size_bytes = size
+        lic.content_type = file.content_type
 
     db.add(lic)
     db.flush()
+
+    # Surface the uploaded license file in the Documents section too (reuses
+    # the same stored blob) so it shows on the entity's Documents tab.
+    if lic.storage_path:
+        from compliance_agent.db import Document, DocumentCategory
+
+        db.add(
+            Document(
+                entity_id=entity_id,
+                filename=lic.filename or "license",
+                storage_path=lic.storage_path,
+                content_type=lic.content_type,
+                size_bytes=lic.size_bytes,
+                category=DocumentCategory.filings,
+                tags="license",
+                uploaded_by_id=user.id,
+            )
+        )
+
+    # Auto-schedule on upload: put every applicable filing for this licence's
+    # jurisdiction straight onto the calendar, so the admin doesn't have to
+    # schedule them one by one. (FINANCE_ONLY narrows this to Finance filings.)
+    auto_scheduled = 0
+    try:
+        auto_scheduled, _, _ = _schedule_filings_for_license(
+            db, lic, mandatory_only=False
+        )
+    except Exception:  # noqa: BLE001 — never block license creation on this
+        auto_scheduled = 0
+
     log_activity(
         db,
         actor_id=user.id,
@@ -304,6 +390,7 @@ def create_license(
             "entity_id": entity_id,
             "name": lic.name,
             "authority": lic.authority,
+            "auto_scheduled": auto_scheduled,
         },
     )
     db.commit()
@@ -358,6 +445,34 @@ def delete_license(
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
     path = lic.storage_path
+
+    # Remove this licence's calendar entries (the obligations it auto-scheduled)
+    # plus their dependent rows — but LEAVE the underlying rules in the
+    # catalogue, so re-adding the licence later just re-schedules them.
+    ob_ids = (
+        db.execute(select(Obligation.id).where(Obligation.license_id == license_id))
+        .scalars()
+        .all()
+    )
+    removed_obligations = len(ob_ids)
+    if ob_ids:
+        db.execute(sa_delete(Comment).where(Comment.obligation_id.in_(ob_ids)))
+        db.execute(
+            sa_delete(Notification).where(Notification.obligation_id.in_(ob_ids))
+        )
+        db.execute(
+            sa_update(Document)
+            .where(Document.obligation_id.in_(ob_ids))
+            .values(obligation_id=None)
+        )
+        db.execute(
+            sa_delete(Activity).where(
+                Activity.target_type == "obligation",
+                Activity.target_id.in_(ob_ids),
+            )
+        )
+        db.execute(sa_delete(Obligation).where(Obligation.id.in_(ob_ids)))
+
     db.delete(lic)
     log_activity(
         db,
@@ -365,6 +480,7 @@ def delete_license(
         action="license.deleted",
         target_type="license",
         target_id=license_id,
+        payload={"removed_obligations": removed_obligations},
     )
     db.commit()
     if path:
@@ -374,7 +490,34 @@ def delete_license(
             pass
 
 
-@router.get("/{license_id}/download")
+@router.post("/clear-all")
+def clear_all_licenses(
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> dict:
+    """Admin-only: delete EVERY license (rows + files) so the admin can
+    re-upload from scratch. Does not touch obligations already on the
+    calendar."""
+    lics = db.execute(select(License)).scalars().all()
+    paths = [l.storage_path for l in lics if l.storage_path]
+    count = len(lics)
+    for l in lics:
+        db.delete(l)
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="licenses.cleared_all",
+        target_type="license",
+        target_id=None,
+        payload={"deleted": count},
+    )
+    db.commit()
+    for p in paths:
+        try:
+            storage.delete(p)
+        except Exception:  # noqa: BLE001
+            pass
+    return {"deleted": count}
 def download_license_file(
     license_id: int,
     db: Session = Depends(get_session),
@@ -402,6 +545,7 @@ class LicenseAIExtractResponse(BaseModel):
     license_id: int
     jurisdiction_hint: Optional[str] = None
     extracted_chars: int = 0
+    from_document: bool = True
     candidates: list = []  # list[CandidateRule] — typed late to avoid cycle
     notes: Optional[str] = None
 
@@ -579,7 +723,7 @@ def ai_extract_obligations(
 
     Falls back gracefully when:
       - no file is attached → returns available=False with a hint
-      - AI is off (no ANTHROPIC_API_KEY / COMPLIANCE_AGENT_LIVE) → available=False
+      - AI is off (no ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) / COMPLIANCE_AGENT_LIVE) → available=False
       - the PDF has no extractable text → notes explain
     """
     from compliance_agent.rule_extractor import (
@@ -592,18 +736,6 @@ def ai_extract_obligations(
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
 
-    if not lic.storage_path:
-        return LicenseAIExtractResponse(
-            available=False,
-            license_id=license_id,
-            jurisdiction_hint=lic.jurisdiction_code,
-            notes=(
-                "No license file attached. Upload the regulator's license / "
-                "authorisation letter (PDF works best) then click "
-                "Extract obligations again."
-            ),
-        )
-
     if not is_live():
         return LicenseAIExtractResponse(
             available=False,
@@ -611,13 +743,17 @@ def ai_extract_obligations(
             jurisdiction_hint=lic.jurisdiction_code,
             notes=(
                 "AI extraction is off in this deployment. Set "
-                "COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY in the server "
+                "COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) in the server "
                 "environment, then retry."
             ),
         )
 
     text = _read_license_text(lic)
-    if len(text.strip()) < 200:
+    has_file = bool(lic.storage_path)
+
+    # A file is attached but we couldn't pull readable text — that's a scanned
+    # PDF / image. Don't silently fall back to knowledge-mode; tell the admin.
+    if has_file and len(text.strip()) < 200:
         return LicenseAIExtractResponse(
             available=False,
             license_id=license_id,
@@ -631,19 +767,124 @@ def ai_extract_obligations(
             ),
         )
 
-    # Prepend a short context line so Claude knows what this document is.
-    primer = (
-        f"This is a regulator-issued license / authorisation document for "
-        f"jurisdiction {lic.jurisdiction_code.upper()}, issued by "
-        f"{lic.authority}. The license name is: {lic.name}. "
-        f"Extract every ongoing compliance obligation the LICENSEE owes "
-        f"as a result of HOLDING this license: filings, returns, fees, "
-        f"reporting, periodic confirmations, change notifications, AML "
-        f"obligations. Ignore one-off pre-licensing steps that have "
-        f"already happened.\n\n--- LICENSE TEXT BEGINS ---\n\n"
+    from_document = len(text.strip()) >= 200
+    # Shared instruction: the licensee is also an operating company, so the
+    # extract must be a SUPERSET — the licence's own obligations PLUS the
+    # standard finance/tax/accounting filings any company in the jurisdiction
+    # owes. This keeps the AI extract (source of truth) broader than the
+    # finance-only website view, rather than narrower.
+    # (A) Ground the extract in the curated catalogue — give Claude the
+    # standard filing names we already track for this jurisdiction so it (a)
+    # reuses those EXACT names and (b) doesn't miss filings the website lists.
+    catalogue = (
+        db.execute(
+            select(Rule).where(
+                Rule.jurisdiction_code == lic.jurisdiction_code,
+                Rule.status == RuleStatus.production,
+            )
+        )
+        .scalars()
+        .all()
     )
-    truncated = text[: max(0, _MAX_PROMPT_CHARS - len(primer))]
-    payload_text = primer + truncated
+    catalogue_ref = ""
+    if catalogue:
+        names = sorted(
+            {
+                (r.form_name or r.name or "").strip()
+                for r in catalogue
+                if (r.form_name or r.name)
+            }
+        )
+        catalogue_ref = (
+            "\n\n--- STANDARD FILINGS WE ALREADY TRACK FOR THIS JURISDICTION ---\n"
+            "Where an obligation you list corresponds to one of these, use the "
+            "EXACT name below (do not paraphrase). Make sure every relevant one "
+            "here appears in your output, and add any further obligations you "
+            "know of as new items.\n"
+            "GRANULARITY: keep a strict 1:1 correspondence with these filings — "
+            "do NOT merge two of them into a single item, and do NOT split one "
+            "filing into several. One obligation per distinct filing:\n"
+            + "\n".join(f"- {n}" for n in names)
+        )
+
+    # Keep the filing NAME and the FORM CODE in separate fields so the UI can
+    # show them in separate columns.
+    naming_rule = (
+        "\n\nNAMING: put the human FILING name (no form code) in `name` — e.g. "
+        "'Corporate Tax Return', 'Annual Safeguarding Audit'. Put ONLY the "
+        "official form code/number in `form_name` — e.g. 'CT600', 'FSA056', "
+        "'GSTR-3B'. If a filing has no formal form code, leave `form_name` equal "
+        "to the filing name. Never put the form code inside `name`."
+    )
+
+    exhaustive_rule = (
+        "\n\nSCOPE — return FINANCE only. List ONLY ongoing FINANCIAL, TAX and "
+        "ACCOUNTING filings. Do NOT include legal, HR, governance or general "
+        "compliance items (e.g. UBO registers, AML/CFT reports, license "
+        "renewals, data-protection filings, board/secretarial matters) — those "
+        "are out of scope here.\n"
+        "Within finance, BE EXHAUSTIVE — list EVERY relevant filing, not just a "
+        "handful: corporate / income tax returns, VAT / GST / sales-tax "
+        "returns, annual financial statements, audit filing, payroll & "
+        "social-security / withholding returns, transfer-pricing documentation, "
+        "economic-substance filings, and any other periodic finance/tax filing "
+        "that applies. One entry per distinct filing; do NOT merge or "
+        "summarise. If unsure whether a finance filing applies, include it and "
+        "mark applicability Conditional rather than omitting it."
+    )
+
+    finance_addendum = (
+        f"\n\nIMPORTANT — also include the standard ongoing FINANCIAL, TAX and "
+        f"ACCOUNTING obligations any operating company in "
+        f"{lic.jurisdiction_code.upper()} owes, even though they sit with a "
+        f"different authority than this licence's regulator: corporate / income "
+        f"tax returns, VAT / GST / sales-tax returns, annual financial "
+        f"statements and audit filing, payroll & social-security / withholding "
+        f"returns, transfer pricing, and economic-substance filings where "
+        f"applicable. The licensee IS such a company, so these apply. Label "
+        f"their function/category as Finance/Tax accordingly."
+    )
+    if from_document:
+        # Document-grounded: read the actual license text.
+        primer = (
+            f"This is a regulator-issued license / authorisation document for "
+            f"jurisdiction {lic.jurisdiction_code.upper()}, issued by "
+            f"{lic.authority}. The license name is: {lic.name}. "
+            f"Extract every ongoing compliance obligation the LICENSEE owes "
+            f"as a result of HOLDING this license: filings, returns, fees, "
+            f"reporting, periodic confirmations, change notifications, AML "
+            f"obligations. Ignore one-off pre-licensing steps that have "
+            f"already happened."
+            f"{exhaustive_rule}"
+            f"{finance_addendum}"
+            f"{naming_rule}"
+            f"{catalogue_ref}"
+            f"\n\n--- LICENSE TEXT BEGINS ---\n\n"
+        )
+        truncated = text[: max(0, _MAX_PROMPT_CHARS - len(primer))]
+        payload_text = primer + truncated
+    else:
+        # No file attached — ask Claude from its regulatory knowledge so the
+        # admin still gets a list to cross-check against the curated rules.
+        payload_text = (
+            f"No license document is available — work from your knowledge of "
+            f"the regulator's regime.\n\n"
+            f"Jurisdiction: {lic.jurisdiction_code.upper()}\n"
+            f"Issuing authority / regulator: {lic.authority}\n"
+            f"License name: {lic.name}\n"
+            f"License type: {lic.license_type or '(not specified)'}\n\n"
+            f"List every ONGOING compliance obligation a holder of this kind of "
+            f"license typically owes the regulator: periodic returns, filings, "
+            f"fees, reports, periodic confirmations, change notifications, AML/"
+            f"CFT obligations, renewals. For each, note whether it is mandatory "
+            f"or conditional, and its usual frequency."
+            f"{exhaustive_rule}"
+            f"{finance_addendum}"
+            f"{naming_rule}"
+            f"{catalogue_ref}"
+            f"\n\nIf you are unsure, mark applicability "
+            f"accordingly rather than omitting it."
+        )
 
     try:
         result = extract_rules_from_text(
@@ -671,17 +912,104 @@ def ai_extract_obligations(
         payload={
             "candidates": len(result.rules),
             "chars": len(text),
+            "from_document": from_document,
         },
     )
     db.commit()
 
+    extra_note = (
+        None
+        if from_document
+        else (
+            "No license PDF attached — this list is Claude's best estimate from "
+            "the regulator + license type, not read from a document. Use it to "
+            "cross-check your tracked filings; verify before creating rules."
+        )
+    )
+    combined_notes = " ".join(n for n in (extra_note, result.notes) if n) or None
+
+    # (B) Reconcile names against the catalogue. Where a candidate clearly
+    # matches a filing we already track, adopt the catalogue's STANDARD name so
+    # the extract and the website line up (and the cross-check matches cleanly).
+    # `matched_standard` flags which ones were aligned vs genuinely new.
+    def _match_catalogue(*texts: str) -> Optional[Rule]:
+        cand = _tokens(*texts)
+        if not cand:
+            return None
+        best, best_score = None, 0
+        for r in catalogue:
+            shared = cand & _tokens(r.form_name, r.name)
+            if len(shared) > best_score:
+                best, best_score = r, len(shared)
+        # Need a couple of shared meaningful tokens to avoid false matches.
+        return best if best_score >= 2 else None
+
+    def _norm(s: object) -> str:
+        return (getattr(s, "value", s) or "").strip().lower() if s else ""
+
+    candidates: list[dict] = []
+    for c in result.rules:
+        # Finance-only: drop anything that isn't a Finance/Tax/Accounting
+        # filing (legal, HR, governance, compliance, etc.). The exhaustive
+        # prompt makes sure the finance set itself is complete.
+        if not keep_function(
+            getattr(c, "category", ""),
+            getattr(c, "area", ""),
+            getattr(c, "responsible_function", None),
+        ):
+            continue
+        d = c.model_dump()
+        match = _match_catalogue(d.get("form_name", "") or "", d.get("name", "") or "")
+        if match is not None:
+            # Standardise the filing NAME to the catalogue's so it lines up with
+            # the website. Keep Claude's `form_name` (the form code) for the
+            # separate Form column.
+            std_name = match.name or match.form_name
+            if std_name:
+                d["name"] = std_name
+            d["matched_standard"] = True
+            # Surface the catalogue value + a *_differs flag where Claude diverges
+            # from your currently-tracked rule, so you can see every difference
+            # and decide which is right (the catalogue is NOT assumed correct).
+            d["catalogue_due_date_rule"] = match.due_date_rule
+            d["catalogue_frequency"] = match.frequency
+            d["catalogue_applicability"] = (
+                match.applicability.value if match.applicability else ""
+            )
+            d["due_date_differs"] = _norm(d.get("due_date_rule")) != _norm(
+                match.due_date_rule
+            )
+            d["frequency_differs"] = _norm(d.get("frequency")) != _norm(
+                match.frequency
+            )
+            d["applicability_differs"] = _norm(d.get("applicability")) != _norm(
+                match.applicability
+            )
+        else:
+            d["matched_standard"] = False
+            d["due_date_differs"] = False
+            d["frequency_differs"] = False
+            d["applicability_differs"] = False
+        candidates.append(d)
+
+    # NOTE: the AI extract is the comprehensive "source of truth" / cross-check
+    # tool, so it is deliberately NOT narrowed by the FINANCE_ONLY switch — it
+    # surfaces every obligation Claude finds (finance + compliance + legal).
+    # The FINANCE_ONLY filter only applies to the operational website lists
+    # (applicable rules, catalogue, calendar), which stay a finance subset of
+    # this full list. Filtering here too would leave licences like an FCA
+    # Payment Institution (mostly compliance obligations) showing nothing.
     return LicenseAIExtractResponse(
         available=True,
         license_id=license_id,
-        jurisdiction_hint=result.jurisdiction_hint or lic.jurisdiction_code,
+        from_document=from_document,
+        # Use the license's own short jurisdiction code (e.g. "uae"), NOT the
+        # model's free-text inference (e.g. "United Arab Emirates"), so the
+        # rules created from these candidates get a code that fits the column.
+        jurisdiction_hint=lic.jurisdiction_code,
         extracted_chars=len(text),
-        candidates=[c.model_dump() for c in result.rules],
-        notes=result.notes,
+        candidates=candidates,
+        notes=combined_notes,
     )
 
 
@@ -699,17 +1027,23 @@ def applicable_rules(
         raise HTTPException(status_code=404, detail="License not found.")
 
     # 1. Candidate pool: production rules in this jurisdiction.
-    pool = (
-        db.execute(
-            select(Rule)
-            .where(
-                Rule.jurisdiction_code == lic.jurisdiction_code,
-                Rule.status == RuleStatus.production,
+    #    FINANCE_ONLY switch: keep only Finance-function rules. _dedupe_rules
+    #    collapses near-duplicate filings (e.g. two CT600 rows).
+    pool = _dedupe_rules(
+        [
+            r
+            for r in db.execute(
+                select(Rule)
+                .where(
+                    Rule.jurisdiction_code == lic.jurisdiction_code,
+                    Rule.status == RuleStatus.production,
+                )
+                .order_by(Rule.category, Rule.form_name)
             )
-            .order_by(Rule.category, Rule.form_name)
-        )
-        .scalars()
-        .all()
+            .scalars()
+            .all()
+            if keep_function(r.category, r.area, r.responsible_function)
+        ]
     )
 
     license_tokens = _tokens(lic.authority, lic.license_type, lic.name)
@@ -773,10 +1107,17 @@ def applicable_rules(
             due_date_rule=rule.due_date_rule,
             payment_rule=rule.payment_rule,
             applicability=rule.applicability.value if rule.applicability else "",
+            responsible_function=(
+                rule.responsible_function
+                or derive_function(rule.category, rule.area)
+            ),
+            plain_description=rule.plain_description,
+            tax_type=rule.tax_type.value if rule.tax_type else "Not a Tax",
             relevance=relevance,
             match_reason=match_reason,
             next_obligation_id=ob.id if ob else None,
             next_due_date=ob.due_date if ob else None,
+            projected_due_date=_next_due_for_rule(rule, today_d),
             next_status=ob.status.value if ob and ob.status else None,
             next_assignee=assignee,
             days_to_next=((ob.due_date - today_d).days if ob else None),
@@ -785,10 +1126,16 @@ def applicable_rules(
     direct: list[LicenseRuleHit] = []
     entity_other: list[LicenseRuleHit] = []
 
+    # License-specific: a rule is "directly applicable" when its authority /
+    # type token-matches the licence (e.g. an FCA licence surfaces FCA rules).
+    # In FINANCE_ONLY mode the pool is already just Finance filings (tax / VAT
+    # / CT etc.) — those apply to the entity by virtue of operating in the
+    # jurisdiction, not via this licence's authority — so surface them all
+    # rather than showing an empty list when the authority doesn't match.
+    juris_label = lic.jurisdiction_code.upper()
     for rule in pool:
         rule_tokens = _tokens(rule.authority, rule.category, rule.area)
         shared = license_tokens & rule_tokens
-        is_attached = rule.id in entity_rule_ids
         if shared:
             direct.append(
                 _hit(
@@ -797,7 +1144,15 @@ def applicable_rules(
                     match_reason=f"matched on: {', '.join(sorted(shared))}",
                 )
             )
-        elif is_attached:
+        elif FINANCE_ONLY:
+            direct.append(
+                _hit(
+                    rule,
+                    relevance="direct",
+                    match_reason=f"Finance filing in {juris_label}",
+                )
+            )
+        elif rule.id in entity_rule_ids:
             entity_other.append(
                 _hit(rule, relevance="entity", match_reason="attached to this entity")
             )
@@ -831,102 +1186,415 @@ def applicable_rules(
 
 
 # ---------------------------------------------------------------------------
-# Schedule an applicable rule straight from the license — attaches the rule to
-# the license's entity and creates the next upcoming obligation (deadline) on
-# the calendar, optionally assigned to someone. This is the "see what's needed
-# → assign it" loop, without going through the staging-rules promotion.
+# Schedule a rule against a license → creates one Obligation row
 # ---------------------------------------------------------------------------
-class ScheduleRuleRequest(BaseModel):
+class ScheduleRulePayload(BaseModel):
+    rule_id: int
+    due_date: Optional[date] = None
     assignee_id: Optional[int] = None
+    notes: Optional[str] = None
 
 
 class ScheduleRuleResponse(BaseModel):
     obligation_id: int
     due_date: date
-    created: bool
+    assignee_id: Optional[int]
+
+
+_MONTH_LOOKUP = {
+    **{m.lower(): i for i, m in enumerate(calendar.month_name) if m},
+    **{m.lower(): i for i, m in enumerate(calendar.month_abbr) if m},
+}
+
+
+def _clamp_day(year: int, month: int, day: int) -> date:
+    """Build a date, clamping the day to the month's length (e.g. 31 → 30)."""
+    last = calendar.monthrange(year, month)[1]
+    return date(year, month, min(max(day, 1), last))
+
+
+def _next_on_day_of_month(base: date, day: int) -> date:
+    """Next occurrence of `day`-of-month on/after `base`."""
+    cand = _clamp_day(base.year, base.month, day)
+    if cand >= base:
+        return cand
+    ny, nm = (base.year + 1, 1) if base.month == 12 else (base.year, base.month + 1)
+    return _clamp_day(ny, nm, day)
+
+
+def _next_due_for_rule(rule: Rule, base: date) -> date:
+    """Best-effort REAL statutory deadline, parsed from the rule's
+    `due_date_rule` text, instead of a naive "today + interval". Handles the
+    common shapes: "by the 25th of the following month", explicit calendar
+    dates ("by 30 Jun", "31 Dec"), and "Nth day of the Mth month after the
+    period end". Fiscal-relative rules assume a calendar (Dec-31) year-end,
+    since we don't track each entity's financial year here. Falls back to an
+    interval only when nothing parseable is found."""
+    low = (rule.due_date_rule or "").lower()
+    freq = (rule.frequency or "").lower()
+
+    # Monthly: anchor on the day-of-month it's due ("by the 25th of the
+    # following month"), NOT today + 30 days.
+    if "month" in freq:
+        m = re.search(
+            r"(\d{1,2})\s*(?:st|nd|rd|th)\s+of\s+(?:the\s+)?(?:following|next|subsequent)\s+month",
+            low,
+        ) or re.search(r"by\s+the\s+(\d{1,2})\s*(?:st|nd|rd|th)\b", low)
+        if m:
+            return _next_on_day_of_month(base, int(m.group(1)))
+        return base + timedelta(days=30)
+
+    # Explicit calendar date(s): "30 Jun", "Jun 30", "25 Jul / 25 Jan" → pick
+    # the nearest future one. Used for annual / half-yearly / quarterly filings.
+    cal: list[tuple[int, int]] = []
+    for mo in re.finditer(
+        r"(\d{1,2})\s*(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*",
+        low,
+    ):
+        mon = _MONTH_LOOKUP.get(mo.group(2))
+        if mon:
+            cal.append((mon, int(mo.group(1))))
+    for mo in re.finditer(
+        r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\b", low
+    ):
+        mon = _MONTH_LOOKUP.get(mo.group(1))
+        if mon:
+            cal.append((mon, int(mo.group(2))))
+    if cal:
+        cands = [
+            _clamp_day(yr, mon, d)
+            for mon, d in cal
+            for yr in (base.year, base.year + 1)
+        ]
+        future = [c for c in cands if c >= base]
+        if future:
+            return min(future)
+
+    # "15th day of the 6th month after the end of the tax period" — assume a
+    # calendar year-end, so month N maps directly.
+    m = re.search(
+        r"(\d{1,2})\s*(?:st|nd|rd|th)?\s+day\s+of\s+the\s+(\d{1,2})\s*(?:st|nd|rd|th)?\s+month",
+        low,
+    )
+    if m and 1 <= int(m.group(2)) <= 12:
+        day, mon = int(m.group(1)), int(m.group(2))
+        for yr in (base.year, base.year + 1):
+            c = _clamp_day(yr, mon, day)
+            if c >= base:
+                return c
+
+    # "within N months of ... close / period end" — assume Dec-31 year-end.
+    m = re.search(r"within\s+(\d{1,2})\s+months?", low)
+    if m:
+        n = int(m.group(1))
+        for end_year in (base.year - 1, base.year):
+            total = 12 + n  # months from Jan of end_year to (Dec + n)
+            yr = end_year + (total - 1) // 12
+            mon = (total - 1) % 12 + 1
+            c = _clamp_day(yr, mon, calendar.monthrange(yr, mon)[1])
+            if c >= base:
+                return c
+
+    # Nothing parseable — fall back to a sensible interval.
+    if "quarter" in freq:
+        return base + timedelta(days=90)
+    if "half" in freq:
+        return base + timedelta(days=180)
+    if "annual" in freq or "year" in freq:
+        return base + timedelta(days=365)
+    return base + timedelta(days=60)
 
 
 @router.post(
-    "/{license_id}/rules/{rule_id}/schedule", response_model=ScheduleRuleResponse
+    "/{license_id}/schedule-rule",
+    response_model=ScheduleRuleResponse,
+    status_code=201,
 )
-def schedule_rule(
+def schedule_rule_for_license(
     license_id: int,
-    rule_id: int,
-    payload: ScheduleRuleRequest,
+    payload: ScheduleRulePayload,
     db: Session = Depends(get_session),
-    user: User = Depends(require_admin),
+    actor: User = Depends(require_admin),
 ) -> ScheduleRuleResponse:
-    from datetime import timedelta
-
-    from compliance_agent.api._helpers import today
-    from compliance_agent.db.seed import (
-        _effort_band_for_frequency,
-        _offsets_for_frequency,
-        _period_label_for_frequency,
-    )
-
+    """Admin manually creates an obligation for a rule that applies to the
+    license's entity. This is the production workflow — no auto-spawn — so
+    admins only schedule what actually applies."""
     lic = db.get(License, license_id)
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
-    rule = db.get(Rule, rule_id)
+
+    rule = db.get(Rule, payload.rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found.")
-    entity = lic.entity
-    if entity is None:
-        raise HTTPException(status_code=404, detail="License has no entity.")
 
-    # Attach the rule to the entity so it shows as tracked going forward.
-    if entity.id not in {e.id for e in rule.entities}:
-        rule.entities.append(entity)
+    due = payload.due_date or _next_due_for_rule(rule, date.today())
 
-    # Next upcoming due date from the rule's cadence (fallback: ~30 days out).
-    future = sorted(o for o in _offsets_for_frequency(rule.frequency) if o > 0)
-    due = today() + timedelta(days=future[0] if future else 30)
-
-    existing = (
-        db.execute(
-            select(Obligation).where(
-                Obligation.rule_id == rule.id,
-                Obligation.entity_id == entity.id,
-                Obligation.due_date == due,
-                Obligation.department == Department.compliance,
-            )
+    # Refuse a duplicate scheduling (rule + entity + due + department).
+    existing = db.execute(
+        select(Obligation).where(
+            Obligation.rule_id == rule.id,
+            Obligation.entity_id == lic.entity_id,
+            Obligation.due_date == due,
+            Obligation.department == Department.compliance,
         )
-        .scalars()
-        .first()
-    )
-    created = existing is None
+    ).scalar_one_or_none()
     if existing is not None:
-        ob = existing
-    else:
-        ob = Obligation(
-            rule_id=rule.id,
-            entity_id=entity.id,
-            due_date=due,
-            period_label=_period_label_for_frequency(rule.frequency, due),
-            status=ObligationStatus.not_started,
-            department=Department.compliance,
-            effort_band=_effort_band_for_frequency(rule.frequency),
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"An obligation for this rule already exists on {due}. "
+                f"Pick a different date or open the existing one."
+            ),
         )
-        db.add(ob)
-        db.flush()
 
-    if payload.assignee_id:
-        assignee = db.get(User, payload.assignee_id)
-        if assignee is not None:
-            ob.assignee_id = assignee.id
-            db.flush()
-            from compliance_agent.api.notifications import emit_assignment
-
-            emit_assignment(db, assignee=assignee, obligation=ob, actor=user)
+    obligation = Obligation(
+        rule_id=rule.id,
+        entity_id=lic.entity_id,
+        due_date=due,
+        status=ObligationStatus.not_started,
+        department=Department.compliance,
+        assignee_id=payload.assignee_id,
+        notes=payload.notes,
+    )
+    db.add(obligation)
+    db.flush()
 
     log_activity(
         db,
-        actor_id=user.id,
-        action="license.rule_scheduled",
+        actor_id=actor.id,
+        action="obligation.scheduled_from_license",
         target_type="obligation",
-        target_id=ob.id,
-        payload={"license_id": license_id, "rule_id": rule_id, "created": created},
+        target_id=obligation.id,
+        payload={
+            "license_id": license_id,
+            "rule_id": rule.id,
+            "due_date": str(due),
+            "assignee_id": payload.assignee_id,
+        },
     )
     db.commit()
-    return ScheduleRuleResponse(obligation_id=ob.id, due_date=ob.due_date, created=created)
+    return ScheduleRuleResponse(
+        obligation_id=obligation.id,
+        due_date=obligation.due_date,
+        assignee_id=obligation.assignee_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Schedule EVERY applicable filing for a license → fills the calendar at once
+# ---------------------------------------------------------------------------
+class ScheduleAllResponse(BaseModel):
+    scheduled: int
+    skipped_existing: int
+    applicable: int
+
+
+def _dept_for_rule(rule: Rule) -> Department:
+    """Owning department for a rule, from its responsible function."""
+    fn = (rule.responsible_function or derive_function(rule.category, rule.area) or "").lower()
+    if fn == "finance":
+        return Department.finance
+    if fn == "legal":
+        return Department.legal
+    return Department.compliance
+
+
+class ScheduleRulesPayload(BaseModel):
+    rule_ids: list[int]
+
+
+@router.post(
+    "/{license_id}/schedule-rules",
+    response_model=ScheduleAllResponse,
+    status_code=201,
+)
+def schedule_rules_for_license(
+    license_id: int,
+    payload: ScheduleRulesPayload,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ScheduleAllResponse:
+    """Schedule the SELECTED filings (the admin's filtered set) onto the
+    calendar. Each obligation is routed to the department matching the rule's
+    function (finance / compliance / legal). Skips duplicates."""
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found.")
+
+    today_d = date.today()
+    scheduled = skipped = 0
+    # Every obligation starts on the generic "preparing" leg (compliance).
+    # Who actually prepares it (Finance for VAT/tax, etc.) is shown by the
+    # rule's function in the workflow + assign dropdown; the payment leg
+    # (department -> finance) is set later by the admin hand-off.
+    dept = Department.compliance
+    for rid in payload.rule_ids:
+        rule = db.get(Rule, rid)
+        if rule is None:
+            continue
+        due = _next_due_for_rule(rule, today_d)
+        existing = db.execute(
+            select(Obligation).where(
+                Obligation.rule_id == rule.id,
+                Obligation.entity_id == lic.entity_id,
+                Obligation.due_date == due,
+                Obligation.department == dept,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            skipped += 1
+            continue
+        db.add(
+            Obligation(
+                rule_id=rule.id,
+                entity_id=lic.entity_id,
+                due_date=due,
+                status=ObligationStatus.not_started,
+                department=dept,
+            )
+        )
+        scheduled += 1
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="license.scheduled_rules",
+        target_type="license",
+        target_id=license_id,
+        payload={"scheduled": scheduled, "skipped_existing": skipped,
+                 "requested": len(payload.rule_ids)},
+    )
+    db.commit()
+    return ScheduleAllResponse(
+        scheduled=scheduled,
+        skipped_existing=skipped,
+        applicable=len(payload.rule_ids),
+    )
+
+
+def _schedule_filings_for_license(
+    db: Session, lic: License, *, mandatory_only: bool
+) -> tuple[int, int, int]:
+    """Create a compliance obligation for every production rule in the
+    licence's jurisdiction (the whole country set is applicable). Skips any
+    that already have an obligation on the computed due date. Returns
+    (scheduled, skipped_existing, applicable). Does NOT commit."""
+    pool = _dedupe_rules(
+        [
+            r
+            for r in db.execute(
+                select(Rule).where(
+                    Rule.jurisdiction_code == lic.jurisdiction_code,
+                    Rule.status == RuleStatus.production,
+                )
+            )
+            .scalars()
+            .all()
+            if keep_function(r.category, r.area, r.responsible_function)
+        ]
+    )
+    today_d = date.today()
+    scheduled = skipped = applicable = 0
+    for rule in pool:
+        if mandatory_only and rule.applicability != Applicability.mandatory:
+            continue
+        applicable += 1
+        due = _next_due_for_rule(rule, today_d)
+        existing = db.execute(
+            select(Obligation).where(
+                Obligation.rule_id == rule.id,
+                Obligation.entity_id == lic.entity_id,
+                Obligation.due_date == due,
+                Obligation.department == Department.compliance,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            skipped += 1
+            continue
+        db.add(
+            Obligation(
+                rule_id=rule.id,
+                entity_id=lic.entity_id,
+                license_id=lic.id,
+                due_date=due,
+                status=ObligationStatus.not_started,
+                department=Department.compliance,
+            )
+        )
+        scheduled += 1
+    return scheduled, skipped, applicable
+
+
+@router.post(
+    "/{license_id}/schedule-all",
+    response_model=ScheduleAllResponse,
+    status_code=201,
+)
+def schedule_all_for_license(
+    license_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ScheduleAllResponse:
+    """Schedule an obligation for every applicable filing in this licence's
+    jurisdiction, so all of them show up on the calendar in one go. Skips any
+    filing that already has an obligation on the computed due date."""
+    lic = db.get(License, license_id)
+    if lic is None:
+        raise HTTPException(status_code=404, detail="License not found.")
+
+    scheduled, skipped, applicable = _schedule_filings_for_license(
+        db, lic, mandatory_only=False
+    )
+    # Only log when something actually landed — this endpoint is now called
+    # automatically every time the licence is opened, so logging no-ops would
+    # flood the activity feed.
+    if scheduled:
+        log_activity(
+            db,
+            actor_id=actor.id,
+            action="license.scheduled_all",
+            target_type="license",
+            target_id=license_id,
+            payload={
+                "scheduled": scheduled,
+                "skipped_existing": skipped,
+                "applicable": applicable,
+            },
+        )
+    db.commit()
+    return ScheduleAllResponse(
+        scheduled=scheduled, skipped_existing=skipped, applicable=applicable
+    )
+
+
+# ---------------------------------------------------------------------------
+# Import entities + licences from the Vance Inc. org-chart data
+# ---------------------------------------------------------------------------
+class ImportOrgChartResult(BaseModel):
+    created_entities: int
+    backfilled_entities: int
+    created_licenses: int
+    skipped_licenses: int
+
+
+@router.post("/import-org-chart", response_model=ImportOrgChartResult)
+def import_org_chart(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ImportOrgChartResult:
+    """Admin-only: idempotently create every entity + licence from the Vance
+    Inc. legal-entity org chart. Existing entities/licences (matched by name /
+    licence number) are skipped — only missing ones are added, and each is a
+    fully-editable row. Shareholding is not imported."""
+    from compliance_agent.data.org_chart import sync_org_chart
+
+    summary = sync_org_chart()
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="licenses.import_org_chart",
+        target_type="license",
+        target_id=None,
+        payload=summary,
+    )
+    db.commit()
+    return ImportOrgChartResult(**summary)

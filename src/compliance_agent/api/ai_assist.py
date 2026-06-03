@@ -107,18 +107,21 @@ def second_opinion(
 ) -> SecondOpinionResult:
     result = review_obligation(db, obligation_id)
     if result.available and result.opinion is not None:
-        log_activity(
-            db,
-            actor_id=user.id,
-            action="ai.second_opinion",
-            target_type="obligation",
-            target_id=obligation_id,
-            payload={
-                "verdict": result.opinion.verdict,
-                "confidence": result.opinion.confidence,
-            },
-        )
-        db.commit()
+        try:
+            log_activity(
+                db,
+                actor_id=user.id,
+                action="ai.second_opinion",
+                target_type="obligation",
+                target_id=obligation_id,
+                payload={
+                    "verdict": result.opinion.verdict,
+                    "confidence": result.opinion.confidence,
+                },
+            )
+            db.commit()
+        except Exception:  # noqa: BLE001 — logging must never break the response
+            db.rollback()
     return result
 
 

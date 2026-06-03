@@ -117,6 +117,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     role: Mapped[Role] = mapped_column(SAEnum(Role), nullable=False, default=Role.employee)
+    # Which team this user belongs to. Drives the assign-to-team flow:
+    # admin assigns compliance work to compliance-tagged users; once the
+    # filing is approved, admin hands off the payment leg to finance-tagged
+    # users. Nullable — legacy users + admins can be untagged.
+    department: Mapped[Optional[Department]] = mapped_column(
+        SAEnum(Department), nullable=True, index=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -214,12 +221,28 @@ class Rule(Base):
     tax_type: Mapped[TaxType] = mapped_column(
         SAEnum(TaxType), nullable=False, default=TaxType.not_tax, index=True
     )
+    # Function responsible for the filing: Finance / Compliance / Legal.
+    # Auto-derived from category at seed time, editable per rule. Plain string
+    # (not an enum) so the team can add their own functions later.
+    responsible_function: Mapped[Optional[str]] = mapped_column(
+        String(24), nullable=True, index=True
+    )
+    # Plain-English description of the obligation (de-jargoned). Falls back to
+    # form_name in the UI when empty.
+    plain_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[RuleStatus] = mapped_column(
         SAEnum(RuleStatus), nullable=False, default=RuleStatus.production, index=True
     )
 
     # Source provenance — used by the regulation change watcher (Phase 7).
+    # source_url   = informational page (regulation text + form template).
+    #                Visible to everyone in the team.
+    # submission_url = portal where the filing is actually submitted.
+    #                  Admin-only. Often the same host as source_url but a
+    #                  different path (e.g. an e-filing portal vs. the
+    #                  rule's circular page).
     source_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    submission_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -267,6 +290,13 @@ class Obligation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     rule_id: Mapped[int] = mapped_column(ForeignKey("rules.id"), nullable=False, index=True)
     entity_id: Mapped[int] = mapped_column(ForeignKey("entities.id"), nullable=False, index=True)
+    # The licence this obligation was scheduled from (when auto-scheduled).
+    # Lets us remove a licence's calendar entries when the licence is deleted,
+    # while leaving the underlying rule in the catalogue. Nullable: manually
+    # created obligations and legacy rows don't carry it.
+    license_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("licenses.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     period_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)  # "Apr 2026", "Q1 FY26"
@@ -289,6 +319,11 @@ class Obligation(Base):
     filing_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     payment_amount: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     payment_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Bank account / beneficiary info finance uses to actually move the
+    # money — kept as free text so we don't have to model every payment
+    # rail's quirks. Visible only on the finance side of the obligation
+    # detail.
+    beneficiary_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # ClickUp two-way sync — set when a finance payment task is created in
     # ClickUp; lets the webhook map a closed task back to this obligation.
@@ -350,8 +385,13 @@ class Activity(Base):
 # Documents — uploaded files attached to entities and/or obligations
 # ---------------------------------------------------------------------------
 class DocumentCategory(str, enum.Enum):
-    formation = "Formation"
+    # Active categories — surfaced in the UI as upload targets.
     filings = "Filings"
+    templates = "Templates"
+    # Legacy values kept so existing rows in the DB don't fail to load.
+    # They no longer appear as upload-target cards; users can still see
+    # any rows in those categories via the entity's full document list.
+    formation = "Formation"
     contracts = "Contracts"
     expert_notes = "Expert notes"
     other = "Other"
@@ -363,6 +403,7 @@ class NotificationKind(str, enum.Enum):
     overdue = "overdue"           # derived on read; not persisted
     alert_window = "alert_window" # derived on read; not persisted
     status_change = "status_change"
+    payment_request = "payment_request"  # filing approved → finance asked to pay
 
 
 class Document(Base):

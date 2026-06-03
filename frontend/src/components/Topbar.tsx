@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Sparkles,
   Beaker,
+  Banknote,
 } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,14 +35,14 @@ import { api } from "@/lib/api";
 import { fmtRelative, userInitials } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
-import type { NotificationOut, Obligation, SystemInfo } from "@/types/api";
+import type { Entity, NotificationOut, Obligation, SystemInfo } from "@/types/api";
 
 
 // ---------------------------------------------------------------------------
 // Breadcrumbs
 // ---------------------------------------------------------------------------
 const ROUTE_LABELS: Record<string, string> = {
-  "": "Dashboard",
+  "": "Home",
   calendar: "Compliance Calendar",
   entities: "Entities",
   tasks: "Tasks",
@@ -56,7 +57,7 @@ function useBreadcrumbs() {
   const location = useLocation();
   const segments = location.pathname.split("/").filter(Boolean);
   if (segments.length === 0) {
-    return [{ label: "Dashboard", to: "/" }];
+    return [{ label: "Home", to: "/" }];
   }
   const crumbs: { label: string; to: string }[] = [];
   let path = "";
@@ -105,6 +106,11 @@ function ModeBadge() {
   });
   if (!data) return null;
   const live = data.mode === "live";
+  const label = live
+    ? data.backend === "openrouter"
+      ? "Live (OpenRouter)"
+      : "Live (Claude)"
+    : "Mock mode";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -117,13 +123,15 @@ function ModeBadge() {
           )}
         >
           {live ? <Sparkles className="h-3 w-3" /> : <Beaker className="h-3 w-3" />}
-          {live ? "Live (Claude)" : "Mock mode"}
+          {label}
         </span>
       </TooltipTrigger>
       <TooltipContent>
         {live
-          ? "Ask Aspora + Add Rule from text use the real Claude API."
-          : "AI features run from curated mocks. Set COMPLIANCE_AGENT_LIVE=1 + ANTHROPIC_API_KEY to switch."}
+          ? data.backend === "openrouter"
+            ? "AI features call Claude via OpenRouter. Override the model with OPENROUTER_MODEL env var."
+            : "Ask Aspora + Add Rule from text use the real Claude API."
+          : "AI features run from curated mocks. Set COMPLIANCE_AGENT_LIVE=1 + ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) to switch."}
       </TooltipContent>
     </Tooltip>
   );
@@ -145,6 +153,8 @@ function iconFor(kind: NotificationOut["kind"]) {
       return { Icon: UserCheck, classes: "bg-aspora-100 text-aspora-700" };
     case "status_change":
       return { Icon: CheckCircle2, classes: "bg-emerald-100 text-emerald-700" };
+    case "payment_request":
+      return { Icon: Banknote, classes: "bg-amber-100 text-amber-700" };
   }
 }
 
@@ -344,6 +354,13 @@ function GlobalSearch() {
     staleTime: 60_000,
   });
 
+  const { data: entities } = useQuery({
+    queryKey: ["search-entities"],
+    queryFn: () => api.get<Entity[]>("/api/entities"),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+
   const needle = q.trim().toLowerCase();
   const obMatches = needle
     ? (obligations ?? [])
@@ -353,7 +370,17 @@ function GlobalSearch() {
             o.entity_name.toLowerCase().includes(needle) ||
             (o.period_label?.toLowerCase().includes(needle) ?? false),
         )
-        .slice(0, 8)
+        .slice(0, 6)
+    : [];
+  const entityMatches = needle
+    ? (entities ?? [])
+        .filter(
+          (e) =>
+            e.name.toLowerCase().includes(needle) ||
+            (e.short_code?.toLowerCase().includes(needle) ?? false) ||
+            e.jurisdiction_code.toLowerCase().includes(needle),
+        )
+        .slice(0, 6)
     : [];
 
   return (
@@ -397,41 +424,82 @@ function GlobalSearch() {
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                   Start typing — searches obligations and entities you have access to.
                 </div>
-              ) : obMatches.length === 0 ? (
+              ) : obMatches.length === 0 && entityMatches.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                   No matches for "{q}". Try the audit log for older items.
                 </div>
               ) : (
-                <ul className="divide-y divide-border">
-                  {obMatches.map((o) => (
-                    <li key={o.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          openObligation(o.id);
-                          setOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-secondary/40 flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">
-                            {o.rule_form_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {o.entity_name} · {o.period_label || o.rule_frequency}
-                          </div>
-                        </div>
-                        <Badge variant={o.is_overdue ? "overdue" : o.is_in_alert_window ? "alert" : "neutral"}>
-                          {o.is_overdue
-                            ? "Overdue"
-                            : o.is_in_alert_window
-                              ? "Alert"
-                              : o.status.replace(/_/g, " ")}
-                        </Badge>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <div>
+                  {entityMatches.length > 0 && (
+                    <>
+                      <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Entities
+                      </div>
+                      <ul className="divide-y divide-border">
+                        {entityMatches.map((e) => (
+                          <li key={`e-${e.id}`}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigate(`/entities/${e.id}`);
+                                setOpen(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-secondary/40 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">
+                                  {e.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {e.jurisdiction_code}
+                                  {e.short_code ? ` · ${e.short_code}` : ""}
+                                </div>
+                              </div>
+                              <Badge variant="neutral">Entity</Badge>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {obMatches.length > 0 && (
+                    <>
+                      <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Obligations
+                      </div>
+                      <ul className="divide-y divide-border">
+                        {obMatches.map((o) => (
+                          <li key={`o-${o.id}`}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openObligation(o.id);
+                                setOpen(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-secondary/40 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">
+                                  {o.rule_form_name}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {o.entity_name} · {o.period_label || o.rule_frequency}
+                                </div>
+                              </div>
+                              <Badge variant={o.is_overdue ? "overdue" : o.is_in_alert_window ? "alert" : "neutral"}>
+                                {o.is_overdue
+                                  ? "Overdue"
+                                  : o.is_in_alert_window
+                                    ? "Alert"
+                                    : o.status.replace(/_/g, " ")}
+                              </Badge>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
               )}
             </div>
             <div className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground flex items-center justify-between">
@@ -466,7 +534,12 @@ export function Topbar() {
 
   if (!user) return null;
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Only persisted notifications (with a DB id) count toward the bell's
+  // unread badge — derived alerts (overdue / alert-window) re-spawn on every
+  // poll and can't be "marked read," so including them would leave the user
+  // with a number they can never drive to zero. Matches NotificationPanel's
+  // own definition of unread.
+  const unreadCount = notifications.filter((n) => !n.read && n.id != null).length;
 
   return (
     <header className="h-14 border-b border-border bg-white flex items-center gap-4 px-6 sticky top-0 z-30">

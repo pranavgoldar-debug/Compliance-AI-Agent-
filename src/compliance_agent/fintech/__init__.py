@@ -69,12 +69,22 @@ def _build_catalog() -> dict[str, CountryFilings]:
         ("uae", "United Arab Emirates", "🇦🇪", _uae.FILINGS),
         ("singapore", "Singapore", "🇸🇬", _sg.FILINGS),
     ]
+    # Merge in the filings extracted from the Global Compliance Tracker
+    # spreadsheet (tax / corporate / regulatory), de-duplicated by form name
+    # so a country's existing fintech filings aren't doubled up.
+    from compliance_agent.fintech.global_tracker import TRACKER
+
+    def _merge(code: str, base: list) -> list:
+        seen = {f.form_name.strip().lower() for f in base}
+        extra = [f for f in TRACKER.get(code, []) if f.form_name.strip().lower() not in seen]
+        return list(base) + extra
+
     return {
         code: CountryFilings(
             country_code=code,
             country_name=name,
             flag=flag,
-            filings=_renumber(filings),
+            filings=_renumber(_merge(code, filings)),
         )
         for code, name, flag, filings in sources
     }

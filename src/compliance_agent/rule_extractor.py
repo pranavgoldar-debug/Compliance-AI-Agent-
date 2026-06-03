@@ -12,20 +12,21 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from compliance_agent.ai.llm_client import make_client
+from compliance_agent.ai.llm_client import ai_available, make_client
 from compliance_agent.db import Applicability, TaxType
 
 
 SYSTEM_PROMPT = """You convert raw regulatory text into a list of recurring or event-based filing obligations.
 
 For each obligation you extract:
-- Use the official form/report name where one exists (GSTR-3B, Form 1120, CT600, SAR, etc.). If there is no formal form, name the deliverable concisely (e.g. "PSP authorization renewal" or "Breach notification to supervisory authority").
+- Use the official form/report name where one exists (GSTR-3B, Form 1120, CT600, SAR, etc.). If there is no formal form, name the deliverable concisely (e.g. "PSP authorization renewal" or "Breach notification to supervisory authority"). Use the plain name only — do NOT append jurisdiction codes/suffixes ("VAT_CA", "VAT (UK)", "Return — DIFC") and do NOT add parenthetical explanations or asides in the name ("AGM (not a filing, but a statutory meeting)"). Just the name ("AGM"); put any explanation in `plain_description`.
 - The authority who receives it (RBI, FCA, FinCEN, MAS, CBUAE, etc.).
 - The frequency the source describes (Monthly / Quarterly / Annual / Half-Yearly / Event-based / Continuous / One-time / Bi-annual).
 - A `due_date_rule` describing exactly when it must be filed for a calendar-year company. Include the date or day-of-month/quarter. Cite the rule's section if visible.
 - `payment_rule` (optional) — fee amounts, payable taxes, percentages, late-fee structure where the source mentions them. Leave null when there's no payment.
 - `applicability` — Mandatory by default; Conditional or Sector-specific only when the source signals a trigger.
 - `applicability_note` — when Conditional/Sector-specific, write a short note explaining what triggers it.
+- `plain_description` — ALWAYS provide one plain-English sentence explaining what the filing is and who must do it, in language a non-specialist understands. No jargon or form codes.
 - `tax_type` — classify the obligation:
     - "Direct Tax" when it is a tax levied on income, profits, gains or wealth (Corporate/Income Tax returns, TDS/withholding on income, advance tax, capital gains, dividend distribution tax, etc.).
     - "Indirect Tax" when it is a tax on goods, services or transactions that is collected and remitted on the authority's behalf (GST/HST, VAT, Sales/Use Tax, Excise, Customs/Import Duty).
@@ -45,6 +46,14 @@ If the document is too short, ambiguous, or doesn't describe filing obligations 
 
 class CandidateRule(BaseModel):
     name: str = Field(description="Short human-readable name for the obligation (≤100 chars).")
+    plain_description: Optional[str] = Field(
+        default=None,
+        description=(
+            "One plain-English sentence a non-expert can understand explaining "
+            "what this filing is and who must do it. No jargon, no form codes — "
+            "e.g. 'Quarterly sales-tax return reporting VAT collected and paid.'"
+        ),
+    )
     category: str
     area: str = Field(description="Sub-area within the category.")
     form_name: str
@@ -77,7 +86,8 @@ class RuleExtractorUnavailable(Exception):
 
 
 def is_live() -> bool:
-    return os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
+    # Mirrors ai.ai_available — live mode + either backend's key.
+    return ai_available()
 
 
 def extract_rules_from_text(
@@ -89,7 +99,8 @@ def extract_rules_from_text(
     """Call Claude on the supplied text and return candidate Rule rows."""
     if not is_live():
         raise RuleExtractorUnavailable(
-            "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY set."
+            "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 plus either "
+            "ANTHROPIC_API_KEY or OPENROUTER_API_KEY."
         )
 
     client = make_client()

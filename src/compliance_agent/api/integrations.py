@@ -24,8 +24,11 @@ from compliance_agent import clickup_service, slack_service
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Notification,
+    NotificationKind,
     Obligation,
     ObligationStatus,
+    Role,
     User,
     get_session,
     session_scope,
@@ -33,6 +36,7 @@ from compliance_agent.db import (
 from compliance_agent.email_service import (
     base_url as app_base_url,
     send_email,
+    send_email_detailed,
     smtp_configured,
 )
 
@@ -172,7 +176,7 @@ def test_email(
     actor: User = Depends(require_admin),
 ) -> TestResult:
     to = (payload.to or "").strip() or actor.email
-    delivered = send_email(
+    delivered, smtp_error = send_email_detailed(
         to=to,
         subject="Aspora Compliance OS — test email",
         body_text=(
@@ -210,9 +214,9 @@ def test_email(
     if not delivered:
         return TestResult(
             ok=False,
-            detail="SMTP send failed. Check the server logs for the underlying error.",
+            detail=smtp_error or "SMTP send failed. Check the server logs.",
         )
-    return TestResult(ok=True, detail=f"Sent to {to}.")
+    return TestResult(ok=True, detail=f"Sent to {to}. Check your inbox + spam folder.")
 
 
 # ---------------------------------------------------------------------------
@@ -391,21 +395,139 @@ async def clickup_webhook(request: Request) -> dict:
         ).scalars().first()
         if ob is None:
             return {"ok": True, "ignored": "unmatched"}
-        if ob.status == ObligationStatus.completed:
-            return {"ok": True, "ignored": "already-complete"}
+        if ob.status in (ObligationStatus.completed, ObligationStatus.pending_review):
+            return {"ok": True, "ignored": "already-submitted"}
 
-        ob.status = ObligationStatus.completed
-        ob.completed_at = datetime.now(tz=timezone.utc)
+        # Finance marked the payment done in ClickUp. We DON'T auto-complete —
+        # the website reflects it and routes it to admin for final sign-off.
+        ob.status = ObligationStatus.pending_review
+        ob.completed_at = None
         log_activity(
             db,
             actor_id=None,
-            action="obligation.completed_via_clickup",
+            action="obligation.payment_done_via_clickup",
             target_type="obligation",
             target_id=ob.id,
             payload={"clickup_task_id": task_id},
         )
+
+        # Ping every admin so it lands in their final-approval queue.
+        admins = (
+            db.execute(select(User).where(User.role == Role.admin, User.is_active.is_(True)))
+            .scalars()
+            .all()
+        )
+        form = ob.rule.form_name if ob.rule else "A filing"
+        entity = ob.entity.name if ob.entity else "—"
+        link = f"{app_base_url().rstrip('/')}/obligations/{ob.id}"
+        for admin in admins:
+            db.add(
+                Notification(
+                    user_id=admin.id,
+                    kind=NotificationKind.status_change,
+                    title=f"Payment completed in ClickUp — needs final sign-off",
+                    body=f"{form} — {entity}. Verify the payment and approve & close.",
+                    obligation_id=ob.id,
+                    link_url=link,
+                )
+            )
+
+        # Best-effort Slack heads-up to the workspace channel.
+        try:
+            slack_service.post(
+                f":heavy_dollar_sign: Payment marked complete in ClickUp — "
+                f"*{form}* ({entity}) is awaiting admin final sign-off. <{link}|Open it>"
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
         # session_scope commits on exit.
-        return {"ok": True, "obligation_id": ob.id}
+        return {"ok": True, "obligation_id": ob.id, "status": "pending_review"}
+
+
+# ---------------------------------------------------------------------------
+# Slack interactivity — status buttons on the Slack cards. Requires a Slack
+# App with Interactivity enabled (Request URL = this endpoint) and the app's
+# Signing Secret in SLACK_SIGNING_SECRET. Public, signature-verified.
+# ---------------------------------------------------------------------------
+def _slack_ack(response_url: Optional[str], text: str) -> None:
+    if not response_url:
+        return
+    try:
+        import httpx
+
+        httpx.post(
+            response_url,
+            json={"text": text, "response_type": "ephemeral"},
+            timeout=8.0,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@webhook_router.post("/slack/interactivity")
+async def slack_interactivity(request: Request) -> dict:
+    import os
+    from urllib.parse import parse_qs
+
+    raw = await request.body()
+    secret = os.environ.get("SLACK_SIGNING_SECRET", "")
+    ts = request.headers.get("X-Slack-Request-Timestamp", "")
+    sig = request.headers.get("X-Slack-Signature", "")
+    if not slack_service.verify_slack_signature(secret, ts, raw, sig):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature.")
+
+    form = parse_qs(raw.decode("utf-8"))
+    try:
+        data = json.loads((form.get("payload") or ["{}"])[0])
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Bad payload.")
+
+    actions = data.get("actions") or []
+    if not actions:
+        return {}
+    value = actions[0].get("value", "")
+    try:
+        oid_s, status_s = value.split(":", 1)
+        oid = int(oid_s)
+        new_status = ObligationStatus(status_s)
+    except (ValueError, KeyError):
+        return {}
+
+    slack_user = (data.get("user") or {}).get("id")
+    response_url = data.get("response_url")
+
+    with session_scope() as db:
+        ob = db.get(Obligation, oid)
+        if ob is None:
+            _slack_ack(response_url, ":warning: That item no longer exists.")
+            return {}
+        actor = None
+        if slack_user:
+            actor = (
+                db.execute(select(User).where(User.slack_user_id == slack_user))
+                .scalars()
+                .first()
+            )
+        ob.status = new_status
+        if new_status == ObligationStatus.completed and ob.completed_at is None:
+            ob.completed_at = datetime.now(tz=timezone.utc)
+            if actor:
+                ob.completed_by_id = actor.id
+        elif new_status != ObligationStatus.completed:
+            ob.completed_at = None
+        log_activity(
+            db,
+            actor_id=actor.id if actor else None,
+            action="obligation.status_via_slack",
+            target_type="obligation",
+            target_id=ob.id,
+            payload={"status": status_s, "slack_user": slack_user},
+        )
+        form_name = ob.rule.form_name if ob.rule else "Compliance item"
+
+    _slack_ack(response_url, f":white_check_mark: *{form_name}* → {status_s.replace('_', ' ')}")
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +563,23 @@ def trigger_weekly_digest(token: str = _Query(..., description="Must equal CRON_
         "due_within_7d": len(s.upcoming),
         "awaiting_signoff": len(s.pending_review),
     }
+
+
+@cron_router.api_route("/sync-rules", methods=["GET", "POST"])
+def trigger_sync_rules(token: str = _Query(..., description="Must equal CRON_TOKEN.")) -> dict:
+    """Pull any newly-added catalogue rules (e.g. the split DIFC/ADGM rules)
+    into the live DB for existing entities — a re-seed of rules only, with no
+    server shell needed. Idempotent."""
+    expected = _os.environ.get("CRON_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=404, detail="Cron trigger not enabled.")
+    if not _hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Bad token.")
+
+    from compliance_agent.db.seed import sync_catalog_rules
+
+    count = sync_catalog_rules()
+    return {"ok": True, "rules_synced": count}
 
 
 # ---------------------------------------------------------------------------

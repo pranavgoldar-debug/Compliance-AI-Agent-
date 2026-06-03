@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from compliance_agent.auth.passwords import hash_password
+from compliance_agent.classification import derive_function
 from compliance_agent.db import (
     Applicability,
     Department,
@@ -251,6 +252,12 @@ def _ensure_entities(db: Session, users: dict[str, User]) -> dict[str, Entity]:
     return entities
 
 
+def _authority_url(authority: str) -> Optional[str]:
+    """Lookup helper — kept tiny so the seed import stays cheap."""
+    from compliance_agent.data.authority_urls import lookup
+    return lookup(authority or "")
+
+
 def _applicability_from_str(s: str) -> Applicability:
     s = (s or "").strip().lower()
     if s.startswith("mandatory"):
@@ -303,6 +310,11 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
                 # Sync entity attachments in case new entities were added.
                 if jurisdiction_entities and not existing.entities:
                     existing.entities = list(jurisdiction_entities)
+                # Backfill the responsible function on older rows.
+                if not existing.responsible_function:
+                    existing.responsible_function = derive_function(
+                        existing.category, existing.area
+                    )
                 created.append(existing)
                 continue
             rule = Rule(
@@ -318,6 +330,9 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
                 applicability=_applicability_from_str(filing.applicability),
                 applicability_note=filing.applicability_note,
                 tax_type=_tax_type_from_category(filing.category, filing.area),
+                responsible_function=derive_function(filing.category, filing.area),
+                source_url=_authority_url(filing.authority),
+                submission_url=_authority_url(filing.authority),
                 status=RuleStatus.production,
             )
             rule.entities = list(jurisdiction_entities)
@@ -325,6 +340,75 @@ def _ensure_rules(db: Session, entities: list[Entity]) -> list[Rule]:
             created.append(rule)
     db.flush()
     return created
+
+
+# Filings removed from the catalogue because they duplicated a better row.
+# run_seed deletes any matching live rules (and their obligations) so a
+# re-seed cleans up databases seeded before the de-dupe. Add a (jurisdiction,
+# form_name) pair here whenever you retire a duplicate filing.
+RETIRED_FILINGS: list[tuple[str, str]] = [
+    ("uk", "CT600 — Corporation Tax Return"),
+    ("lithuania", "PLN204 (+ annexes)"),
+    ("lithuania", "FR0600 (PVM deklaracija)"),
+]
+
+
+def _remove_retired_rules(db: Session) -> int:
+    """Delete rules retired as duplicates, plus their obligations and dependent
+    rows (comments / notifications / activities; documents are detached, not
+    deleted). Safe to run repeatedly — a no-op once the rows are gone."""
+    from sqlalchemy import delete, update
+
+    from compliance_agent.db import (
+        Activity,
+        Comment,
+        Document,
+        Notification,
+        RuleEntity,
+        RuleSnapshot,
+    )
+
+    removed = 0
+    for jur, form_name in RETIRED_FILINGS:
+        rules = (
+            db.execute(
+                select(Rule).where(
+                    Rule.jurisdiction_code == jur,
+                    Rule.form_name == form_name,
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for rule in rules:
+            ob_ids = (
+                db.execute(select(Obligation.id).where(Obligation.rule_id == rule.id))
+                .scalars()
+                .all()
+            )
+            if ob_ids:
+                db.execute(delete(Comment).where(Comment.obligation_id.in_(ob_ids)))
+                db.execute(
+                    delete(Notification).where(Notification.obligation_id.in_(ob_ids))
+                )
+                db.execute(
+                    update(Document)
+                    .where(Document.obligation_id.in_(ob_ids))
+                    .values(obligation_id=None)
+                )
+                db.execute(
+                    delete(Activity).where(
+                        Activity.target_type == "obligation",
+                        Activity.target_id.in_(ob_ids),
+                    )
+                )
+                db.execute(delete(Obligation).where(Obligation.id.in_(ob_ids)))
+            db.execute(delete(RuleSnapshot).where(RuleSnapshot.rule_id == rule.id))
+            db.execute(delete(RuleEntity).where(RuleEntity.rule_id == rule.id))
+            db.delete(rule)
+            removed += 1
+    db.flush()
+    return removed
 
 
 _FREQUENCY_TO_OFFSETS_DAYS: dict[str, list[int]] = {
@@ -509,31 +593,204 @@ def _backfill_effort_bands(db: Session) -> int:
     return touched
 
 
-def run_seed(*, auto_assign: bool = True) -> dict[str, int]:
+def run_seed(
+    *,
+    auto_assign: bool = True,
+    create_obligations: bool = True,
+    seed_rules: bool = False,
+) -> dict[str, int]:
     """Idempotent seed. Returns counts of created objects.
 
-    auto_assign — when True (default), randomly distribute obligations
-    across the demo employee users so the dashboard / queue look populated.
-    Set False for a production-like seed where everything starts unassigned.
+    auto_assign — when True, randomly distribute obligations across the demo
+    employee users so the dashboard / queue look populated. Set False for a
+    production-like seed where everything starts unassigned.
+
+    create_obligations — when False, skip the demo-obligation step entirely.
+
+    seed_rules — when False (the default now), DO NOT load the hand-curated
+    `fintech` catalogue. The product is AI-first: the catalogue is built by
+    "Find Regulations" (AI) → review → approve to production, not from a
+    frozen seed. Pass True only if you explicitly want the legacy demo
+    catalogue. With seed_rules False, create_obligations is forced off (no
+    rules to schedule against).
     """
     from compliance_agent.db import init_db
+
+    if not seed_rules:
+        create_obligations = False
 
     init_db()
     with session_scope() as db:
         users = _ensure_users(db)
         entities_map = _ensure_entities(db, users)
-        rules = _ensure_rules(db, list(entities_map.values()))
-        ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
+        retired = _remove_retired_rules(db)
+        rules = (
+            _ensure_rules(db, list(entities_map.values())) if seed_rules else []
+        )
+        if create_obligations:
+            ob_count = _ensure_obligations(db, rules, users, auto_assign=auto_assign)
+        else:
+            ob_count = 0
         backfilled = _backfill_effort_bands(db)
     return {
         "users": len(users),
         "entities": len(entities_map),
         "rules": len(rules),
+        "retired_duplicates_removed": retired,
         "obligations_created": ob_count,
         "effort_bands_backfilled": backfilled,
     }
 
 
+def wipe_catalogue() -> dict[str, int]:
+    """Empty the catalogue + calendar: delete every Rule and Obligation (plus
+    their dependent rows). Keeps users / entities / licenses so the admin can
+    rebuild the catalogue the AI-first way (Find Regulations → review → approve
+    to production, which auto-schedules onto the calendar). Documents are
+    detached from their obligations, not deleted."""
+    from sqlalchemy import delete, update
+
+    from compliance_agent.db import (
+        Activity,
+        Comment,
+        Document,
+        Notification,
+        Obligation,
+        Rule,
+        RuleEntity,
+        RuleSnapshot,
+        init_db,
+    )
+
+    init_db()
+    counts: dict[str, int] = {}
+    with session_scope() as db:
+        # Detach uploaded files first so deleting obligations can't orphan them.
+        db.execute(
+            update(Document)
+            .where(Document.obligation_id.is_not(None))
+            .values(obligation_id=None)
+        )
+        counts["comments"] = (
+            db.execute(delete(Comment).where(Comment.obligation_id.is_not(None))).rowcount
+            or 0
+        )
+        counts["notifications"] = (
+            db.execute(
+                delete(Notification).where(Notification.obligation_id.is_not(None))
+            ).rowcount
+            or 0
+        )
+        counts["activities"] = (
+            db.execute(
+                delete(Activity).where(Activity.target_type.in_(["obligation", "rule"]))
+            ).rowcount
+            or 0
+        )
+        counts["obligations"] = db.execute(delete(Obligation)).rowcount or 0
+        counts["rule_snapshots"] = db.execute(delete(RuleSnapshot)).rowcount or 0
+        counts["rule_entities"] = db.execute(delete(RuleEntity)).rowcount or 0
+        counts["rules"] = db.execute(delete(Rule)).rowcount or 0
+    return counts
+
+
+def purge_obligations() -> dict[str, int]:
+    """Wipe every Obligation row plus dependent rows (comments, notifications,
+    activities). Keeps users / entities / rules / licenses intact so the
+    admin can rebuild obligations explicitly from the licenses they upload.
+
+    Returns counts of deleted rows per table.
+    """
+    from sqlalchemy import delete
+    from compliance_agent.db import (
+        Activity,
+        Comment,
+        Notification,
+        Obligation,
+    )
+
+    counts = {"obligations": 0, "comments": 0, "notifications": 0, "activities": 0}
+    with session_scope() as db:
+        # Order matters — child rows first.
+        counts["comments"] = db.execute(
+            delete(Comment).where(Comment.obligation_id.is_not(None))
+        ).rowcount or 0
+        counts["notifications"] = db.execute(
+            delete(Notification).where(Notification.obligation_id.is_not(None))
+        ).rowcount or 0
+        counts["activities"] = db.execute(
+            delete(Activity).where(Activity.target_type == "obligation")
+        ).rowcount or 0
+        counts["obligations"] = db.execute(delete(Obligation)).rowcount or 0
+    return counts
+
+
+def populate_source_urls(*, overwrite: bool = False) -> dict[str, int]:
+    """Backfill Rule.source_url AND Rule.submission_url for existing
+    rules by matching authority against the authority_urls table.
+
+    Two URLs are seeded with the same lookup result by default; admins
+    can split them per-rule in the UI later.
+
+    overwrite=False (default): only fill empty URLs. Admin-set values
+    survive.
+    overwrite=True: replace EVERY rule's URLs with the lookup result.
+
+    Returns counts.
+    """
+    from compliance_agent.data.authority_urls import lookup
+    from compliance_agent.db import init_db
+
+    # Critical: ensure the submission_url column exists on the live DB
+    # before we try to read/write it. init_db is idempotent — it's a
+    # cheap no-op when the column is already there. Without this call,
+    # users running populate-source-urls before ever starting the
+    # server hit "no such column: rules.submission_url".
+    init_db()
+
+    counts = {
+        "checked": 0,
+        "source_filled": 0,
+        "submission_filled": 0,
+        "skipped_no_match": 0,
+    }
+    with session_scope() as db:
+        rules = db.execute(select(Rule)).scalars().all()
+        for rule in rules:
+            counts["checked"] += 1
+            url = lookup(rule.authority or "")
+            if not url:
+                counts["skipped_no_match"] += 1
+                continue
+            if not (rule.source_url or "").strip() or overwrite:
+                rule.source_url = url
+                counts["source_filled"] += 1
+            if not (rule.submission_url or "").strip() or overwrite:
+                rule.submission_url = url
+                counts["submission_filled"] += 1
+    return counts
+
+
 if __name__ == "__main__":
     counts = run_seed()
     print(counts)
+
+
+def sync_catalog_rules() -> int:
+    """Idempotently ensure every catalogue rule exists for the existing
+    entities — used to pull in newly-added catalogue rules (e.g. the split
+    DIFC-only / ADGM-only rules) WITHOUT a full re-seed and without needing a
+    server shell. Safe to run repeatedly. Returns the total rule count seen."""
+    from sqlalchemy import select
+
+    from compliance_agent.db import init_db
+
+    init_db()
+    with session_scope() as db:
+        entities = (
+            db.execute(select(Entity).where(Entity.archived_at.is_(None)))
+            .scalars()
+            .all()
+        )
+        rules = _ensure_rules(db, list(entities))
+        return len(rules)

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from compliance_agent.api._helpers import log_activity
+from compliance_agent.classification import derive_function
 from compliance_agent.api.rules import _serialize_rule
 from compliance_agent.api.schemas import RuleOut
 from compliance_agent.auth import require_admin
@@ -64,7 +65,7 @@ def extract_rules(
             rules=[],
             notes=(
                 "AI rule extraction is off. Set COMPLIANCE_AGENT_LIVE=1 and "
-                "ANTHROPIC_API_KEY in your server environment, then retry."
+                "ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) in your server environment, then retry."
             ),
         )
 
@@ -119,6 +120,11 @@ def bulk_create_rules(
     if not payload.rules:
         raise HTTPException(status_code=400, detail="Provide at least one rule to create.")
 
+    # Keep the jurisdiction code within the column width (a free-text AI hint
+    # like "United Arab Emirates" would otherwise blow up the insert with a
+    # 500). Normalise to lowercase + clamp to 16 chars.
+    juris_code = (payload.jurisdiction_code or "").strip().lower()[:16] or "xx"
+
     entities = []
     if payload.entity_ids:
         from sqlalchemy import select
@@ -133,7 +139,7 @@ def bulk_create_rules(
     for cand in payload.rules:
         rule = Rule(
             name=cand.name,
-            jurisdiction_code=payload.jurisdiction_code,
+            jurisdiction_code=juris_code,
             category=cand.category,
             area=cand.area,
             form_name=cand.form_name,
@@ -144,6 +150,8 @@ def bulk_create_rules(
             applicability=cand.applicability,
             applicability_note=cand.applicability_note,
             tax_type=cand.tax_type,
+            plain_description=cand.plain_description,
+            responsible_function=derive_function(cand.category, cand.area),
             status=payload.status,
             created_by_id=user.id,
         )

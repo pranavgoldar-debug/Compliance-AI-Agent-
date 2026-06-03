@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 from compliance_agent.api._helpers import serialize_obligation
 from compliance_agent.api.schemas import ObligationOut
 from compliance_agent.auth import get_current_user
+from compliance_agent.classification import keep_function
 from compliance_agent.db import Comment, Obligation, ObligationStatus, User, get_session
 
 
@@ -67,6 +68,13 @@ def list_my_tasks(
 
     stmt = stmt.order_by(Obligation.due_date.asc())
     items = db.execute(stmt).scalars().unique().all()
+    # FINANCE_ONLY switch: hide non-Finance obligations from task lists.
+    items = [
+        o
+        for o in items
+        if o.rule is None
+        or keep_function(o.rule.category, o.rule.area, o.rule.responsible_function)
+    ]
     out = [serialize_obligation(o) for o in items]
     if awaiting_payment:
         out = [o for o in out if o.is_awaiting_payment]

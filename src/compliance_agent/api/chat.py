@@ -14,9 +14,10 @@ import os
 from datetime import date, timedelta
 from typing import Any, Optional
 
-import anthropic
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from compliance_agent.ai.llm_client import make_client
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -351,7 +352,7 @@ def chat(
             available=False,
             reply=(
                 "Ask Aspora is off in this deployment. "
-                "Set COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY on the server, "
+                "Set COMPLIANCE_AGENT_LIVE=1 and ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) on the server, "
                 "then retry. Anything you'd ask me to do, the dashboards already cover."
             ),
         )
@@ -368,8 +369,6 @@ def chat(
         api_messages.append({"role": m.role, "content": m.content})
 
     try:
-        from compliance_agent.ai.llm_client import make_client
-
         client = make_client()
         tool_call_count = 0
         max_iterations = 6

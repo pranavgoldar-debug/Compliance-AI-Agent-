@@ -1,22 +1,26 @@
 // Licenses page — admin uploads a license, sees its details, and gets a
 // list of compliance rules that apply (matched on jurisdiction + tokens
 // from the license's authority/type/name).
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Calendar,
+  CheckCircle2,
   Download,
   ExternalLink,
   FileBadge,
   Loader2,
+  Pencil,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/PageHeader";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
@@ -32,16 +36,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, JURISDICTIONS } from "@/lib/format";
+import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
 import type {
   ApplicableRulesResponse,
   Entity,
   License,
   LicenseExpiryStatus,
   LicenseRuleHit,
-  UserBrief,
 } from "@/types/api";
 
 function expiryBadgeVariant(
@@ -70,11 +75,14 @@ export function LicensesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [q, setQ] = useState("");
   const [jurisdiction, setJurisdiction] = useState<string>("");
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [activeLicense, setActiveLicense] = useState<License | null>(null);
+  // Brief check-mark flash after a successful manual refresh so the user
+  // gets visual confirmation even when no new data arrived.
+  const [justRefreshed, setJustRefreshed] = useState(false);
 
   const licensesQuery = useQuery({
     queryKey: ["licenses", jurisdiction],
@@ -83,10 +91,13 @@ export function LicensesPage() {
       if (jurisdiction) params.set("jurisdiction_code", jurisdiction);
       return api.get<License[]>(`/api/licenses?${params.toString()}`);
     },
-    // Poll every 60s + on window focus so a license an admin uploaded
-    // in one tab shows up in an employee's tab without manual refresh.
-    refetchInterval: 60_000,
+    // Poll every 20s + on window focus + on every mount so a license an admin
+    // uploaded in one tab shows up in an employee's tab quickly. staleTime: 0
+    // forces a fresh fetch when the page is revisited.
+    refetchInterval: 20_000,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const filtered = useMemo(() => {
@@ -106,6 +117,26 @@ export function LicensesPage() {
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["licenses"] });
   }
+
+  const [selectedLics, setSelectedLics] = useState<Set<number>>(new Set());
+  const toggleLic = (id: number) =>
+    setSelectedLics((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const deleteLicenses = useMutation({
+    mutationFn: (ids: number[]) =>
+      Promise.all(ids.map((id) => api.delete(`/api/licenses/${id}`))),
+    onSuccess: (_r, ids) => {
+      queryClient.invalidateQueries({ queryKey: ["licenses"] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      setSelectedLics(new Set());
+      window.alert(`Deleted ${ids.length} license(s).`);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
   return (
     <div className="space-y-5">
@@ -144,6 +175,26 @@ export function LicensesPage() {
             </option>
           ))}
         </select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            await licensesQuery.refetch();
+            setJustRefreshed(true);
+            setTimeout(() => setJustRefreshed(false), 1500);
+          }}
+          disabled={licensesQuery.isFetching}
+          title="Fetch the latest licenses from the server"
+        >
+          {licensesQuery.isFetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : justRefreshed ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          {justRefreshed ? "Up to date" : "Refresh"}
+        </Button>
       </div>
 
       {licensesQuery.isLoading ? (
@@ -172,9 +223,48 @@ export function LicensesPage() {
         />
       ) : (
         <div className="rounded-lg border border-border overflow-hidden bg-card">
+          {isAdmin && selectedLics.size > 0 && (
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-secondary/30">
+              <span className="text-sm">{selectedLics.size} selected</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={deleteLicenses.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Permanently delete ${selectedLics.size} selected license(s) and their files? This can't be undone.`,
+                    )
+                  ) {
+                    deleteLicenses.mutate(Array.from(selectedLics));
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete selected
+              </Button>
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
+                {isAdmin && (
+                  <th className="px-3 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && filtered.every((l) => selectedLics.has(l.id))}
+                      onChange={(e) =>
+                        setSelectedLics(
+                          e.target.checked
+                            ? new Set(filtered.map((l) => l.id))
+                            : new Set(),
+                        )
+                      }
+                      className="accent-aspora-600"
+                    />
+                  </th>
+                )}
                 <th className="text-left px-3 py-2 font-medium">License</th>
                 <th className="text-left px-3 py-2 font-medium">Entity</th>
                 <th className="text-left px-3 py-2 font-medium">Authority</th>
@@ -188,8 +278,18 @@ export function LicensesPage() {
                 <tr
                   key={lic.id}
                   className="border-t border-border hover:bg-secondary/20 cursor-pointer"
-                  onClick={() => setActiveLicense(lic)}
+                  onClick={() => navigate(`/licenses/${lic.id}`)}
                 >
+                  {isAdmin && (
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedLics.has(lic.id)}
+                        onChange={() => toggleLic(lic.id)}
+                        className="accent-aspora-600"
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <JurisdictionBadge code={lic.jurisdiction_code} showName={false} />
@@ -242,15 +342,6 @@ export function LicensesPage() {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onUploaded={invalidate}
-      />
-      <LicenseDetailDialog
-        license={activeLicense}
-        onClose={() => setActiveLicense(null)}
-        isAdmin={isAdmin}
-        onChanged={() => {
-          invalidate();
-          setActiveLicense(null);
-        }}
       />
     </div>
   );
@@ -388,7 +479,6 @@ function UploadDialog({
     name.trim() &&
     authority.trim() &&
     jurisdictionCode &&
-    file !== null &&
     !uploadMutation.isPending &&
     !analyzeMutation.isPending;
 
@@ -407,9 +497,8 @@ function UploadDialog({
             Upload license
           </DialogTitle>
           <DialogDescription>
-            Upload the license PDF — Claude reads it and fills the fields below.
-            Review, pick the entity, and save. Then open the license to extract
-            the compliance rules it triggers.
+            Pin a regulator + jurisdiction to one of your entities. Once saved,
+            open the license to see which compliance rules apply.
           </DialogDescription>
         </DialogHeader>
 
@@ -514,7 +603,7 @@ function UploadDialog({
             />
           </Field>
 
-          <Field label="License file (PDF) *">
+          <Field label="License file (PDF — optional, but Claude auto-fills from it)">
             <label
               className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-2 cursor-pointer hover:border-aspora-400 hover:bg-aspora-50/40"
               onDragOver={(e) => e.preventDefault()}
@@ -618,6 +707,7 @@ function Field({
 // ---------------------------------------------------------------------------
 interface CandidateRule {
   name: string;
+  plain_description?: string | null;
   category: string;
   area: string;
   form_name: string;
@@ -627,7 +717,14 @@ interface CandidateRule {
   payment_rule: string | null;
   applicability: string;
   applicability_note: string | null;
-  tax_type: string;
+  // Reconciliation against the curated catalogue (the website's source of truth).
+  matched_standard?: boolean;
+  catalogue_due_date_rule?: string | null;
+  catalogue_frequency?: string | null;
+  catalogue_applicability?: string | null;
+  due_date_differs?: boolean;
+  frequency_differs?: boolean;
+  applicability_differs?: boolean;
 }
 
 interface AIExtractResponse {
@@ -635,8 +732,56 @@ interface AIExtractResponse {
   license_id: number;
   jurisdiction_hint: string | null;
   extracted_chars: number;
+  from_document?: boolean;
   candidates: CandidateRule[];
   notes: string | null;
+}
+
+// Loose match so "GST Return GSTR-3B" lines up with a tracked "GSTR-3B".
+function normForm(s: string): string {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+// Generic words that don't help tell two filings apart — dropped before the
+// token-overlap check so e.g. "Annual MLRO report" matches "MLRO report".
+const _MATCH_STOP = new Set([
+  "the", "and", "for", "of", "to", "in", "on", "a", "an", "with",
+  "annual", "monthly", "quarterly", "report", "reports", "return", "returns",
+  "form", "filing", "filings", "submission", "review", "notification",
+  "fca", "hmrc", "ofsi", "uk", "update", "fees", "fee", "register",
+]);
+function matchTokens(s: string): Set<string> {
+  return new Set(
+    (s || "").toLowerCase().match(/[a-z0-9]+/g)?.filter(
+      (t) => t.length > 2 && !_MATCH_STOP.has(t),
+    ) ?? [],
+  );
+}
+function isTracked(candidateForm: string, existing: string[]): boolean {
+  const c = normForm(candidateForm);
+  if (!c) return false;
+  // 1) Fast path — one name is a substring of the other ("GSTR-3B" in "GST Return GSTR-3B").
+  if (
+    existing.some((e) => {
+      const n = normForm(e);
+      return n.length > 2 && (n.includes(c) || c.includes(n));
+    })
+  )
+    return true;
+  // 2) Token-overlap — catches reworded names ("Complaints Return" vs
+  //    "DISP complaints + Ombudsman cooperation") so genuinely-same filings
+  //    aren't flagged "Missing" just because the AI phrased them differently.
+  const ct = matchTokens(candidateForm);
+  if (ct.size === 0) return false;
+  return existing.some((e) => {
+    const et = matchTokens(e);
+    if (et.size === 0) return false;
+    let shared = 0;
+    ct.forEach((t) => {
+      if (et.has(t)) shared += 1;
+    });
+    // 2+ shared keywords, or 1 keyword that fully covers the shorter name.
+    return shared >= 2 || (shared >= 1 && shared === Math.min(ct.size, et.size));
+  });
 }
 
 function AIExtractDialog({
@@ -644,22 +789,39 @@ function AIExtractDialog({
   open,
   onOpenChange,
   onCreated,
+  existingForms = [],
 }: {
   license: License;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
+  existingForms?: string[];
 }) {
   const [response, setResponse] = useState<AIExtractResponse | null>(null);
   const [kept, setKept] = useState<Set<number>>(new Set());
+  const [candSearch, setCandSearch] = useState("");
+  const [candFn, setCandFn] = useState("");
+  const [candReg, setCandReg] = useState("");
+  const [candCat, setCandCat] = useState("");
+  const [candFreq, setCandFreq] = useState("");
+  const [candAppl, setCandAppl] = useState("");
 
   const extractMutation = useMutation({
     mutationFn: () =>
       api.post<AIExtractResponse>(`/api/licenses/${license.id}/ai-extract`),
     onSuccess: (data) => {
       setResponse(data);
-      // Default to all candidates ticked.
-      setKept(new Set(data.candidates.map((_, i) => i)));
+      // Default-tick ONLY the genuinely new filings (not already in your
+      // tracked list). So "Search again" with nothing new ticks nothing —
+      // it won't create duplicates of what you already track.
+      setKept(
+        new Set(
+          data.candidates
+            .map((c, i) => ({ c, i }))
+            .filter(({ c }) => !isTracked(c.name || c.form_name, existingForms))
+            .map(({ i }) => i),
+        ),
+      );
     },
   });
 
@@ -690,43 +852,58 @@ function AIExtractDialog({
     createMutation.reset();
   }
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!v) reset();
-        onOpenChange(v);
-      }}
-    >
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-aspora-600" />
-            Extract obligations from this license
-          </DialogTitle>
-          <DialogDescription>
-            Claude reads the uploaded license file and pulls out every ongoing
-            compliance obligation the licensee owes. You review, tick the ones
-            to keep, and they're created as Staging rules attached to{" "}
-            <strong>{license.entity_name}</strong>.
-          </DialogDescription>
-        </DialogHeader>
+  // Clicking "Find Regulations" opens this dialog — kick off the extraction
+  // straight away so the user lands on the running state, not an extra
+  // "click to start" screen. Re-run is via the "Search again" button.
+  useEffect(() => {
+    if (open && !response && !extractMutation.isPending && !extractMutation.isError) {
+      extractMutation.mutate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-        <div className="p-6 space-y-4">
+  if (!open) return null;
+  return (
+    <Card className="border-aspora-300 bg-aspora-50/20">
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-aspora-600" />
+              Find Regulations
+            </h3>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              reset();
+              onOpenChange(false);
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="space-y-4">
           {!response ? (
-            <div className="text-sm text-muted-foreground space-y-3">
-              <p>
-                Hit Extract — we'll read{" "}
-                <strong>{license.filename || "your license file"}</strong> and
-                ask Claude what filings it triggers. Takes ~20–30 seconds.
-              </p>
-              {extractMutation.error && (
+            extractMutation.isError ? (
+              <div className="text-sm space-y-3">
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <div>{(extractMutation.error as Error).message}</div>
                 </div>
-              )}
-            </div>
+                <Button size="sm" onClick={() => extractMutation.mutate()}>
+                  <Sparkles className="h-4 w-4" />
+                  Try again
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-aspora-600 shrink-0" />
+                Finding finance regulations for this license… (~20–30s)
+              </div>
+            )
           ) : !response.available ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <div className="font-medium mb-1">Couldn't extract.</div>
@@ -742,20 +919,145 @@ function AIExtractDialog({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="text-sm">
-                Found <strong>{response.candidates.length}</strong> candidate{" "}
-                obligation{response.candidates.length === 1 ? "" : "s"}. Tick
-                the ones to create — they'll land in{" "}
-                <strong>Compliance Rules → Staging</strong> for an admin to
-                approve.
-              </div>
+              {(() => {
+                // "new vs already tracked" only makes sense once you HAVE a
+                // tracked list. On a fresh/empty catalogue everything is just a
+                // filing to add — don't flag it all as "NEW".
+                const hasTrackedList = existingForms.length > 0;
+                const newOnes = response.candidates.filter(
+                  (r) => !isTracked(r.name || r.form_name, existingForms),
+                );
+                const trackedCount = response.candidates.length - newOnes.length;
+                if (!hasTrackedList) {
+                  return (
+                    <div className="text-sm">
+                      Claude found <strong>{response.candidates.length}</strong>{" "}
+                      filing{response.candidates.length === 1 ? "" : "s"} — all
+                      ticked. Untick any you don't want, then create them as
+                      Staging.
+                    </div>
+                  );
+                }
+                return (
+                  <>
+                    <div className="text-sm">
+                      Claude found <strong>{response.candidates.length}</strong>{" "}
+                      filing{response.candidates.length === 1 ? "" : "s"}:{" "}
+                      <strong>{newOnes.length} new</strong> (ticked below),{" "}
+                      {trackedCount} already tracked.
+                    </div>
+                    <div
+                      className={`rounded-lg border px-3 py-2 text-xs ${
+                        newOnes.length === 0
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                          : "border-amber-200 bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      {newOnes.length === 0 ? (
+                        <>
+                          <strong>Nothing new.</strong> Everything Claude found is
+                          already in your catalogue — nothing is ticked, so
+                          nothing will be added. Re-run "Search again" anytime;
+                          only genuinely new regulations get ticked.
+                        </>
+                      ) : (
+                        <>
+                          <strong>{newOnes.length} new</strong> filing
+                          {newOnes.length === 1 ? "" : "s"} (marked{" "}
+                          <strong>NEW</strong> below) are ticked to add as
+                          Staging. {trackedCount} already-tracked filing
+                          {trackedCount === 1 ? "" : "s"} are left unticked.
+                        </>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+              {(() => {
+                const diffs = response.candidates.filter(
+                  (r) =>
+                    r.due_date_differs ||
+                    r.frequency_differs ||
+                    r.applicability_differs,
+                );
+                if (diffs.length === 0) return null;
+                return (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+                    <strong>Differences vs your tracked rules:</strong>{" "}
+                    {diffs.length} of {response.candidates.length} matched filing
+                    {diffs.length === 1 ? "" : "s"} have a different due date,
+                    frequency, or mandatory/conditional status than what you
+                    currently track (marked ⚠ below). Review each and decide
+                    which is right — neither side is assumed correct.
+                  </div>
+                );
+              })()}
               {response.notes && (
                 <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
                   {response.notes}
                 </div>
               )}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={candSearch}
+                  onChange={(e) => setCandSearch(e.target.value)}
+                  placeholder="Search filings by name, authority, category…"
+                  className="pl-8 h-9 text-sm"
+                />
+              </div>
+              {(() => {
+                const uniq = (vals: string[]) =>
+                  Array.from(new Set(vals.filter(Boolean))).sort((a, b) =>
+                    a.localeCompare(b),
+                  );
+                const sel = (
+                  value: string,
+                  set: (v: string) => void,
+                  opts: string[],
+                  label: string,
+                ) => (
+                  <select
+                    value={value}
+                    onChange={(e) => set(e.target.value)}
+                    className="h-8 rounded border border-input bg-background px-2 text-xs"
+                  >
+                    <option value="">All {label}</option>
+                    {opts.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                );
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
+                    {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
+                    {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
+                    {sel(candAppl, setCandAppl, ["Mandatory", "Conditional", "Sector-specific"], "status")}
+                  </div>
+                );
+              })()}
               <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
-                {response.candidates.map((r, i) => {
+                {response.candidates
+                  .map((r, i) => ({ r, i }))
+                  .filter(({ r }) => {
+                    const q = candSearch.trim().toLowerCase();
+                    if (q &&
+                      !`${r.form_name} ${r.plain_description ?? ""} ${r.authority} ${r.category} ${r.frequency}`
+                        .toLowerCase()
+                        .includes(q))
+                      return false;
+                    if (candFn && deriveFunction(r.category, r.area) !== candFn)
+                      return false;
+                    if (candReg && r.authority !== candReg) return false;
+                    if (candCat && r.category !== candCat) return false;
+                    if (candFreq && r.frequency !== candFreq) return false;
+                    if (candAppl && r.applicability !== candAppl) return false;
+                    return true;
+                  })
+                  .map(({ r, i }) => {
                   const isKept = kept.has(i);
                   return (
                     <label
@@ -778,43 +1080,69 @@ function AIExtractDialog({
                         className="mt-1 accent-aspora-600"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium">{r.form_name}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{cleanFilingName(r.name || r.form_name)}</span>
+                          <Badge variant="neutral">{deriveFunction(r.category, r.area)}</Badge>
+                          {existingForms.length > 0 &&
+                            (isTracked(r.name || r.form_name, existingForms) ? (
+                              <Badge variant="neutral">Already tracked</Badge>
+                            ) : (
+                              <Badge variant="alert">NEW</Badge>
+                            ))}
+                          {r.due_date_differs && (
+                            <Badge
+                              variant="overdue"
+                              title={`Your tracked rule says: ${r.catalogue_due_date_rule ?? "—"}`}
+                            >
+                              ⚠ Due date differs
+                            </Badge>
+                          )}
+                          {r.frequency_differs && (
+                            <Badge
+                              variant="overdue"
+                              title={`Your tracked rule says: ${r.catalogue_frequency ?? "—"}`}
+                            >
+                              ⚠ Frequency differs
+                            </Badge>
+                          )}
+                          {r.applicability_differs && (
+                            <Badge
+                              variant="overdue"
+                              title={`Your tracked rule says: ${r.catalogue_applicability ?? "—"}`}
+                            >
+                              ⚠ Mandatory/Conditional differs
+                            </Badge>
+                          )}
+                        </div>
+                        {(r.due_date_differs || r.frequency_differs || r.applicability_differs) && (
+                          <div className="text-[11px] text-amber-700 mt-1">
+                            Your tracked rule:{" "}
+                            {[
+                              r.due_date_differs && `due — ${r.catalogue_due_date_rule}`,
+                              r.frequency_differs && `frequency — ${r.catalogue_frequency}`,
+                              r.applicability_differs &&
+                                `applicability — ${r.catalogue_applicability}`,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </div>
+                        )}
+                        {r.plain_description && (
+                          <div className="text-xs text-foreground/80 mt-0.5">
+                            {r.plain_description}
+                          </div>
+                        )}
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {r.authority} · {r.category} · {r.frequency}
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1 italic">
-                          {r.due_date_rule}
-                        </div>
-                        {r.payment_rule && (
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            <strong>Payment:</strong> {r.payment_rule}
-                          </div>
-                        )}
-                        {r.applicability_note && (
-                          <div className="text-[11px] text-muted-foreground mt-0.5">
-                            {r.applicability_note}
-                          </div>
-                        )}
                       </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <Badge
-                          variant={
-                            r.applicability === "Mandatory" ? "alert" : "neutral"
-                          }
-                        >
-                          {r.applicability}
-                        </Badge>
-                        {(r.tax_type === "Direct Tax" ||
-                          r.tax_type === "Indirect Tax") && (
-                          <Badge
-                            variant={
-                              r.tax_type === "Direct Tax" ? "progress" : "review"
-                            }
-                          >
-                            {r.tax_type}
-                          </Badge>
-                        )}
-                      </div>
+                      <Badge
+                        variant={
+                          r.applicability === "Mandatory" ? "alert" : "neutral"
+                        }
+                      >
+                        {r.applicability}
+                      </Badge>
                     </label>
                   );
                 })}
@@ -829,27 +1157,29 @@ function AIExtractDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <div className="flex justify-end gap-2 pt-1">
           {!response ? (
-            <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => extractMutation.mutate()}
-                disabled={extractMutation.isPending}
-              >
-                {extractMutation.isPending && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                )}
-                <Sparkles className="h-4 w-4" />
-                Extract
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              onClick={() => {
+                reset();
+                onOpenChange(false);
+              }}
+            >
+              Cancel
+            </Button>
           ) : (
             <>
-              <Button variant="outline" onClick={reset}>
-                Re-extract
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setResponse(null);
+                  setKept(new Set());
+                  createMutation.reset();
+                  extractMutation.mutate();
+                }}
+              >
+                Search again
               </Button>
               {response.available && response.candidates.length > 0 && (
                 <Button
@@ -864,70 +1194,194 @@ function AIExtractDialog({
               )}
             </>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 
-function LicenseDetailDialog({
+// Full-page license detail body (revamp Phase 5 — moved out of the pop-up).
+// Renders the summary, the hierarchical applicable-regulations table, AI
+// extract + schedule-all actions, and delete. Used by LicenseDetailPage.
+export function LicenseDetailBody({
   license,
-  onClose,
   isAdmin,
   onChanged,
 }: {
-  license: License | null;
-  onClose: () => void;
+  license: License;
   isAdmin: boolean;
   onChanged: () => void;
 }) {
-  const open = license !== null;
   const [aiOpen, setAiOpen] = useState(false);
-  const queryClient = useQueryClient();
+  const [ruleSearch, setRuleSearch] = useState("");
+  const detailQueryClient = useQueryClient();
 
   const rulesQuery = useQuery({
-    queryKey: ["license-rules", license?.id],
+    queryKey: ["license-rules", license.id],
     queryFn: () =>
       api.get<ApplicableRulesResponse>(
-        `/api/licenses/${license!.id}/applicable-rules`,
+        `/api/licenses/${license.id}/applicable-rules`,
       ),
-    enabled: open,
   });
 
-  const { data: users = [] } = useQuery({
-    queryKey: ["users", "for-schedule"],
-    queryFn: () => api.get<UserBrief[]>("/api/users"),
-    enabled: open && isAdmin,
+  // Auto-schedule: every Production filing in this jurisdiction lands on the
+  // calendar automatically when the license is opened. Idempotent on the
+  // server (skips anything already scheduled), so it's safe to fire on mount.
+  const autoSchedule = useMutation({
+    mutationFn: () =>
+      api.post<{ scheduled: number }>(`/api/licenses/${license.id}/schedule-all`),
+    onSuccess: (r) => {
+      if (r.scheduled > 0) {
+        rulesQuery.refetch();
+        detailQueryClient.invalidateQueries({ queryKey: ["calendar"] });
+        detailQueryClient.invalidateQueries({ queryKey: ["obligations"] });
+        detailQueryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      }
+    },
   });
+  useEffect(() => {
+    if (isAdmin) autoSchedule.mutate();
+    // Fire once per license open; autoSchedule identity is stable enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [license.id, isAdmin]);
 
-  const onScheduled = () => {
-    rulesQuery.refetch();
-    queryClient.invalidateQueries({ queryKey: ["calendar"] });
-    queryClient.invalidateQueries({ queryKey: ["tasks"] });
-  };
-
+  const detailNavigate = useNavigate();
   const deleteMutation = useMutation({
-    mutationFn: () => api.delete(`/api/licenses/${license!.id}`),
-    onSuccess: () => onChanged(),
+    mutationFn: () => api.delete(`/api/licenses/${license.id}`),
+    onSuccess: () => {
+      onChanged();
+      // Jump back to the Licenses list — the detail we were on is gone.
+      detailNavigate("/licenses");
+    },
+  });
+
+
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    license_type: "",
+    authority: "",
+    jurisdiction_code: "",
+    license_number: "",
+    issue_date: "",
+    expiry_date: "",
+    notes: "",
+  });
+  const openEdit = () => {
+    setForm({
+      name: license.name ?? "",
+      license_type: license.license_type ?? "",
+      authority: license.authority ?? "",
+      jurisdiction_code: license.jurisdiction_code ?? "",
+      license_number: license.license_number ?? "",
+      issue_date: license.issue_date ?? "",
+      expiry_date: license.expiry_date ?? "",
+      notes: license.notes ?? "",
+    });
+    setEditing(true);
+  };
+  const editMutation = useMutation({
+    mutationFn: () =>
+      api.patch(`/api/licenses/${license.id}`, {
+        name: form.name.trim(),
+        license_type: form.license_type.trim(),
+        authority: form.authority.trim(),
+        jurisdiction_code: form.jurisdiction_code.trim().toLowerCase(),
+        license_number: form.license_number.trim() || null,
+        issue_date: form.issue_date || null,
+        expiry_date: form.expiry_date || null,
+        notes: form.notes.trim() || null,
+      }),
+    onSuccess: () => {
+      onChanged();
+      detailQueryClient.invalidateQueries({ queryKey: ["licenses"] });
+      setEditing(false);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const fld = (k: keyof typeof form) => ({
+    value: form[k],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value })),
   });
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent size="xl">
-        {license && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+    <Card>
+      <CardContent className="p-6">
+        <div className="space-y-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
                 <FileBadge className="h-5 w-5 text-aspora-600" />
                 {license.name}
-              </DialogTitle>
-              <DialogDescription>
+              </h2>
+              <div className="text-sm text-muted-foreground">
                 {license.license_type || "License"} · {license.authority}
-              </DialogDescription>
-            </DialogHeader>
+              </div>
+            </div>
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={openEdit}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Delete license "${license.name}"? This also removes its uploaded file.`,
+                      )
+                    ) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  {deleteMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Delete
+                </Button>
+              </div>
+            )}
+          </div>
 
-            <div className="p-6 space-y-5">
+          {editing && (
+            <div className="rounded-lg border border-aspora-300 bg-aspora-50/30 p-4 space-y-3">
+              <div className="text-sm font-semibold">Edit license</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Name"><Input {...fld("name")} /></Field>
+                <Field label="License type"><Input {...fld("license_type")} /></Field>
+                <Field label="Authority"><Input {...fld("authority")} /></Field>
+                <Field label="Jurisdiction code"><Input {...fld("jurisdiction_code")} placeholder="uae / uk / us…" /></Field>
+                <Field label="License number"><Input {...fld("license_number")} /></Field>
+                <Field label="Issue date"><Input type="date" {...fld("issue_date")} /></Field>
+                <Field label="Expiry date"><Input type="date" {...fld("expiry_date")} /></Field>
+                <Field label="Notes"><Input {...fld("notes")} /></Field>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => editMutation.mutate()}
+                  disabled={editMutation.isPending}
+                >
+                  {editMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div>
               {/* Summary grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <Stat label="Entity" value={license.entity_name} />
@@ -995,21 +1449,19 @@ function LicenseDetailDialog({
                     Applicable regulations
                   </div>
                   <div className="flex items-center gap-2">
-                    {rulesQuery.data && (
-                      <div className="text-xs text-muted-foreground">
-                        {rulesQuery.data.direct.length} direct ·{" "}
-                        {rulesQuery.data.entity_other.length} other for this entity
-                      </div>
-                    )}
-                    {isAdmin && license.has_file && (
+                    {isAdmin && (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setAiOpen(true)}
-                        title="Read the uploaded license with Claude and surface obligations"
+                        title={
+                          license.has_file
+                            ? "Read the uploaded license with Claude and find the filings it triggers"
+                            : "No PDF needed — Claude finds the finance filings this license type owes, ready to review and add"
+                        }
                       >
                         <Sparkles className="h-3.5 w-3.5" />
-                        Extract with AI
+                        Find Regulations
                       </Button>
                     )}
                   </div>
@@ -1021,64 +1473,36 @@ function LicenseDetailDialog({
                       <Skeleton key={i} className="h-14 w-full" />
                     ))}
                   </div>
-                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 &&
-                  rulesQuery.data.entity_other.length === 0 ? (
-                  <div className="rounded-lg border border-border bg-secondary/30 px-3 py-3 text-sm text-muted-foreground">
-                    No rules matched this license in the catalogue yet. Try
-                    sharpening the authority or license type fields, or add a
-                    rule with a matching authority.
-                  </div>
-                ) : (
+                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? null : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
                     <TrackingCounts counts={rulesQuery.data.counts} />
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        value={ruleSearch}
+                        onChange={(e) => setRuleSearch(e.target.value)}
+                        placeholder="Search filings by name, authority, category…"
+                        className="pl-8 h-9 text-sm"
+                      />
+                    </div>
                     {(() => {
-                      const direct = rulesQuery.data.direct;
-                      const mandatory = direct.filter(
-                        (r) => r.applicability === "Mandatory",
-                      );
-                      const optional = direct.filter(
-                        (r) => r.applicability !== "Mandatory",
-                      );
+                      const q = ruleSearch.trim().toLowerCase();
+                      const direct = q
+                        ? rulesQuery.data.direct.filter((r) =>
+                            `${r.form_name} ${r.name} ${r.plain_description ?? ""} ${r.authority} ${r.category} ${r.area} ${r.frequency} ${r.responsible_function ?? ""}`
+                              .toLowerCase()
+                              .includes(q),
+                          )
+                        : rulesQuery.data.direct;
                       return (
-                        <>
-                          {mandatory.length > 0 && (
-                            <RuleGroup
-                              title={`Mandatory · ${mandatory.length}`}
-                              subtitle="You MUST file these — non-compliance is a regulatory breach."
-                              items={mandatory}
-                              tone="mandatory"
-                              licenseId={license.id}
-                              isAdmin={isAdmin}
-                              users={users}
-                              onScheduled={onScheduled}
-                            />
-                          )}
-                          {optional.length > 0 && (
-                            <RuleGroup
-                              title={`Conditional / Sector-specific · ${optional.length}`}
-                              subtitle="File these only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
-                              items={optional}
-                              tone="conditional"
-                              licenseId={license.id}
-                              isAdmin={isAdmin}
-                              users={users}
-                              onScheduled={onScheduled}
-                            />
-                          )}
-                        </>
+                        <RegulationsTable
+                          items={direct}
+                          licenseId={license.id}
+                          isAdmin={isAdmin}
+                          onScheduled={() => rulesQuery.refetch()}
+                        />
                       );
                     })()}
-                    {rulesQuery.data.entity_other.length > 0 && (
-                      <RuleGroup
-                        title="Other obligations for this entity"
-                        subtitle="Rules attached to this entity that didn't match the license keywords — still likely relevant."
-                        items={rulesQuery.data.entity_other}
-                        licenseId={license.id}
-                        isAdmin={isAdmin}
-                        users={users}
-                        onScheduled={onScheduled}
-                      />
-                    )}
                   </div>
                 )}
               </div>
@@ -1095,42 +1519,21 @@ function LicenseDetailDialog({
               license={license}
               open={aiOpen}
               onOpenChange={setAiOpen}
+              existingForms={[
+                ...(rulesQuery.data?.direct ?? []),
+                ...(rulesQuery.data?.entity_other ?? []),
+              ].flatMap((r) => [r.form_name, r.name].filter(Boolean) as string[])}
               onCreated={() => {
                 onChanged();
               }}
             />
 
-            <DialogFooter>
-              {isAdmin && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (
-                      confirm(
-                        `Delete license "${license.name}"? This also removes its uploaded file.`,
-                      )
-                    ) {
-                      deleteMutation.mutate();
-                    }
-                  }}
-                  disabled={deleteMutation.isPending}
-                >
-                  {deleteMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  Delete
-                </Button>
-              )}
-              <Button onClick={onClose}>Close</Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
+
 
 function Stat({
   label,
@@ -1192,6 +1595,193 @@ function statusLabel(status: string | null): string {
   return status.replace(/_/g, " ");
 }
 
+// Hierarchical, per-column filterable regulations table (revamp Phase 2/3).
+// Columns: Function · Regulator · Category · Obligation (plain English) ·
+// Frequency · Due · Mandatory/Conditional. Every column except the obligation
+// text gets a dropdown filter.
+function RegulationsTable({
+  items,
+  licenseId,
+  isAdmin,
+  onScheduled,
+}: {
+  items: LicenseRuleHit[];
+  licenseId: number;
+  isAdmin: boolean;
+  onScheduled: () => void;
+}) {
+  const [fn, setFn] = useState("");
+  const [reg, setReg] = useState("");
+  const [cat, setCat] = useState("");
+  const [freq, setFreq] = useState("");
+  const [appl, setAppl] = useState("");
+
+  const uniq = (vals: (string | null | undefined)[]) =>
+    Array.from(new Set(vals.filter((v): v is string => !!v))).sort((a, b) =>
+      a.localeCompare(b),
+    );
+  const fnOpts = uniq(items.map((r) => r.responsible_function));
+  const regOpts = uniq(items.map((r) => r.authority));
+  const catOpts = uniq(items.map((r) => r.category));
+  const freqOpts = uniq(items.map((r) => r.frequency));
+
+  const rows = items.filter(
+    (r) =>
+      (!fn || r.responsible_function === fn) &&
+      (!reg || r.authority === reg) &&
+      (!cat || r.category === cat) &&
+      (!freq || r.frequency === freq) &&
+      (!appl ||
+        (appl === "Mandatory"
+          ? r.applicability === "Mandatory"
+          : r.applicability !== "Mandatory")),
+  );
+
+
+  const Sel = ({
+    value,
+    onChange,
+    opts,
+    label,
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    opts: string[];
+    label: string;
+  }) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-transparent text-[11px] font-normal normal-case text-foreground border border-border rounded px-1 py-0.5 mt-1"
+    >
+      <option value="">All {label}</option>
+      {opts.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <div className="space-y-2">
+      {isAdmin && (
+        <div className="text-xs text-muted-foreground">
+          Showing Finance filings only. These are auto-scheduled onto the
+          calendar — every Production filing in this jurisdiction appears
+          automatically when you open the license.
+        </div>
+      )}
+      <div className="rounded-lg border border-border overflow-x-auto">
+      <table className="w-full text-sm min-w-[920px]">
+        <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground align-top">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium w-[110px]">
+              Function
+              <div className="mt-1 text-xs font-normal normal-case text-foreground">
+                Finance
+              </div>
+            </th>
+            <th className="px-3 py-2 text-left font-medium w-[150px]">
+              Regulator
+              <Sel value={reg} onChange={setReg} opts={regOpts} label="" />
+            </th>
+            <th className="px-3 py-2 text-left font-medium w-[140px]">
+              Category
+              <Sel value={cat} onChange={setCat} opts={catOpts} label="" />
+            </th>
+            <th className="px-3 py-2 text-left font-medium">Obligation</th>
+            <th className="px-3 py-2 text-left font-medium w-[120px]">
+              Frequency
+              <Sel value={freq} onChange={setFreq} opts={freqOpts} label="" />
+            </th>
+            <th className="px-3 py-2 text-left font-medium w-[130px]">Due</th>
+            <th className="px-3 py-2 text-left font-medium w-[120px]">
+              Status
+              <Sel
+                value={appl}
+                onChange={setAppl}
+                opts={["Mandatory", "Conditional"]}
+                label=""
+              />
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                No filings match these filters.
+              </td>
+            </tr>
+          ) : (
+            rows.map((r) => (
+              <tr
+                key={r.id}
+                className={cn(
+                  "hover:bg-secondary/20",
+                  r.next_obligation_id && "cursor-pointer",
+                )}
+                onClick={() => {
+                  if (r.next_obligation_id)
+                    window.location.href = `/obligations/${r.next_obligation_id}`;
+                }}
+              >
+                <td className="px-3 py-2 align-top">
+                  <Badge variant="neutral">{r.responsible_function || "—"}</Badge>
+                </td>
+                <td className="px-3 py-2 align-top text-xs text-muted-foreground">
+                  {r.authority}
+                </td>
+                <td className="px-3 py-2 align-top text-xs">
+                  <div>{r.category}</div>
+                  {r.tax_type && r.tax_type !== "Not a Tax" && (
+                    <div className="text-[10px] text-muted-foreground">{r.tax_type}</div>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="font-medium">{cleanFilingName(r.name || r.form_name)}</div>
+                  {r.plain_description && (
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.plain_description}
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-top text-xs">{r.frequency}</td>
+                <td className="px-3 py-2 align-top text-xs">
+                  {r.next_due_date ? (
+                    <div>
+                      {r.next_due_date}
+                      <div className="text-[10px] text-muted-foreground">
+                        {r.next_status ? statusLabel(r.next_status) : ""}
+                      </div>
+                    </div>
+                  ) : r.projected_due_date ? (
+                    <div>
+                      {r.projected_due_date}
+                      <div className="text-[10px] text-muted-foreground">
+                        projected
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">Not scheduled</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <Badge variant={r.applicability === "Mandatory" ? "overdue" : "alert"}>
+                    {r.applicability === "Mandatory" ? "Mandatory" : "Conditional"}
+                  </Badge>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  );
+}
+
 function RuleGroup({
   title,
   subtitle,
@@ -1199,7 +1789,6 @@ function RuleGroup({
   tone,
   licenseId,
   isAdmin,
-  users,
   onScheduled,
 }: {
   title: string;
@@ -1208,7 +1797,6 @@ function RuleGroup({
   tone?: "mandatory" | "conditional";
   licenseId: number;
   isAdmin: boolean;
-  users: UserBrief[];
   onScheduled: () => void;
 }) {
   const headingClass =
@@ -1235,134 +1823,107 @@ function RuleGroup({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {items.map((r) => (
-              <RuleRow
-                key={r.id}
-                r={r}
-                licenseId={licenseId}
-                isAdmin={isAdmin}
-                users={users}
-                onScheduled={onScheduled}
-              />
-            ))}
+            {items.map((r) => {
+              const assignee = r.next_assignee;
+              const daysOut = r.days_to_next;
+              return (
+                <tr
+                  key={r.id}
+                  className="hover:bg-secondary/20 cursor-pointer"
+                  onClick={(e) => {
+                    if (r.next_obligation_id) {
+                      e.stopPropagation();
+                      window.location.href = `/obligations/${r.next_obligation_id}`;
+                    }
+                  }}
+                >
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium text-sm">{r.form_name}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.authority} · {r.category}
+                      {r.area ? ` · ${r.area}` : ""}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1 items-center">
+                      <Badge variant="neutral">{r.frequency}</Badge>
+                      <Badge
+                        variant={
+                          r.applicability === "Mandatory" ? "overdue" : "alert"
+                        }
+                        title={
+                          r.applicability === "Mandatory"
+                            ? "You MUST file this. Non-compliance = regulatory breach."
+                            : "File only if your business triggers the conditions (turnover thresholds, sector activity, etc.)."
+                        }
+                      >
+                        {r.applicability === "Mandatory" ? "Mandatory" : "Optional"}
+                      </Badge>
+                      {r.match_reason && (
+                        <span
+                          className="text-[11px] text-muted-foreground italic"
+                          title="How we matched this rule to the license — either license keywords (authority / type) or because the rule is registered against this entity."
+                        >
+                          {r.match_reason}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <Badge variant={statusBadgeVariant(r.next_status)}>
+                      {statusLabel(r.next_status)}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {assignee ? (
+                      <div>
+                        <div className="text-sm">
+                          {assignee.full_name || assignee.email}
+                        </div>
+                        {assignee.full_name && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {assignee.email}
+                          </div>
+                        )}
+                      </div>
+                    ) : r.next_obligation_id ? (
+                      <span className="text-xs text-amber-700">Unassigned</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-sm">
+                    {r.next_due_date ? (
+                      <div>
+                        <div>{r.next_due_date}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {daysOut !== null && daysOut !== undefined
+                            ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+                            : ""}
+                        </div>
+                      </div>
+                    ) : r.projected_due_date ? (
+                      <div>
+                        <div>{r.projected_due_date}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          projected
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top text-right">
+                    {r.next_obligation_id ? (
+                      <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
     </div>
-  );
-}
-
-function RuleRow({
-  r,
-  licenseId,
-  isAdmin,
-  users,
-  onScheduled,
-}: {
-  r: LicenseRuleHit;
-  licenseId: number;
-  isAdmin: boolean;
-  users: UserBrief[];
-  onScheduled: () => void;
-}) {
-  const assignee = r.next_assignee;
-  const daysOut = r.days_to_next;
-  const [assigneeId, setAssigneeId] = useState<number | "">("");
-  const scheduled = !!r.next_obligation_id;
-
-  const scheduleMutation = useMutation({
-    mutationFn: () =>
-      api.post(`/api/licenses/${licenseId}/rules/${r.id}/schedule`, {
-        assignee_id: assigneeId === "" ? null : assigneeId,
-      }),
-    onSuccess: () => onScheduled(),
-  });
-
-  return (
-    <tr
-      className={scheduled ? "hover:bg-secondary/20 cursor-pointer" : ""}
-      onClick={() => {
-        if (scheduled) window.location.href = `/obligations/${r.next_obligation_id}`;
-      }}
-    >
-      <td className="px-3 py-2 align-top">
-        <div className="font-medium text-sm">{r.form_name}</div>
-        <div className="text-[11px] text-muted-foreground">
-          {r.authority} · {r.category}
-          {r.area ? ` · ${r.area}` : ""}
-        </div>
-        <div className="text-[11px] text-muted-foreground flex gap-1 mt-0.5">
-          <Badge variant="neutral">{r.frequency}</Badge>
-          {r.match_reason && <span className="text-aspora-700">{r.match_reason}</span>}
-        </div>
-      </td>
-      <td className="px-3 py-2 align-top">
-        <Badge variant={statusBadgeVariant(r.next_status)}>
-          {statusLabel(r.next_status)}
-        </Badge>
-      </td>
-      <td className="px-3 py-2 align-top text-sm">
-        {assignee ? (
-          <div>
-            <div className="text-sm">{assignee.full_name || assignee.email}</div>
-            {assignee.full_name && (
-              <div className="text-[11px] text-muted-foreground">{assignee.email}</div>
-            )}
-          </div>
-        ) : scheduled ? (
-          <span className="text-xs text-amber-700">Unassigned</span>
-        ) : isAdmin ? (
-          <select
-            value={assigneeId}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) =>
-              setAssigneeId(e.target.value ? Number(e.target.value) : "")
-            }
-            className="h-7 w-full rounded border border-input bg-background px-1.5 text-xs"
-          >
-            <option value="">Unassigned</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.full_name || u.email}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
-      </td>
-      <td className="px-3 py-2 align-top text-sm">
-        {r.next_due_date ? (
-          <div>
-            <div>{r.next_due_date}</div>
-            <div className="text-[11px] text-muted-foreground">
-              {daysOut !== null && daysOut !== undefined
-                ? `in ${daysOut} day${daysOut === 1 ? "" : "s"}`
-                : ""}
-            </div>
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground italic">{r.due_date_rule}</span>
-        )}
-      </td>
-      <td className="px-3 py-2 align-top text-right">
-        {scheduled ? (
-          <ExternalLink className="h-3 w-3 text-muted-foreground inline" />
-        ) : isAdmin ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={scheduleMutation.isPending}
-            onClick={(e) => {
-              e.stopPropagation();
-              scheduleMutation.mutate();
-            }}
-          >
-            {scheduleMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-            Schedule
-          </Button>
-        ) : null}
-      </td>
-    </tr>
   );
 }

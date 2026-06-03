@@ -20,7 +20,91 @@ export const JURISDICTIONS: Record<
   singapore: { name: "Singapore", flag: "🇸🇬", iso2: "sg" },
   canada: { name: "Canada", flag: "🇨🇦", iso2: "ca" },
   lithuania: { name: "Lithuania", flag: "🇱🇹", iso2: "lt" },
+  australia: { name: "Australia", flag: "🇦🇺", iso2: "au" },
 };
+
+// Strip jurisdiction codes/suffixes that AI extraction sometimes appends to
+// filing names ("VAT_CA", "VAT (CA)", "VAT — DIFC") so the UI shows the plain
+// name ("VAT"). Conservative: only removes a trailing country/zone token.
+const _JUR_SUFFIX =
+  /[\s_\-—]*(?:[\(\[]\s*)?(?:CA|UK|US|USA|UAE|SG|SGP|LT|LTU|EU|IN|IND|DIFC|ADGM|GIFT|IFSC)(?:\s*[\)\]])?\s*$/i;
+
+export function cleanFilingName(name: string | null | undefined): string {
+  let s = (name ?? "").trim();
+  // Keep only the real obligation name — drop secondary clauses appended with
+  // " + " or an em/en-dash, e.g.
+  //   "Annual MLRO report + business-wide risk assessment refresh" -> "Annual MLRO report"
+  //   "HMRC AML supervised business — annual fees + register update"  -> "HMRC AML supervised business"
+  s = s.split(/\s+[—–-]\s+/)[0].trim();
+  s = s.split(/\s+\+\s+/)[0].trim();
+  // Drop trailing parenthetical explanations: "AGM (not a filing, …)" -> "AGM",
+  // "Corporation Tax return (CT600)" -> "Corporation Tax return".
+  for (let i = 0; i < 3; i++) {
+    const next = s.replace(/\s*[\(\[][^()\[\]]*[\)\]]\s*$/, "").trim();
+    if (next === s || next.length < 2) break;
+    s = next;
+  }
+  // Strip up to two trailing jurisdiction tokens (e.g. "VAT_CA", "X — DIFC").
+  for (let i = 0; i < 2; i++) {
+    const next = s.replace(_JUR_SUFFIX, "").trim();
+    if (next === s || next.length < 2) break;
+    s = next;
+  }
+  return s || (name ?? "");
+}
+
+// Pull the official form code(s) out of a filing/form name so we can show a
+// separate "Form" column. Conservative on purpose: a code must contain BOTH a
+// letter and a digit (CT600, FSA056, GSTR-3B, AOC-4, REP017, FSA029), so plain
+// descriptive words ("Senior Accounting Officer") are never mistaken for codes.
+// Returns "" when there is no recognisable form code.
+export function extractFormCode(formName: string | null | undefined): string {
+  const s = (formName ?? "").trim();
+  if (!s) return "";
+  const codes =
+    s.match(/\b[A-Z0-9][A-Z0-9]*(?:[-\/][A-Z0-9]+)*\b/g)?.filter(
+      (t) => /\d/.test(t) && /[A-Z]/.test(t) && t.length >= 3 && t.length <= 14,
+    ) ?? [];
+  // De-dupe while keeping order.
+  return Array.from(new Set(codes)).join(" / ");
+}
+
+// Mirror of the backend classification.derive_function — maps a rule's
+// category/area to the responsible team (Finance / Compliance / Legal). Used
+// client-side (e.g. AI-extract candidates that don't carry a function yet).
+export function deriveFunction(category = "", area = ""): string {
+  const t = `${category} ${area}`.toLowerCase();
+  const has = (kws: string[]) => kws.some((k) => t.includes(k));
+  if (
+    has([
+      "aml", "cft", "ctf", "financial regulation", "consumer protection",
+      "data protection", "risk", "fraud", "regulatory reporting", "regdata",
+      "economic substance", "statistics", "complaints", "sanction",
+      "fitness", "conduct", "prudential", "reporting",
+    ])
+  )
+    return "Compliance";
+  if (
+    has([
+      "tax", "vat", "gst", "hst", "pst", "qst", "excise", "payroll",
+      "pension", "social security", "accounting", "information return",
+      "unclaimed property", "duty", "customs", "withholding", "remittance",
+      "intrastat",
+    ])
+  )
+    return "Finance";
+  if (
+    has([
+      "corporate law", "corporate record", "corporate & statutory",
+      "statutory filing", "statutory account", "company registration",
+      "registry", "registrar", "beneficial owner", "ubo", "psc",
+      "licens", "incorporation", "governance", "confirmation statement",
+      "annual return", "change notification", "premises",
+    ])
+  )
+    return "Legal";
+  return "Compliance";
+}
 
 export function jurisdiction(code: string): {
   name: string;
@@ -52,7 +136,14 @@ export function fmtShortDate(iso: string | null | undefined): string {
 export function fmtRelative(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
-    return formatDistanceToNow(parseISO(iso), { addSuffix: true });
+    // Backend serialises datetimes from SQLAlchemy with no timezone
+    // marker (e.g. "2026-05-28T12:34:56"). parseISO treats those as
+    // LOCAL time, which makes a 2-min-old event look 5h old in IST.
+    // Force the parser to read them as UTC by appending Z when no
+    // explicit offset is present.
+    const looksAware = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+    const normalised = looksAware ? iso : iso + "Z";
+    return formatDistanceToNow(parseISO(normalised), { addSuffix: true });
   } catch {
     return iso;
   }
@@ -124,12 +215,32 @@ export const EFFORT_BAND_DAYS: Record<EffortBand, number> = {
 
 export const EFFORT_BANDS: EffortBand[] = ["1w", "2w", "4w", "8w", "12w"];
 
+// How early the FIRST reminder fires, per band. Single source of truth —
+// matches the backend reminder policy (monthly → 1 week, quarterly → 1 month,
+// annual → 45 days before the due date).
+const _LEAD_DAYS: Record<EffortBand, number> = {
+  "1w": 7,
+  "2w": 30,
+  "4w": 30,
+  "8w": 45,
+  "12w": 60,
+};
+
+const _LEAD_LABEL: Record<EffortBand, string> = {
+  "1w": "1 week before",
+  "2w": "1 month before",
+  "4w": "30 days before",
+  "8w": "45 days before",
+  "12w": "60 days before",
+};
+
 export function effortBandLabel(b: EffortBand): string {
-  return `${b} effort`;
+  // Human-readable reminder lead time instead of the raw band code.
+  return _LEAD_LABEL[b] ?? `${b} effort`;
 }
 
 export function leadTimeDays(b: EffortBand): number {
-  return EFFORT_BAND_DAYS[b] * 2;
+  return _LEAD_DAYS[b] ?? 30;
 }
 
 export function statusLabelShort(status: ObligationStatus, isOverdue: boolean): string {

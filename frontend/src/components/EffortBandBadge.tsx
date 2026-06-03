@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { effortBandLabel, leadTimeDays } from "@/lib/format";
 import type { EffortBand } from "@/types/api";
 
 interface Props {
@@ -25,9 +26,9 @@ export function EffortBandBadge({ band, className, showLabel }: Props) {
         TONE[band],
         className,
       )}
-      title={`Lead time ${band} × 2 — alerts fire that far in advance`}
+      title={`First reminder fires ${leadTimeDays(band)} days before the due date`}
     >
-      {showLabel ? `${band} effort` : band}
+      {showLabel ? effortBandLabel(band) : band}
     </Badge>
   );
 }

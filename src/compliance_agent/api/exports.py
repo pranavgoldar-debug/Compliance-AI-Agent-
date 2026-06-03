@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import days_remaining, is_overdue, is_in_alert_window
 from compliance_agent.auth import get_current_user
+from compliance_agent.classification import keep_function
 from compliance_agent.db import (
     Document,
     EffortBand,
@@ -168,6 +169,13 @@ def export_obligations(
         items = [o for o in items if o.rule.jurisdiction_code == jurisdiction_code]
     if category:
         items = [o for o in items if o.rule.category == category]
+    # FINANCE_ONLY switch: keep exports consistent with the in-app lists.
+    items = [
+        o
+        for o in items
+        if o.rule is None
+        or keep_function(o.rule.category, o.rule.area, o.rule.responsible_function)
+    ]
 
     headers = [
         "Due date",
@@ -310,6 +318,8 @@ def export_rules(
     if jurisdiction_code:
         stmt = stmt.where(Rule.jurisdiction_code == jurisdiction_code)
     rules = db.execute(stmt).scalars().all()
+    # FINANCE_ONLY switch: keep the rules export Finance-only too.
+    rules = [r for r in rules if keep_function(r.category, r.area, r.responsible_function)]
 
     headers = [
         "Jurisdiction",

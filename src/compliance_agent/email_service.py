@@ -203,30 +203,44 @@ def _send_via_brevo(api_key: str, *, to: str, subject: str, text: str, html: Opt
 
 
 def send_email(*, to: str, subject: str, body_text: str, body_html: Optional[str] = None) -> bool:
-    """Best-effort send. Returns True if delivered, False if we fell back
-    to console-only. Never raises. Prefers HTTPS APIs (Gmail, Resend, Brevo)
-    over SMTP, since hosts like Render block outbound SMTP ports."""
+    """Best-effort send. True if delivered, False otherwise. Detailed reason
+    via send_email_detailed(). Prefers HTTPS APIs (Gmail/Resend/Brevo) over
+    SMTP, since hosts like Render block outbound SMTP ports."""
+    ok, _ = send_email_detailed(
+        to=to, subject=subject, body_text=body_text, body_html=body_html
+    )
+    return ok
+
+
+def send_email_detailed(
+    *,
+    to: str,
+    subject: str,
+    body_text: str,
+    body_html: Optional[str] = None,
+) -> tuple[bool, Optional[str]]:
+    """Same as send_email() but also returns the exact failure reason. Used by
+    the Settings → Integrations test button. Tries the HTTPS providers first
+    (they work where SMTP ports are blocked), then SMTP with detailed errors."""
     if _gmail_configured() and _send_via_gmail_api(
         to=to, subject=subject, text=body_text, html=body_html
     ):
-        return True
-
+        return True, None
     resend_key = os.environ.get("RESEND_API_KEY")
     if resend_key and _send_via_resend(
         resend_key, to=to, subject=subject, text=body_text, html=body_html
     ):
-        return True
-
+        return True, None
     brevo_key = os.environ.get("BREVO_API_KEY")
     if brevo_key and _send_via_brevo(
         brevo_key, to=to, subject=subject, text=body_text, html=body_html
     ):
-        return True
+        return True, None
 
     host = os.environ.get("SMTP_HOST")
     if not host:
         _log_to_console(to, subject, body_text)
-        return False
+        return False, "SMTP_HOST is not set on the server."
 
     port = int(os.environ.get("SMTP_PORT", "587"))
     user = os.environ.get("SMTP_USER")
@@ -252,11 +266,32 @@ def send_email(*, to: str, subject: str, body_text: str, body_html: Optional[str
                 server.login(user, password)
             server.send_message(msg)
         logger.info("Sent email to %s — subject=%r", to, subject)
-        return True
-    except Exception as e:
-        logger.warning("SMTP send failed (%s) — falling back to console log.", e)
+        return True, None
+    except smtplib.SMTPAuthenticationError as e:
+        msg_text = (
+            f"Gmail rejected the login. Code {e.smtp_code}: "
+            f"{e.smtp_error.decode(errors='ignore') if isinstance(e.smtp_error, bytes) else e.smtp_error}. "
+            "Common cause: the App Password was generated for a different "
+            "Google account than SMTP_USER, or 2-Step Verification isn't "
+            "on for that account, or the From address isn't a verified "
+            "send-as alias on the authenticated Google account."
+        )
+        logger.warning("SMTP auth failed: %s", msg_text)
         _log_to_console(to, subject, body_text)
-        return False
+        return False, msg_text
+    except smtplib.SMTPResponseException as e:
+        msg_text = (
+            f"SMTP server responded {e.smtp_code}: "
+            f"{e.smtp_error.decode(errors='ignore') if isinstance(e.smtp_error, bytes) else e.smtp_error}"
+        )
+        logger.warning("SMTP response error: %s", msg_text)
+        _log_to_console(to, subject, body_text)
+        return False, msg_text
+    except Exception as e:  # noqa: BLE001
+        msg_text = f"{type(e).__name__}: {e}"
+        logger.warning("SMTP send failed (%s) — falling back to console log.", msg_text)
+        _log_to_console(to, subject, body_text)
+        return False, msg_text
 
 
 def _log_to_console(to: str, subject: str, body: str) -> None:

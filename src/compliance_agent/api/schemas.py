@@ -29,6 +29,7 @@ class UserBrief(_Base):
     email: str
     full_name: str
     role: Role
+    department: Optional[str] = None
 
 
 class UserOut(_Base):
@@ -36,6 +37,7 @@ class UserOut(_Base):
     email: str
     full_name: str
     role: Role
+    department: Optional[str] = None
     is_active: bool
     department: Optional[str] = None
     created_at: datetime
@@ -53,6 +55,7 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     role: Optional[Role] = None
+    department: Optional[str] = None  # set to "" or omit to clear
     is_active: Optional[bool] = None
     department: Optional[str] = None
     password: Optional[str] = None  # admin password reset
@@ -117,8 +120,11 @@ class RuleCreate(BaseModel):
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
     tax_type: TaxType = TaxType.not_tax
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
     status: RuleStatus = RuleStatus.production
     source_url: Optional[str] = None
+    submission_url: Optional[str] = None
     source_text: Optional[str] = None
     entity_ids: list[int] = []
 
@@ -136,7 +142,10 @@ class RuleUpdate(BaseModel):
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
     tax_type: Optional[TaxType] = None
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
     source_url: Optional[str] = None
+    submission_url: Optional[str] = None
     source_text: Optional[str] = None
     status: Optional[RuleStatus] = None
     entity_ids: Optional[list[int]] = None
@@ -156,8 +165,11 @@ class RuleOut(_Base):
     applicability: Applicability
     applicability_note: Optional[str] = None
     tax_type: TaxType = TaxType.not_tax
+    responsible_function: Optional[str] = None
+    plain_description: Optional[str] = None
     status: RuleStatus
     source_url: Optional[str] = None
+    submission_url: Optional[str] = None
     source_text: Optional[str] = None
     source_changed_at: Optional[datetime] = None
     entity_ids: list[int] = []
@@ -186,6 +198,7 @@ class ObligationUpdate(BaseModel):
     filing_reference: Optional[str] = None
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
+    beneficiary_details: Optional[str] = None
     notes: Optional[str] = None
     due_date: Optional[date] = None
     effort_band: Optional[EffortBand] = None
@@ -209,9 +222,13 @@ class ObligationOut(_Base):
     rule_authority: str
     rule_category: str
     rule_tax_type: TaxType = TaxType.not_tax
+    rule_responsible_function: Optional[str] = None
     rule_frequency: str
     rule_due_date_rule: Optional[str] = None
     rule_source_url: Optional[str] = None
+    rule_submission_url: Optional[str] = None
+    rule_source_changed_at: Optional[datetime] = None
+    rule_payment_rule: Optional[str] = None
     entity_name: str
     entity_jurisdiction_code: str
     due_date: date
@@ -225,6 +242,7 @@ class ObligationOut(_Base):
     payment_amount: Optional[str] = None
     payment_reference: Optional[str] = None
     clickup_task_url: Optional[str] = None
+    beneficiary_details: Optional[str] = None
     is_awaiting_payment: bool = False
     notes: Optional[str] = None
     days_remaining: int = 0
@@ -274,12 +292,22 @@ class DocumentOut(_Base):
     size_bytes: int
     category: DocumentCategory
     tags: Optional[str] = None
+    # Set for "link" documents (a template/portal URL rather than an uploaded
+    # file). None for normal file uploads.
+    url: Optional[str] = None
     uploaded_by: Optional[UserBrief] = None
     created_at: datetime
 
 
 class DocumentUpdate(BaseModel):
     filename: Optional[str] = None
+    category: Optional[DocumentCategory] = None
+    tags: Optional[str] = None
+
+
+class DocumentLinkCreate(BaseModel):
+    url: str
+    title: Optional[str] = None
     category: Optional[DocumentCategory] = None
     tags: Optional[str] = None
 
@@ -309,6 +337,7 @@ class CalendarObligation(_Base):
     rule_authority: str
     rule_category: str
     rule_tax_type: TaxType = TaxType.not_tax
+    rule_applicability: str = "Mandatory"  # Mandatory / Conditional / Sector-specific
     effort_band: EffortBand = EffortBand.w4
     assignee: Optional[UserBrief] = None
     is_overdue: bool

@@ -47,36 +47,46 @@ def review(db: Session, obligation_id: int) -> SecondOpinionResult:
             error="AI is off in this deployment.",
         )
 
-    obligation = db.execute(
-        select(Obligation)
-        .where(Obligation.id == obligation_id)
-        .options(
-            joinedload(Obligation.rule),
-            joinedload(Obligation.entity),
-            joinedload(Obligation.assignee),
-        )
-    ).scalars().unique().one_or_none()
-    if obligation is None:
-        return SecondOpinionResult(available=True, error="Obligation not found.")
-
-    comments = db.execute(
-        select(Comment)
-        .where(Comment.obligation_id == obligation_id)
-        .options(joinedload(Comment.author))
-        .order_by(Comment.created_at.asc())
-    ).scalars().unique().all()
-
-    documents = db.execute(
-        select(Document).where(Document.obligation_id == obligation_id)
-    ).scalars().all()
-
-    prompt = _build_prompt(obligation, comments, documents)
-
+    # Everything below — DB reads, prompt build, Claude call — is wrapped so a
+    # bad row, a lazy-load, or a model error surfaces inline on the card
+    # instead of bubbling up as an HTTP 500.
     try:
+        obligation = db.execute(
+            select(Obligation)
+            .where(Obligation.id == obligation_id)
+            .options(
+                joinedload(Obligation.rule),
+                joinedload(Obligation.entity),
+                joinedload(Obligation.assignee),
+            )
+        ).scalars().unique().one_or_none()
+        if obligation is None:
+            return SecondOpinionResult(available=True, error="Obligation not found.")
+
+        comments = db.execute(
+            select(Comment)
+            .where(Comment.obligation_id == obligation_id)
+            .options(joinedload(Comment.author))
+            .order_by(Comment.created_at.asc())
+        ).scalars().unique().all()
+
+        documents = db.execute(
+            select(Document).where(Document.obligation_id == obligation_id)
+        ).scalars().all()
+
+        prompt = _build_prompt(obligation, comments, documents)
         opinion = _call_claude(prompt)
         return SecondOpinionResult(available=True, opinion=opinion)
-    except Exception as e:
-        return SecondOpinionResult(available=True, error=f"Claude call failed: {e}")
+    except Exception as e:  # noqa: BLE001
+        # Never bubble up as a 500 — surface it inline on the card instead.
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "Second opinion failed for obligation %s", obligation_id
+        )
+        return SecondOpinionResult(
+            available=True, error=f"Second opinion failed: {type(e).__name__}: {e}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -124,17 +134,20 @@ def _build_prompt(
         parts.append("(none)")
     else:
         for d in documents:
-            parts.append(
-                f"- {d.filename}  ({d.category.value}, {d.size_bytes // 1024} KB)"
-            )
+            # category / size can be NULL on legacy rows — stay defensive so
+            # prompt assembly never throws (used to surface as a 500).
+            cat = d.category.value if d.category is not None else "other"
+            size_kb = (d.size_bytes or 0) // 1024
+            parts.append(f"- {d.filename}  ({cat}, {size_kb} KB)")
 
     parts.append("\n# Comments (chronological)")
     if not comments:
         parts.append("(none)")
     else:
         for c in comments:
-            who = c.author.full_name if c.author else "Unknown"
-            parts.append(f"- [{c.created_at:%Y-%m-%d %H:%M}] {who}: {c.body}")
+            who = (c.author.full_name or c.author.email) if c.author else "Unknown"
+            when = f"{c.created_at:%Y-%m-%d %H:%M}" if c.created_at else "—"
+            parts.append(f"- [{when}] {who}: {c.body or ''}")
 
     return "\n".join(parts)
 

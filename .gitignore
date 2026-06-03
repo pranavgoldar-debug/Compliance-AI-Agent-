@@ -35,3 +35,4 @@ frontend/*.tsbuildinfo
 
 # Uploaded user documents (Phase 5)
 uploads/
+src/compliance_agent/data/webapp/
