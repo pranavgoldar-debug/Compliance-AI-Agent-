@@ -1716,13 +1716,12 @@ function RegulationsTable({
                 label=""
               />
             </th>
-            <th className="px-3 py-2 w-[90px]"></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={9} className="px-3 py-6 text-center text-sm text-muted-foreground">
+              <td colSpan={8} className="px-3 py-6 text-center text-sm text-muted-foreground">
                 No filings match these filters.
               </td>
             </tr>
@@ -1788,25 +1787,6 @@ function RegulationsTable({
                   <Badge variant={r.applicability === "Mandatory" ? "overdue" : "alert"}>
                     {r.applicability === "Mandatory" ? "Mandatory" : "Conditional"}
                   </Badge>
-                </td>
-                <td className="px-3 py-2 align-top" onClick={(e) => e.stopPropagation()}>
-                  {r.next_obligation_id ? (
-                    <a
-                      href={`/obligations/${r.next_obligation_id}`}
-                      className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline"
-                      title="Already scheduled — open it on the calendar"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      On calendar
-                    </a>
-                  ) : (
-                    <span
-                      className="text-xs text-muted-foreground"
-                      title="Production filings schedule automatically when the license is opened"
-                    >
-                      —
-                    </span>
-                  )}
                 </td>
               </tr>
             ))

@@ -426,7 +426,7 @@ export function TasksPage({
   // slice their own work without us splitting them into separate pages.
   const pageTitle = "Filings";
   const pageDescription =
-    "Your queue. Compliance owns the filing; finance picks up the payment leg via the Awaiting payment filter.";
+    "Your filing queue — every obligation generated from the licenses you track.";
 
   return (
     <div className="space-y-5">
@@ -453,56 +453,6 @@ export function TasksPage({
           })}
         </TabsList>
       </Tabs>
-
-      {/* Quick filter chips */}
-      <div className="flex flex-wrap gap-1.5 items-center">
-        {/* The most useful chip in daily use: "Awaiting payment" surfaces
-            the compliance → finance hand-off list. Filing's done, payment
-            still owed. */}
-        <button
-          type="button"
-          onClick={() => setAwaitingPayment((v) => !v)}
-          className={
-            awaitingPayment
-              ? "rounded-full border border-amber-400 bg-amber-50 px-3 py-1 text-xs text-amber-800 font-medium"
-              : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
-          }
-          title="Filings that have been completed but the payment reference hasn't been logged yet"
-        >
-          Awaiting payment{" "}
-          <span className="tabular-nums opacity-80">
-            ({chipCounts.awaitingPayment})
-          </span>
-        </button>
-
-        {/* Department chips — secondary filter for teams that want to slice
-            by who owns the work. Mostly stays on "All departments" in
-            day-to-day use. */}
-        <div className="text-xs text-muted-foreground mx-1">·</div>
-        {(Object.keys(DEPT_LABEL) as DepartmentFilter[]).map((d) => {
-          const n =
-            d === "all"
-              ? chipCounts.all
-              : d === "compliance"
-                ? chipCounts.compliance
-                : chipCounts.finance;
-          return (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setDepartment(d)}
-              className={
-                department === d
-                  ? "rounded-full border border-aspora-500 bg-aspora-50 px-3 py-1 text-xs text-aspora-700 font-medium"
-                  : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
-              }
-            >
-              {DEPT_LABEL[d]}{" "}
-              <span className="tabular-nums opacity-80">({n})</span>
-            </button>
-          );
-        })}
-      </div>
 
       {/* Filter + sort bar */}
       <div className="flex flex-wrap items-center gap-2">
