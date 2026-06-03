@@ -720,7 +720,11 @@ def ai_extract_obligations(
             "Where an obligation you list corresponds to one of these, use the "
             "EXACT name below (do not paraphrase). Make sure every relevant one "
             "here appears in your output, and add any further obligations you "
-            "know of as new items:\n" + "\n".join(f"- {n}" for n in names)
+            "know of as new items.\n"
+            "GRANULARITY: keep a strict 1:1 correspondence with these filings — "
+            "do NOT merge two of them into a single item, and do NOT split one "
+            "filing into several. One obligation per distinct filing:\n"
+            + "\n".join(f"- {n}" for n in names)
         )
 
     finance_addendum = (
@@ -830,6 +834,9 @@ def ai_extract_obligations(
         # Need a couple of shared meaningful tokens to avoid false matches.
         return best if best_score >= 2 else None
 
+    def _norm(s: object) -> str:
+        return (getattr(s, "value", s) or "").strip().lower() if s else ""
+
     candidates: list[dict] = []
     for c in result.rules:
         d = c.model_dump()
@@ -841,8 +848,30 @@ def ai_extract_obligations(
                 if match.name:
                     d["name"] = match.name
             d["matched_standard"] = True
+            # The website is the source of truth for the "fixed" attributes
+            # (due date, frequency, applicability). Don't silently overwrite —
+            # surface the catalogue value + a *_differs flag so the admin can
+            # see every divergence and decide. (granularity is handled in the
+            # prompt: Claude is told to keep a 1:1 match, no merge/split.)
+            d["catalogue_due_date_rule"] = match.due_date_rule
+            d["catalogue_frequency"] = match.frequency
+            d["catalogue_applicability"] = (
+                match.applicability.value if match.applicability else ""
+            )
+            d["due_date_differs"] = _norm(d.get("due_date_rule")) != _norm(
+                match.due_date_rule
+            )
+            d["frequency_differs"] = _norm(d.get("frequency")) != _norm(
+                match.frequency
+            )
+            d["applicability_differs"] = _norm(d.get("applicability")) != _norm(
+                match.applicability
+            )
         else:
             d["matched_standard"] = False
+            d["due_date_differs"] = False
+            d["frequency_differs"] = False
+            d["applicability_differs"] = False
         candidates.append(d)
 
     # NOTE: the AI extract is the comprehensive "source of truth" / cross-check

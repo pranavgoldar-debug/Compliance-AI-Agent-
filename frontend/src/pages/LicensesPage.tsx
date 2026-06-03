@@ -718,6 +718,14 @@ interface CandidateRule {
   payment_rule: string | null;
   applicability: string;
   applicability_note: string | null;
+  // Reconciliation against the curated catalogue (the website's source of truth).
+  matched_standard?: boolean;
+  catalogue_due_date_rule?: string | null;
+  catalogue_frequency?: string | null;
+  catalogue_applicability?: string | null;
+  due_date_differs?: boolean;
+  frequency_differs?: boolean;
+  applicability_differs?: boolean;
 }
 
 interface AIExtractResponse {
@@ -927,6 +935,25 @@ function AIExtractDialog({
                   </div>
                 );
               })()}
+              {(() => {
+                const diffs = response.candidates.filter(
+                  (r) =>
+                    r.due_date_differs ||
+                    r.frequency_differs ||
+                    r.applicability_differs,
+                );
+                if (diffs.length === 0) return null;
+                return (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+                    <strong>Conflicts vs your catalogue:</strong> {diffs.length} of{" "}
+                    {response.candidates.length} matched filing
+                    {diffs.length === 1 ? "" : "s"} have a different due date,
+                    frequency, or mandatory/conditional status than what your
+                    website tracks (marked ⚠ below). Your catalogue is the source
+                    of truth — review each and fix the rule if needed.
+                  </div>
+                );
+              })()}
               {response.notes && (
                 <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
                   {response.notes}
@@ -1024,7 +1051,44 @@ function AIExtractDialog({
                           ) : (
                             <Badge variant="alert">Missing from your list</Badge>
                           )}
+                          {r.due_date_differs && (
+                            <Badge
+                              variant="overdue"
+                              title={`Your catalogue says: ${r.catalogue_due_date_rule ?? "—"}`}
+                            >
+                              ⚠ Due date differs
+                            </Badge>
+                          )}
+                          {r.frequency_differs && (
+                            <Badge
+                              variant="overdue"
+                              title={`Your catalogue says: ${r.catalogue_frequency ?? "—"}`}
+                            >
+                              ⚠ Frequency differs
+                            </Badge>
+                          )}
+                          {r.applicability_differs && (
+                            <Badge
+                              variant="overdue"
+                              title={`Your catalogue says: ${r.catalogue_applicability ?? "—"}`}
+                            >
+                              ⚠ Mandatory/Conditional differs
+                            </Badge>
+                          )}
                         </div>
+                        {(r.due_date_differs || r.frequency_differs || r.applicability_differs) && (
+                          <div className="text-[11px] text-amber-700 mt-1">
+                            Your catalogue (source of truth):{" "}
+                            {[
+                              r.due_date_differs && `due — ${r.catalogue_due_date_rule}`,
+                              r.frequency_differs && `frequency — ${r.catalogue_frequency}`,
+                              r.applicability_differs &&
+                                `applicability — ${r.catalogue_applicability}`,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </div>
+                        )}
                         {r.plain_description && (
                           <div className="text-xs text-foreground/80 mt-0.5">
                             {r.plain_description}
