@@ -1457,21 +1457,12 @@ export function LicenseDetailBody({
                     ))}
                   </div>
                 ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? (
-                  <div className="rounded-lg border border-border bg-secondary/30 px-3 py-3 text-sm text-muted-foreground space-y-3">
-                    <div>
-                      No finance filings tracked for{" "}
-                      <strong>{license.jurisdiction_code?.toUpperCase()}</strong>{" "}
-                      yet. Use <strong>Find Regulations</strong> to have Claude
-                      list the filings, tick the ones to add, then approve them
-                      to Production — they'll auto-appear on the calendar.
-                    </div>
-                    {isAdmin && (
-                      <Button size="sm" onClick={() => setAiOpen(true)}>
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Find Regulations
-                      </Button>
-                    )}
-                  </div>
+                  isAdmin ? (
+                    <Button size="sm" onClick={() => setAiOpen(true)}>
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Find Regulations
+                    </Button>
+                  ) : null
                 ) : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
                     <TrackingCounts counts={rulesQuery.data.counts} />
