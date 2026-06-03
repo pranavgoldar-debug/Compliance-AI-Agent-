@@ -912,19 +912,30 @@ function AIExtractDialog({
           ) : (
             <div className="space-y-3">
               {(() => {
+                // "new vs already tracked" only makes sense once you HAVE a
+                // tracked list. On a fresh/empty catalogue everything is just a
+                // filing to add — don't flag it all as "NEW".
+                const hasTrackedList = existingForms.length > 0;
                 const newOnes = response.candidates.filter(
                   (r) => !isTracked(r.name || r.form_name, existingForms),
                 );
                 const trackedCount = response.candidates.length - newOnes.length;
+                if (!hasTrackedList) {
+                  return (
+                    <div className="text-sm">
+                      Claude found <strong>{response.candidates.length}</strong>{" "}
+                      filing{response.candidates.length === 1 ? "" : "s"} — all
+                      ticked. Untick any you don't want, then create them as
+                      Staging.
+                    </div>
+                  );
+                }
                 return (
                   <>
                     <div className="text-sm">
                       Claude found <strong>{response.candidates.length}</strong>{" "}
-                      filing{response.candidates.length === 1 ? "" : "s"}
-                      {response.from_document === false
-                        ? " from the regulator + license type (no PDF read)"
-                        : ""}
-                      : <strong>{newOnes.length} new</strong> (ticked below),{" "}
+                      filing{response.candidates.length === 1 ? "" : "s"}:{" "}
+                      <strong>{newOnes.length} new</strong> (ticked below),{" "}
                       {trackedCount} already tracked.
                     </div>
                     <div
@@ -1064,11 +1075,12 @@ function AIExtractDialog({
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{cleanFilingName(r.name || r.form_name)}</span>
                           <Badge variant="neutral">{deriveFunction(r.category, r.area)}</Badge>
-                          {isTracked(r.name || r.form_name, existingForms) ? (
-                            <Badge variant="neutral">Already tracked</Badge>
-                          ) : (
-                            <Badge variant="alert">NEW</Badge>
-                          )}
+                          {existingForms.length > 0 &&
+                            (isTracked(r.name || r.form_name, existingForms) ? (
+                              <Badge variant="neutral">Already tracked</Badge>
+                            ) : (
+                              <Badge variant="alert">NEW</Badge>
+                            ))}
                           {r.due_date_differs && (
                             <Badge
                               variant="overdue"
