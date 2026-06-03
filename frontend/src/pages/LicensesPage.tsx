@@ -872,12 +872,6 @@ function AIExtractDialog({
               <Sparkles className="h-5 w-5 text-aspora-600" />
               Find Regulations
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Claude finds the finance filings this license triggers. Review,
-              tick the ones to keep, and they're created as Staging rules
-              attached to <strong>{license.entity_name}</strong> — approve them
-              to Production and they auto-appear on the calendar.
-            </p>
           </div>
           <Button
             variant="ghost"
