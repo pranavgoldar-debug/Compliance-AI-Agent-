@@ -41,7 +41,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
+import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction, extractFormCode } from "@/lib/format";
 import type {
   ApplicableRulesResponse,
   Entity,
@@ -915,7 +915,7 @@ function AIExtractDialog({
               </div>
               {(() => {
                 const missing = response.candidates.filter(
-                  (r) => !isTracked(r.form_name, existingForms),
+                  (r) => !isTracked(r.name || r.form_name, existingForms),
                 );
                 return (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -1044,9 +1044,12 @@ function AIExtractDialog({
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{cleanFilingName(r.form_name)}</span>
+                          <span className="font-medium">{cleanFilingName(r.name || r.form_name)}</span>
+                          {extractFormCode(r.form_name) && (
+                            <Badge variant="neutral">Form: {extractFormCode(r.form_name)}</Badge>
+                          )}
                           <Badge variant="neutral">{deriveFunction(r.category, r.area)}</Badge>
-                          {isTracked(r.form_name, existingForms) ? (
+                          {isTracked(r.name || r.form_name, existingForms) ? (
                             <Badge variant="neutral">Already tracked</Badge>
                           ) : (
                             <Badge variant="alert">Missing from your list</Badge>
@@ -1744,6 +1747,7 @@ function RegulationsTable({
               <Sel value={cat} onChange={setCat} opts={catOpts} label="" />
             </th>
             <th className="px-3 py-2 text-left font-medium">Obligation</th>
+            <th className="px-3 py-2 text-left font-medium w-[110px]">Form</th>
             <th className="px-3 py-2 text-left font-medium w-[120px]">
               Frequency
               <Sel value={freq} onChange={setFreq} opts={freqOpts} label="" />
@@ -1764,7 +1768,7 @@ function RegulationsTable({
         <tbody className="divide-y divide-border">
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={8} className="px-3 py-6 text-center text-sm text-muted-foreground">
+              <td colSpan={9} className="px-3 py-6 text-center text-sm text-muted-foreground">
                 No filings match these filters.
               </td>
             </tr>
@@ -1794,11 +1798,16 @@ function RegulationsTable({
                   )}
                 </td>
                 <td className="px-3 py-2 align-top">
-                  <div className="font-medium">{cleanFilingName(r.form_name)}</div>
+                  <div className="font-medium">{cleanFilingName(r.name || r.form_name)}</div>
                   {r.plain_description && (
                     <div className="text-[11px] text-muted-foreground">
                       {r.plain_description}
                     </div>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-top text-xs font-mono">
+                  {extractFormCode(r.form_name) || (
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
                 <td className="px-3 py-2 align-top text-xs">{r.frequency}</td>

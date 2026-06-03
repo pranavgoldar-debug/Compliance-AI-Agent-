@@ -53,6 +53,22 @@ export function cleanFilingName(name: string | null | undefined): string {
   return s || (name ?? "");
 }
 
+// Pull the official form code(s) out of a filing/form name so we can show a
+// separate "Form" column. Conservative on purpose: a code must contain BOTH a
+// letter and a digit (CT600, FSA056, GSTR-3B, AOC-4, REP017, FSA029), so plain
+// descriptive words ("Senior Accounting Officer") are never mistaken for codes.
+// Returns "" when there is no recognisable form code.
+export function extractFormCode(formName: string | null | undefined): string {
+  const s = (formName ?? "").trim();
+  if (!s) return "";
+  const codes =
+    s.match(/\b[A-Z0-9][A-Z0-9]*(?:[-\/][A-Z0-9]+)*\b/g)?.filter(
+      (t) => /\d/.test(t) && /[A-Z]/.test(t) && t.length >= 3 && t.length <= 14,
+    ) ?? [];
+  // De-dupe while keeping order.
+  return Array.from(new Set(codes)).join(" / ");
+}
+
 // Mirror of the backend classification.derive_function — maps a rule's
 // category/area to the responsible team (Finance / Compliance / Legal). Used
 // client-side (e.g. AI-extract candidates that don't carry a function yet).

@@ -727,6 +727,16 @@ def ai_extract_obligations(
             + "\n".join(f"- {n}" for n in names)
         )
 
+    # Keep the filing NAME and the FORM CODE in separate fields so the UI can
+    # show them in separate columns.
+    naming_rule = (
+        "\n\nNAMING: put the human FILING name (no form code) in `name` — e.g. "
+        "'Corporate Tax Return', 'Annual Safeguarding Audit'. Put ONLY the "
+        "official form code/number in `form_name` — e.g. 'CT600', 'FSA056', "
+        "'GSTR-3B'. If a filing has no formal form code, leave `form_name` equal "
+        "to the filing name. Never put the form code inside `name`."
+    )
+
     finance_addendum = (
         f"\n\nIMPORTANT — also include the standard ongoing FINANCIAL, TAX and "
         f"ACCOUNTING obligations any operating company in "
@@ -750,6 +760,7 @@ def ai_extract_obligations(
             f"obligations. Ignore one-off pre-licensing steps that have "
             f"already happened."
             f"{finance_addendum}"
+            f"{naming_rule}"
             f"{catalogue_ref}"
             f"\n\n--- LICENSE TEXT BEGINS ---\n\n"
         )
@@ -771,6 +782,7 @@ def ai_extract_obligations(
             f"CFT obligations, renewals. For each, note whether it is mandatory "
             f"or conditional, and its usual frequency."
             f"{finance_addendum}"
+            f"{naming_rule}"
             f"{catalogue_ref}"
             f"\n\nIf you are unsure, mark applicability "
             f"accordingly rather than omitting it."
@@ -842,11 +854,12 @@ def ai_extract_obligations(
         d = c.model_dump()
         match = _match_catalogue(d.get("form_name", "") or "", d.get("name", "") or "")
         if match is not None:
-            std = match.form_name or match.name
-            if std:
-                d["form_name"] = std
-                if match.name:
-                    d["name"] = match.name
+            # Standardise the filing NAME to the catalogue's so it lines up with
+            # the website. Keep Claude's `form_name` (the form code) for the
+            # separate Form column.
+            std_name = match.name or match.form_name
+            if std_name:
+                d["name"] = std_name
             d["matched_standard"] = True
             # The website is the source of truth for the "fixed" attributes
             # (due date, frequency, applicability). Don't silently overwrite —
