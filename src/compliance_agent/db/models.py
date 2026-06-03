@@ -171,6 +171,11 @@ class Entity(Base):
     incorporation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     fiscal_year_end: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "31-Mar", "31-Dec"
 
+    # Admin-answered profile (VAT-registered? payroll? revenue band? related-
+    # party txns? relevant activity?) used by "Find Regulations" to decide
+    # which finance filings are mandatory / conditional / not-applicable.
+    finance_profile: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     country_lead_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     country_lead: Mapped[Optional[User]] = relationship(
         "User", back_populates="led_entities", foreign_keys=[country_lead_id]

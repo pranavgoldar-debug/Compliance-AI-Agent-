@@ -554,6 +554,70 @@ _MAX_EXTRACT_BYTES = 4_000_000   # ~4 MB of source text — enough for any singl
 _MAX_PROMPT_CHARS = 60_000        # rough char cap to keep Claude prompt manageable
 
 
+# Find Regulations qualifying questions. Keys match the frontend questionnaire;
+# each maps an answer value to a human line for the prompt. `_drop` lists the
+# answer values that make a whole class of filings clearly inapplicable.
+_PROFILE_QUESTIONS: dict[str, dict] = {
+    "vat_registered": {
+        "label": "VAT / GST registered",
+        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
+    },
+    "has_payroll": {
+        "label": "Runs payroll / has employees",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "revenue_band": {
+        "label": "Annual revenue",
+        "values": {
+            "below": "below the local registration / corporate-tax threshold",
+            "above": "above the local registration / corporate-tax threshold",
+            "unsure": "not sure",
+        },
+    },
+    "related_party": {
+        "label": "Related-party or cross-border transactions",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "relevant_activity": {
+        "label": 'Conducts a regulated / "relevant" activity (e.g. ESR)',
+        "values": {"yes": "yes", "no": "no"},
+    },
+}
+
+
+def _build_profile_block(profile: Optional[dict]) -> str:
+    """Render the entity's qualifying-question answers into a prompt block that
+    tells Claude how to use them for applicability. Empty when no profile."""
+    if not profile:
+        return ""
+    lines: list[str] = []
+    for key, spec in _PROFILE_QUESTIONS.items():
+        raw = profile.get(key)
+        if not raw:
+            continue
+        human = spec["values"].get(str(raw), str(raw))
+        lines.append(f"- {spec['label']}: {human}")
+    if not lines:
+        return ""
+    return (
+        "\n\nCOMPANY PROFILE (admin-provided — use this to decide each filing's "
+        "applicability):\n"
+        + "\n".join(lines)
+        + "\n\nApply this profile:\n"
+        "- OMIT filings that clearly DO NOT apply given the profile — e.g. if "
+        "NOT VAT/GST-registered, drop the VAT/GST return; if NO payroll, drop "
+        "payroll / WPS / withholding returns; if NO related-party or "
+        "cross-border transactions, drop transfer-pricing documentation; if "
+        "revenue is below the threshold, drop filings that only trigger above "
+        "it.\n"
+        "- For filings that DO apply, set applicability Mandatory when the "
+        "profile makes them required, and Conditional only where genuine "
+        "uncertainty remains.\n"
+        "- Where the profile is silent or 'not sure' on a point, KEEP the "
+        "filing and mark it Conditional rather than dropping it."
+    )
+
+
 def _read_license_text(lic: License) -> str:
     """Pull plain text out of the uploaded license file. PDFs go through
     pypdf; text-like uploads pass through. Returns '' if no file."""
@@ -844,6 +908,13 @@ def ai_extract_obligations(
         f"applicable. The licensee IS such a company, so these apply. Label "
         f"their function/category as Finance/Tax accordingly."
     )
+
+    # Qualifying-questions answers (set on the entity via the Find Regulations
+    # questionnaire) let Claude decide applicability: drop filings that clearly
+    # don't apply, and set mandatory vs conditional for the rest.
+    profile_block = _build_profile_block(
+        getattr(lic.entity, "finance_profile", None) if lic.entity else None
+    )
     if from_document:
         # Document-grounded: read the actual license text.
         primer = (
@@ -857,6 +928,7 @@ def ai_extract_obligations(
             f"already happened."
             f"{exhaustive_rule}"
             f"{finance_addendum}"
+            f"{profile_block}"
             f"{naming_rule}"
             f"{catalogue_ref}"
             f"\n\n--- LICENSE TEXT BEGINS ---\n\n"
@@ -880,6 +952,7 @@ def ai_extract_obligations(
             f"or conditional, and its usual frequency."
             f"{exhaustive_rule}"
             f"{finance_addendum}"
+            f"{profile_block}"
             f"{naming_rule}"
             f"{catalogue_ref}"
             f"\n\nIf you are unsure, mark applicability "
