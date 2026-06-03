@@ -1224,9 +1224,14 @@ export function LicenseDetailBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [license.id, isAdmin]);
 
+  const detailNavigate = useNavigate();
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/licenses/${license.id}`),
-    onSuccess: () => onChanged(),
+    onSuccess: () => {
+      onChanged();
+      // Jump back to the Licenses list — the detail we were on is gone.
+      detailNavigate("/licenses");
+    },
   });
 
 
