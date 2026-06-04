@@ -10,6 +10,7 @@ import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { CalendarPage } from "@/pages/CalendarPage";
+import { ComplianceObligationsPage } from "@/pages/ComplianceObligationsPage";
 import { EntitiesPage } from "@/pages/EntitiesPage";
 import { EntityDetailPage } from "@/pages/EntityDetailPage";
 import { LicenseDetailPage } from "@/pages/LicenseDetailPage";
@@ -59,6 +60,10 @@ export default function App() {
                 <Route path="licenses" element={<LicensesPage />} />
                 <Route path="licenses/:licenseId" element={<LicenseDetailPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
+                <Route
+                  path="compliance-obligations"
+                  element={<ComplianceObligationsPage />}
+                />
                 {/* Combined Compliance & Finance — one Tasks page where
                     both teams work. The Awaiting payment chip is the
                     main slicer for the finance side. */}
