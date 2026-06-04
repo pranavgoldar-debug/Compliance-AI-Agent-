@@ -503,8 +503,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-right font-medium">Entities</th>
-              <th className="px-3 py-2.5 text-left font-medium">Owner</th>
-              <th className="px-3 py-2.5 text-left font-medium">Reviewer</th>
+              <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
               <th className="px-3 py-2.5 text-left font-medium">Approver</th>
               <th className="px-3 py-2.5 text-left font-medium">Approved</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
@@ -534,9 +533,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {userName(r.owner_id)}
-                </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {userName(r.reviewer_id)}
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {userName(r.approver_id)}
@@ -688,7 +684,6 @@ function StagingCard({ rule }: { rule: Rule }) {
     staleTime: 300_000,
   });
   const [owner, setOwner] = useState(rule.owner_id ? String(rule.owner_id) : "");
-  const [reviewer, setReviewer] = useState(rule.reviewer_id ? String(rule.reviewer_id) : "");
   const [approver, setApprover] = useState(rule.approver_id ? String(rule.approver_id) : "");
 
   // Smart assignment: map the rule's function to a team and suggest a person
@@ -717,7 +712,6 @@ function StagingCard({ rule }: { rule: Rule }) {
       api.patch<Rule>(`/api/rules/${rule.id}`, {
         status: "production",
         owner_id: owner ? Number(owner) : null,
-        reviewer_id: reviewer ? Number(reviewer) : null,
         approver_id: approver ? Number(approver) : null,
       }),
     onSuccess: refresh,
@@ -809,9 +803,8 @@ function StagingCard({ rule }: { rule: Rule }) {
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <AssignSelect label="Owner" value={owner} users={users} onChange={setOwner} />
-                <AssignSelect label="Reviewer" value={reviewer} users={users} onChange={setReviewer} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <AssignSelect label="Assignee" value={owner} users={users} onChange={setOwner} />
                 <AssignSelect label="Approver" value={approver} users={users} onChange={setApprover} />
               </div>
             </div>
