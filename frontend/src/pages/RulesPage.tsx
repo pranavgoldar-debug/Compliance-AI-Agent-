@@ -43,7 +43,6 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { AddRuleFromTextDialog } from "@/components/AddRuleFromTextDialog";
 import { fmtRelative, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Rule, RuleStatus, UserBrief } from "@/types/api";
@@ -54,7 +53,6 @@ export function RulesPage() {
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
-  const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -131,14 +129,9 @@ export function RulesPage() {
               <Upload className="h-4 w-4" />
               Import template
             </Button>
-            <Button onClick={() => setAiDialogOpen(true)}>
-              <Sparkles className="h-4 w-4" />
-              Add from text
-            </Button>
           </div>
         }
       />
-      <AddRuleFromTextDialog open={aiDialogOpen} onOpenChange={setAiDialogOpen} />
       <ImportRulesDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as RuleStatus)}>

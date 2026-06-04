@@ -151,8 +151,12 @@ def update_rule(
         rule.approved_at = datetime.utcnow()
         if rule.approver_id is None:
             rule.approver_id = user.id
-        # Generate a calendar obligation for each attached entity on the
-        # computed due date, so an approved rule shows up on the calendar.
+
+    # For ANY production rule (on approval OR a later assignee/edit), make sure
+    # a calendar obligation exists for each attached entity on the computed due
+    # date, and keep its assignee in sync with the rule's Assignee — so the
+    # assigned person actually sees it in their Filings / tasks.
+    if rule.status == RuleStatus.production:
         from datetime import date
         from compliance_agent.api.licenses import _next_due_for_rule
         from compliance_agent.db import Obligation, ObligationStatus, Department
@@ -175,11 +179,12 @@ def update_rule(
                         due_date=due,
                         status=ObligationStatus.not_started,
                         department=Department.compliance,
-                        # Carry the rule's Assignee onto the obligation so it
-                        # lands in that person's Filings / task queue.
                         assignee_id=rule.owner_id,
                     )
                 )
+            elif rule.owner_id and exists.assignee_id != rule.owner_id:
+                # Keep the obligation assignee in sync with the rule's Assignee.
+                exists.assignee_id = rule.owner_id
     log_activity(
         db,
         actor_id=user.id,
