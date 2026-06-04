@@ -1285,7 +1285,6 @@ function ObligationsTab({
 function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [aiLicense, setAiLicense] = useState<License | null>(null);
   const { data: licenses = [], isLoading } = useQuery({
     queryKey: ["entity-licenses", entity.id],
     queryFn: () => api.get<License[]>(`/api/licenses?entity_id=${entity.id}`),
@@ -1356,14 +1355,6 @@ function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) 
                         <Button
                           variant="ghost"
                           size="sm"
-                          title="Find regulations with AI"
-                          onClick={() => setAiLicense(l)}
-                        >
-                          <Sparkles className="h-3.5 w-3.5 text-aspora-600" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
                           className="text-muted-foreground hover:text-destructive"
                           title="Delete license"
                           disabled={deleteMutation.isPending}
@@ -1397,18 +1388,6 @@ function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) 
           setUploadOpen(false);
         }}
       />
-      {aiLicense && (
-        <AIExtractDialog
-          license={aiLicense}
-          open={!!aiLicense}
-          onOpenChange={(v) => !v && setAiLicense(null)}
-          existingForms={[]}
-          onCreated={() => {
-            queryClient.invalidateQueries({ queryKey: ["rules"] });
-            refreshLicenses();
-          }}
-        />
-      )}
     </Card>
   );
 }
