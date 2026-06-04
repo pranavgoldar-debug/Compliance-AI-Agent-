@@ -82,6 +82,7 @@ export interface Rule {
   applicability: Applicability;
   applicability_note: string | null;
   tax_type: TaxType;
+  responsible_function: string | null;
   status: RuleStatus;
   source_url: string | null;
   submission_url: string | null;
