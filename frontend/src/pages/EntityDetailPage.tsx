@@ -1080,7 +1080,6 @@ type AssessItem = {
 type AssessResp = { available: boolean; items: AssessItem[]; notes?: string | null };
 
 function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
-  const rows = DEMO_REGISTRATIONS_PER_JURISDICTION[entity.jurisdiction_code] ?? [];
   const queryClient = useQueryClient();
 
   // AI assessment: read the entity's activity answers + discovered list and
@@ -1270,48 +1269,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
           )}
         </CardContent>
       </Card>
-
-    <Card className="overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30">
-        <h3 className="text-sm font-semibold">Tax & legal registrations</h3>
-        <Button size="sm" disabled={!isAdmin} title={isAdmin ? undefined : "Admin only"}>
-          {isAdmin ? <Plus className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-          Add registration
-        </Button>
-      </div>
-      {rows.length === 0 ? (
-        <div className="p-10">
-          <EmptyState
-            icon={<KeyRound className="h-5 w-5" />}
-            title="No registrations captured yet"
-            description="Add VAT, EIN, Corporation Tax and other registrations so they generate compliance items automatically."
-          />
-        </div>
-      ) : (
-        <table className="w-full text-sm">
-          <thead className="bg-secondary/20 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 text-left font-medium">Type</th>
-              <th className="px-4 py-2 text-left font-medium">Number</th>
-              <th className="px-4 py-2 text-left font-medium">Status</th>
-              <th className="px-4 py-2 text-left font-medium">Frequency</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.map((r) => (
-              <tr key={r.type} className="hover:bg-secondary/30">
-                <td className="px-4 py-2.5 font-medium">{r.type}</td>
-                <td className="px-4 py-2.5 font-mono text-xs">{r.number}</td>
-                <td className="px-4 py-2.5">
-                  <Badge variant="completed">{r.status}</Badge>
-                </td>
-                <td className="px-4 py-2.5 text-muted-foreground">{r.frequency}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Card>
     </div>
   );
 }
