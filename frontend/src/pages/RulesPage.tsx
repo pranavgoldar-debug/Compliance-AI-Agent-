@@ -275,6 +275,27 @@ export function RulesPage() {
 }
 
 
+// Shows the most recent change summary (what changed) for a rule, pulled from
+// its monitoring snapshots.
+function LatestChange({ ruleId }: { ruleId: number }) {
+  const { data } = useQuery({
+    queryKey: ["rule-snapshots", ruleId],
+    queryFn: () =>
+      api.get<{ change_summary: string | null; fetched_at: string }[]>(
+        `/api/rules/${ruleId}/snapshots`,
+      ),
+  });
+  const summary = data?.find((s) => s.change_summary)?.change_summary;
+  if (!summary) return null;
+  return (
+    <div className="text-xs text-amber-900 mt-1">
+      <span className="font-medium">What changed: </span>
+      {summary}
+    </div>
+  );
+}
+
+
 // ---------------------------------------------------------------------------
 // Detected regulatory changes — surfaced in For Action for human review.
 // ---------------------------------------------------------------------------
@@ -307,6 +328,7 @@ function ChangesPanel({ rules }: { rules: Rule[] }) {
                 {r.authority} · {r.category} · detected{" "}
                 {r.source_changed_at ? fmtRelative(r.source_changed_at) : "—"}
               </div>
+              <LatestChange ruleId={r.id} />
             </div>
             {r.source_url && (
               <a

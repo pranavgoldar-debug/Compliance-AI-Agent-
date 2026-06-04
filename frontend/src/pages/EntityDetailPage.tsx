@@ -418,9 +418,9 @@ function ComplianceRulesTab({
               scan with AI.
             </p>
           )}
-          {/* Discovery funnel: discovered → in review → confirmed */}
+          {/* Discovery funnel: discovered → in review → confirmed (→ mandatory) */}
           {(review.length > 0 || confirmed.length > 0) && (
-            <div className="flex items-center gap-2 pt-2 text-xs">
+            <div className="flex items-center gap-2 pt-2 text-xs flex-wrap">
               <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
                 {review.length + confirmed.length} discovered
               </span>
@@ -432,6 +432,12 @@ function ComplianceRulesTab({
               <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
                 {confirmed.length} confirmed
               </span>
+              {confirmed.length > 0 && (
+                <span className="text-muted-foreground">
+                  ({confirmed.filter((r) => r.applicability === "Mandatory").length} mandatory ·{" "}
+                  {confirmed.filter((r) => r.applicability !== "Mandatory").length} conditional)
+                </span>
+              )}
             </div>
           )}
         </CardContent>
