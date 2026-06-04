@@ -48,7 +48,6 @@ const ROUTE_LABELS: Record<string, string> = {
   tasks: "Tasks",
   rules: "Review & Assign",
   documents: "Documents",
-  "compliance-obligations": "Compliance Obligations",
   "audit-log": "Audit Log",
   settings: "Settings",
   obligations: "Obligation",

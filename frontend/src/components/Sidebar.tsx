@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   CalendarDays,
   CheckCircle2,
-  ClipboardCheck,
   FolderOpen,
   BookOpen,
   Building2,
@@ -47,7 +46,6 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Compliance OS",
     items: [
       { to: "/", label: "Home", icon: LayoutDashboard, exact: true },
-      { to: "/compliance-obligations", label: "Compliance Obligations", icon: ClipboardCheck },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       {
         to: "/tasks",
