@@ -908,6 +908,7 @@ function StagingCard({ rule }: { rule: Rule }) {
 // lives in the card view.
 function StagingTable({ rules }: { rules: Rule[] }) {
   const queryClient = useQueryClient();
+  const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
@@ -957,18 +958,20 @@ function StagingTable({ rules }: { rules: Rule[] }) {
                   {r.due_date_rule || "—"}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
-                  {r.source_url ? (
-                    <a
-                      href={r.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-aspora-700 hover:underline inline-flex items-center gap-1"
-                    >
-                      Source <ExternalLink className="h-3 w-3" />
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingUrlRule(r)}
+                    className="text-left hover:underline"
+                    title="Set the regulation + government filing (submission) URLs"
+                  >
+                    {r.submission_url || r.source_url ? (
+                      <span className="text-aspora-700 inline-flex items-center gap-1">
+                        Filing URL ✎
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 italic">+ add URL</span>
+                    )}
+                  </button>
                 </td>
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <Button size="sm" disabled={busy} onClick={() => approve.mutate(r.id)}>
@@ -989,6 +992,13 @@ function StagingTable({ rules }: { rules: Rule[] }) {
           </tbody>
         </table>
       </div>
+      {editingUrlRule && (
+        <EditRuleUrlDialog
+          rule={editingUrlRule}
+          open={!!editingUrlRule}
+          onOpenChange={(v) => !v && setEditingUrlRule(null)}
+        />
+      )}
     </div>
   );
 }
