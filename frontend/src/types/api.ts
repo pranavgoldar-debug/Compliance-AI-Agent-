@@ -32,6 +32,11 @@ export interface UserBrief {
   department?: Department | null;
 }
 
+export interface OwnerStake {
+  name: string;
+  percent: number | null;
+}
+
 export interface Entity {
   id: number;
   name: string;
@@ -42,6 +47,7 @@ export interface Entity {
   incorporation_date: string | null;
   fiscal_year_end: string | null;
   finance_profile: Record<string, string> | null;
+  ownership: OwnerStake[] | null;
   country_lead: UserBrief | null;
   archived_at: string | null;
   created_at: string;

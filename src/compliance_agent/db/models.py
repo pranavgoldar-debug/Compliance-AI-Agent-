@@ -175,6 +175,8 @@ class Entity(Base):
     # party txns? relevant activity?) used by "Find Regulations" to decide
     # which finance filings are mandatory / conditional / not-applicable.
     finance_profile: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Owners / controllers (UBO): list of {name, percent} dicts.
+    ownership: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     country_lead_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     country_lead: Mapped[Optional[User]] = relationship(

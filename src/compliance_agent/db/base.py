@@ -241,6 +241,8 @@ def _add_missing_columns() -> None:
             # Find Regulations qualifying-questions answers (VAT-registered,
             # payroll, revenue band, related-party txns, relevant activity).
             ("finance_profile", "JSON" if is_pg else text_type),
+            # Owners / controllers (UBO) list: [{name, percent}].
+            ("ownership", "JSON" if is_pg else text_type),
         ],
     }
 

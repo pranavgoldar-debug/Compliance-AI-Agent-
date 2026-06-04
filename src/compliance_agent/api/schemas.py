@@ -85,6 +85,7 @@ class EntityUpdate(BaseModel):
     fiscal_year_end: Optional[str] = None
     country_lead_id: Optional[int] = None
     finance_profile: Optional[dict] = None
+    ownership: Optional[list] = None
 
 
 class EntityOut(_Base):
@@ -97,6 +98,7 @@ class EntityOut(_Base):
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
     finance_profile: Optional[dict] = None
+    ownership: Optional[list] = None
     country_lead: Optional[UserBrief] = None
     archived_at: Optional[datetime] = None
     created_at: datetime

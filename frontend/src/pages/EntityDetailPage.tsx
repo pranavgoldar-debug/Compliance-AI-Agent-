@@ -14,6 +14,7 @@ import {
   UserCheck,
   KeyRound,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -39,8 +40,9 @@ import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
+import { gatesForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, Entity, License, Obligation } from "@/types/api";
+import type { ActivityOut, Entity, License, Obligation, OwnerStake } from "@/types/api";
 
 
 function StatTile({
@@ -136,6 +138,7 @@ export function EntityDetailPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="profile">Activity Profile</TabsTrigger>
           <TabsTrigger value="registrations">Registrations</TabsTrigger>
           <TabsTrigger value="obligations">
             Compliance Items
@@ -164,6 +167,10 @@ export function EntityDetailPage() {
           />
         </TabsContent>
 
+        <TabsContent value="profile">
+          <ActivityProfileTab entity={entity} isAdmin={isAdmin} />
+        </TabsContent>
+
         <TabsContent value="registrations">
           <RegistrationsTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
@@ -188,6 +195,199 @@ export function EntityDetailPage() {
           <ActivityTab entity={entity} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Activity Profile — Yes / No / TBC flags (drives Find Regulations) + ownership
+// ---------------------------------------------------------------------------
+function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const gates = gatesForJurisdiction(entity.jurisdiction_code);
+  const profile = entity.finance_profile ?? {};
+
+  const saveProfile = useMutation({
+    mutationFn: (next: Record<string, string>) =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, { finance_profile: next }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+  });
+  const setFlag = (key: string, value: "yes" | "no" | "tbc") => {
+    const next = { ...profile };
+    if (value === "tbc") delete next[key];
+    else next[key] = value;
+    saveProfile.mutate(next);
+  };
+
+  // Ownership — editable list of owners / controllers with % holding.
+  const [owners, setOwners] = useState<OwnerStake[]>(entity.ownership ?? []);
+  const [dirty, setDirty] = useState(false);
+  const saveOwners = useMutation({
+    mutationFn: (next: OwnerStake[]) =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, {
+        ownership: next.filter((o) => o.name.trim()),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity"] });
+      setDirty(false);
+    },
+  });
+  const setOwner = (i: number, patch: Partial<OwnerStake>) => {
+    setOwners((arr) => arr.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
+    setDirty(true);
+  };
+
+  const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
+    { value: "yes", label: "Yes" },
+    { value: "no", label: "No" },
+    { value: "tbc", label: "TBC" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div>
+            <h3 className="font-semibold">Activity profile</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              What this entity does. These answers drive which filings{" "}
+              <strong>Find Regulations</strong> marks mandatory vs conditional.
+              TBC = awaiting confirmation (doesn't switch anything on).
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {gates.map((g) => {
+              const val = profile[g.key];
+              const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
+              return (
+                <div
+                  key={g.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm truncate">{g.question}</div>
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      {g.drives}
+                    </div>
+                  </div>
+                  <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
+                    {FLAG_OPTIONS.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        disabled={!isAdmin || saveProfile.isPending}
+                        onClick={() => setFlag(g.key, o.value)}
+                        className={cn(
+                          "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                          current === o.value
+                            ? o.value === "yes"
+                              ? "bg-emerald-500 text-white"
+                              : o.value === "no"
+                                ? "bg-slate-700 text-white"
+                                : "bg-secondary text-foreground"
+                            : "bg-background hover:bg-secondary text-muted-foreground",
+                          o.value !== "yes" && "border-l border-input",
+                        )}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold">Ownership structure</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Owners / controllers and their shareholding.
+              </p>
+            </div>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setOwners((arr) => [...arr, { name: "", percent: null }]);
+                  setDirty(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add owner
+              </Button>
+            )}
+          </div>
+
+          {owners.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No owners recorded yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {owners.map((o, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={o.name}
+                    disabled={!isAdmin}
+                    placeholder="Owner / controller name"
+                    onChange={(e) => setOwner(i, { name: e.target.value })}
+                    className="flex-1"
+                  />
+                  <div className="relative w-28">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={o.percent ?? ""}
+                      disabled={!isAdmin}
+                      placeholder="%"
+                      onChange={(e) =>
+                        setOwner(i, {
+                          percent: e.target.value === "" ? null : Number(e.target.value),
+                        })
+                      }
+                      className="pr-6"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      %
+                    </span>
+                  </div>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setOwners((arr) => arr.filter((_, idx) => idx !== i));
+                        setDirty(true);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {isAdmin && dirty && (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                onClick={() => saveOwners.mutate(owners)}
+                disabled={saveOwners.isPending}
+              >
+                {saveOwners.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save ownership
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
