@@ -153,6 +153,9 @@ class RuleUpdate(BaseModel):
     source_text: Optional[str] = None
     status: Optional[RuleStatus] = None
     entity_ids: Optional[list[int]] = None
+    owner_id: Optional[int] = None
+    reviewer_id: Optional[int] = None
+    approver_id: Optional[int] = None
 
 
 class RuleOut(_Base):
@@ -177,6 +180,10 @@ class RuleOut(_Base):
     source_text: Optional[str] = None
     source_changed_at: Optional[datetime] = None
     entity_ids: list[int] = []
+    owner_id: Optional[int] = None
+    reviewer_id: Optional[int] = None
+    approver_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

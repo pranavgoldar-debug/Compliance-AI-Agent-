@@ -259,6 +259,13 @@ class Rule(Base):
     )
     created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
+    # Review & Assign workflow: who owns / reviews / approves this obligation,
+    # and when it was approved (staging → production). All nullable.
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approver_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     entities: Mapped[list[Entity]] = relationship(
         "Entity", secondary="rule_entities", back_populates="rules"
     )

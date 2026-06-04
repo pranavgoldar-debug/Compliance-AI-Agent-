@@ -224,6 +224,11 @@ def _add_missing_columns() -> None:
             # Revamp: function (Finance/Compliance/Legal) + plain-English desc.
             ("responsible_function", varchar(24)),
             ("plain_description", text_type),
+            # Review & Assign: owner / reviewer / approver + approval timestamp.
+            ("owner_id", "INTEGER"),
+            ("reviewer_id", "INTEGER"),
+            ("approver_id", "INTEGER"),
+            ("approved_at", datetime_type),
         ],
         # Phase 9: per-user notification prefs + Slack member id +
         # functional department (drives finance / compliance routing).

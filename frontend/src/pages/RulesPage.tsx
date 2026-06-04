@@ -42,10 +42,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { AddRuleFromTextDialog } from "@/components/AddRuleFromTextDialog";
 import { fmtRelative, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Rule, RuleStatus } from "@/types/api";
+import type { Rule, RuleStatus, UserBrief } from "@/types/api";
 
 export function RulesPage() {
-  const [tab, setTab] = useState<RuleStatus>("production");
+  const [tab, setTab] = useState<RuleStatus>("staging");
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
@@ -93,8 +93,8 @@ export function RulesPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Compliance Rules"
-        description="Templates that generate per-entity obligations. The most critical data asset in the product."
+        title="Review & Assign"
+        description="AI-proposed obligations and regulatory changes awaiting your approval. Review, assign ownership, and confirm applicability before they become active compliance obligations."
         actions={
           <div className="flex items-center gap-2">
             <ExportMenu
@@ -124,19 +124,19 @@ export function RulesPage() {
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as RuleStatus)}>
         <TabsList>
-          <TabsTrigger value="production">
-            In Production
-            {tab === "production" && rules && (
-              <Badge variant="neutral" className="ml-1">
-                {rules.length}
-              </Badge>
-            )}
-          </TabsTrigger>
           <TabsTrigger value="staging">
-            Staging
+            For Action
             {typeof stagingCount === "number" && stagingCount > 0 && (
               <Badge variant="alert" className="ml-1">
                 {stagingCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="production">
+            Approved
+            {tab === "production" && rules && (
+              <Badge variant="neutral" className="ml-1">
+                {rules.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -233,6 +233,16 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    staleTime: 300_000,
+  });
+  const userName = (id: number | null) => {
+    if (!id) return "—";
+    const u = users.find((x) => x.id === id);
+    return u ? u.full_name || u.email : "—";
+  };
 
   const cleanupMutation = useMutation({
     mutationFn: () =>
@@ -357,7 +367,8 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-right font-medium">Entities</th>
-              <th className="px-3 py-2.5 text-left font-medium">Last update</th>
+              <th className="px-3 py-2.5 text-left font-medium">Owner</th>
+              <th className="px-3 py-2.5 text-left font-medium">Approved</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
               <th className="px-3 py-2.5 w-8" />
             </tr>
@@ -384,7 +395,10 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   {r.entity_ids.length}
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {fmtRelative(r.updated_at)}
+                  {userName(r.owner_id)}
+                </td>
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                  {r.approved_at ? fmtRelative(r.approved_at) : "—"}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
                   <button
@@ -503,6 +517,16 @@ function StagingCard({ rule }: { rule: Rule }) {
   const set = (k: keyof ReturnType<typeof initialDraft>, v: string) =>
     setDraft((d) => ({ ...d, [k]: v }));
 
+  // Owner / Reviewer / Approver assignment (Review & Assign workflow).
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    staleTime: 300_000,
+  });
+  const [owner, setOwner] = useState(rule.owner_id ? String(rule.owner_id) : "");
+  const [reviewer, setReviewer] = useState(rule.reviewer_id ? String(rule.reviewer_id) : "");
+  const [approver, setApprover] = useState(rule.approver_id ? String(rule.approver_id) : "");
+
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
@@ -516,7 +540,13 @@ function StagingCard({ rule }: { rule: Rule }) {
     },
   });
   const promoteMutation = useMutation({
-    mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { status: "production" }),
+    mutationFn: () =>
+      api.patch<Rule>(`/api/rules/${rule.id}`, {
+        status: "production",
+        owner_id: owner ? Number(owner) : null,
+        reviewer_id: reviewer ? Number(reviewer) : null,
+        approver_id: approver ? Number(approver) : null,
+      }),
     onSuccess: refresh,
   });
   const rejectMutation = useMutation({
@@ -595,6 +625,18 @@ function StagingCard({ rule }: { rule: Rule }) {
               <ExtractedField label="Applicability note" value={draft.applicability_note} multiline editing={editing} onChange={(v) => set("applicability_note", v)} />
               <ExtractedField label="Tax type" value={draft.tax_type} options={TAX_TYPE_OPTIONS} editing={editing} onChange={(v) => set("tax_type", v)} />
             </div>
+
+            {/* Assignment — Owner / Reviewer / Approver */}
+            <div className="px-5 pb-5 pt-1">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
+                Assign ownership
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <AssignSelect label="Owner" value={owner} users={users} onChange={setOwner} />
+                <AssignSelect label="Reviewer" value={reviewer} users={users} onChange={setReviewer} />
+                <AssignSelect label="Approver" value={approver} users={users} onChange={setApprover} />
+              </div>
+            </div>
           </div>
 
           {/* Action bar */}
@@ -661,7 +703,7 @@ function StagingCard({ rule }: { rule: Rule }) {
                   </Button>
                   <Button size="sm" disabled={busy} onClick={() => promoteMutation.mutate()}>
                     {promoteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Approve &amp; promote
+                    Approve &amp; assign
                   </Button>
                 </>
               )}
@@ -670,6 +712,37 @@ function StagingCard({ rule }: { rule: Rule }) {
         </CardContent>
       )}
     </Card>
+  );
+}
+
+
+function AssignSelect({
+  label,
+  value,
+  users,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  users: UserBrief[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+      >
+        <option value="">— Unassigned —</option>
+        {users.map((u) => (
+          <option key={u.id} value={u.id}>
+            {u.full_name || u.email}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 

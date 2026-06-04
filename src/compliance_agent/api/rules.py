@@ -51,6 +51,10 @@ def _serialize_rule(rule: Rule) -> RuleOut:
         source_text=rule.source_text,
         source_changed_at=rule.source_changed_at,
         entity_ids=[e.id for e in rule.entities],
+        owner_id=rule.owner_id,
+        reviewer_id=rule.reviewer_id,
+        approver_id=rule.approver_id,
+        approved_at=rule.approved_at,
         created_at=rule.created_at,
         updated_at=rule.updated_at,
     )
@@ -142,6 +146,11 @@ def update_rule(
         old_status != RuleStatus.production
         and rule.status == RuleStatus.production
     )
+    # Stamp the approval time + approver when an obligation is confirmed.
+    if promoted:
+        rule.approved_at = datetime.utcnow()
+        if rule.approver_id is None:
+            rule.approver_id = user.id
     log_activity(
         db,
         actor_id=user.id,

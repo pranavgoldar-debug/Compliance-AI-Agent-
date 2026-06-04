@@ -78,6 +78,10 @@ export interface Rule {
   source_text: string | null;
   source_changed_at: string | null;
   entity_ids: number[];
+  owner_id: number | null;
+  reviewer_id: number | null;
+  approver_id: number | null;
+  approved_at: string | null;
   created_at: string;
   updated_at: string;
 }
