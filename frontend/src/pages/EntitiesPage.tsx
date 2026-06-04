@@ -1,12 +1,13 @@
 // Entities — every Aspora legal entity. Table + Card grid toggle, multi-select
 // filters, search by name/type/reg #.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   ChevronDown,
   LayoutGrid,
   List,
+  Loader2,
   Lock,
   Plus,
   Search,
@@ -14,6 +15,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +59,7 @@ export function EntitiesPage() {
   const [jurisdictions, setJurisdictions] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
+  const [addOpen, setAddOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["entities"],
@@ -95,7 +104,7 @@ export function EntitiesPage() {
               }}
             />
             {isAdmin ? (
-              <Button>
+              <Button onClick={() => setAddOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add entity
               </Button>
@@ -178,7 +187,7 @@ export function EntitiesPage() {
           }
           action={
             isAdmin && data && data.length === 0 ? (
-              <Button>
+              <Button onClick={() => setAddOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add entity
               </Button>
@@ -203,7 +212,132 @@ export function EntitiesPage() {
       ) : (
         <GridView entities={filtered} />
       )}
+
+      <AddEntityDialog open={addOpen} onOpenChange={setAddOpen} />
     </div>
+  );
+}
+
+
+function AddEntityDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [legalType, setLegalType] = useState("");
+  const [jurisdictionCode, setJurisdictionCode] = useState("");
+  const [shortCode, setShortCode] = useState("");
+  const [regNumber, setRegNumber] = useState("");
+  const [fye, setFye] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setLegalType("");
+      setJurisdictionCode("");
+      setShortCode("");
+      setRegNumber("");
+      setFye("");
+      setError(null);
+    }
+  }, [open]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post("/api/entities", {
+        name: name.trim(),
+        legal_type: legalType.trim(),
+        jurisdiction_code: jurisdictionCode,
+        short_code: shortCode.trim() || null,
+        registration_number: regNumber.trim() || null,
+        fiscal_year_end: fye.trim() || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>Add entity</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Legal name *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Jurisdiction *</label>
+              <select
+                value={jurisdictionCode}
+                onChange={(e) => setJurisdictionCode(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">— Select —</option>
+                {Object.entries(JURISDICTIONS).map(([code, j]) => (
+                  <option key={code} value={code}>
+                    {j.flag} {j.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Legal type</label>
+              <Input
+                value={legalType}
+                placeholder="Private Limited / LLC / FZE…"
+                onChange={(e) => setLegalType(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Short code</label>
+              <Input
+                value={shortCode}
+                placeholder="VINC, NESS…"
+                onChange={(e) => setShortCode(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Fiscal year end</label>
+              <Input value={fye} placeholder="31-Dec" onChange={(e) => setFye(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Registration number</label>
+            <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
+          </div>
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !name.trim() || !jurisdictionCode}
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Create entity
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
