@@ -299,14 +299,23 @@ function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: bo
   const queryClient = useQueryClient();
   const juris = entity.jurisdiction_code;
   const gates = gatesForJurisdiction(juris);
-  const profile = entity.finance_profile ?? {};
+  // Local optimistic copy so clicks update instantly; saved in the background.
+  const [profile, setProfile] = useState<Record<string, string>>(
+    entity.finance_profile ?? {},
+  );
+  useEffect(() => {
+    setProfile(entity.finance_profile ?? {});
+  }, [entity.finance_profile]);
   const saveProfile = useMutation({
     mutationFn: (next: Record<string, string>) =>
       api.patch<Entity>(`/api/entities/${entity.id}`, { finance_profile: next }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
   });
-  const setAnswer = (key: string, value: string) =>
-    saveProfile.mutate({ ...profile, [key]: value });
+  const setAnswer = (key: string, value: string) => {
+    const next = { ...profile, [key]: value };
+    setProfile(next);
+    saveProfile.mutate(next);
+  };
 
   // Only show follow-ups for activities that apply (answered "Yes") and that
   // exist for this jurisdiction — so the set changes per entity/country.
@@ -349,7 +358,7 @@ function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: bo
                           <button
                             key={o.value}
                             type="button"
-                            disabled={!isAdmin || saveProfile.isPending}
+                            disabled={!isAdmin}
                             onClick={() => setAnswer(f.key, o.value)}
                             className={cn(
                               "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
@@ -413,10 +422,12 @@ function ComplianceRulesTab({
     mutationFn: (id: number) =>
       api.patch(`/api/rules/${id}`, { status: "production" }),
     onSuccess: refresh,
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
   const reject = useMutation({
     mutationFn: (id: number) => api.delete(`/api/rules/${id}`),
     onSuccess: refresh,
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
   // AI generation needs a license to read; use the first one the entity holds.
