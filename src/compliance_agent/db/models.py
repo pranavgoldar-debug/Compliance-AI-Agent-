@@ -177,6 +177,8 @@ class Entity(Base):
     finance_profile: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     # Owners / controllers (UBO): list of {name, percent} dicts.
     ownership: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Bank details: {account_name, bank_name, account_number, iban, swift, currency}.
+    bank_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     country_lead_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     country_lead: Mapped[Optional[User]] = relationship(

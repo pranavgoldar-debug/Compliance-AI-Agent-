@@ -248,6 +248,8 @@ def _add_missing_columns() -> None:
             ("finance_profile", "JSON" if is_pg else text_type),
             # Owners / controllers (UBO) list: [{name, percent}].
             ("ownership", "JSON" if is_pg else text_type),
+            # Bank details JSON.
+            ("bank_details", "JSON" if is_pg else text_type),
         ],
     }
 

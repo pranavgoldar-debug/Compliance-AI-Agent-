@@ -49,7 +49,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { gatesForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, Entity, License, Obligation, Rule } from "@/types/api";
+import type { ActivityOut, BankDetails, Entity, License, Obligation, Rule } from "@/types/api";
 
 
 function StatTile({
@@ -165,6 +165,7 @@ export function EntityDetailPage() {
             obligations={obligations ?? []}
             licenses={entityLicenses}
             onManageLicenses={() => setTab("licenses")}
+            isAdmin={isAdmin}
           />
         </TabsContent>
 
@@ -726,16 +727,105 @@ function EditEntityDialog({
 // ---------------------------------------------------------------------------
 // Overview tab
 // ---------------------------------------------------------------------------
+const BANK_FIELDS: { key: keyof BankDetails; label: string; placeholder: string }[] = [
+  { key: "account_name", label: "Account name", placeholder: "Account holder" },
+  { key: "bank_name", label: "Bank", placeholder: "Bank name" },
+  { key: "account_number", label: "Account number", placeholder: "Account no." },
+  { key: "iban", label: "IBAN", placeholder: "IBAN" },
+  { key: "swift", label: "SWIFT / BIC", placeholder: "SWIFT" },
+  { key: "currency", label: "Currency", placeholder: "e.g. GBP" },
+];
+
+function BankDetailsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<BankDetails>(entity.bank_details ?? {});
+  const save = useMutation({
+    mutationFn: () =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, { bank_details: draft }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity"] });
+      setEditing(false);
+    },
+  });
+  const bd = entity.bank_details ?? {};
+  const hasAny = Object.values(bd).some((v) => v && String(v).trim());
+
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Bank details
+          </h3>
+          {isAdmin && !editing && (
+            <button
+              onClick={() => {
+                setDraft(entity.bank_details ?? {});
+                setEditing(true);
+              }}
+              className="text-xs text-aspora-700 hover:underline"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+
+        {editing ? (
+          <div className="space-y-2">
+            {BANK_FIELDS.map((f) => (
+              <div key={f.key} className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">{f.label}</label>
+                <Input
+                  value={draft[f.key] ?? ""}
+                  placeholder={f.placeholder}
+                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                  className="h-9"
+                />
+              </div>
+            ))}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+                {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : !hasAny ? (
+          <div className="text-sm text-muted-foreground italic">
+            No bank details recorded{isAdmin ? " — click Edit to add." : "."}
+          </div>
+        ) : (
+          <dl className="grid grid-cols-3 gap-y-1.5 text-sm">
+            {BANK_FIELDS.filter((f) => bd[f.key]).map((f) => (
+              <div key={f.key} className="contents">
+                <dt className="text-muted-foreground col-span-1">{f.label}</dt>
+                <dd className="col-span-2 font-medium break-all">{bd[f.key]}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
 function OverviewTab({
   entity,
   obligations,
   licenses,
   onManageLicenses,
+  isAdmin,
 }: {
   entity: Entity;
   obligations: Obligation[];
   licenses: License[];
   onManageLicenses: () => void;
+  isAdmin: boolean;
 }) {
   // Recent 5 obligation changes — fake "recent activity" feed sourced from
   // updated_at on this entity's obligations. Real activity feed lands in P5.
@@ -812,6 +902,8 @@ function OverviewTab({
             )}
           </CardContent>
         </Card>
+
+        <BankDetailsCard entity={entity} isAdmin={isAdmin} />
       </div>
 
       <Card className="md:col-span-3">

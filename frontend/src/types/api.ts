@@ -38,6 +38,15 @@ export interface OwnershipStage {
   role: string;
 }
 
+export interface BankDetails {
+  account_name?: string;
+  bank_name?: string;
+  account_number?: string;
+  iban?: string;
+  swift?: string;
+  currency?: string;
+}
+
 export interface Entity {
   id: number;
   name: string;
@@ -49,6 +58,7 @@ export interface Entity {
   fiscal_year_end: string | null;
   finance_profile: Record<string, string> | null;
   ownership: OwnershipStage[] | null;
+  bank_details: BankDetails | null;
   country_lead: UserBrief | null;
   archived_at: string | null;
   created_at: string;
