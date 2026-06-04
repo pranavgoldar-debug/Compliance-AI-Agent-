@@ -805,12 +805,14 @@ export function AIExtractDialog({
   onOpenChange,
   onCreated,
   existingForms = [],
+  autoRun = true,
 }: {
   license: License;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
   existingForms?: string[];
+  autoRun?: boolean;
 }) {
   const [response, setResponse] = useState<AIExtractResponse | null>(null);
   const [kept, setKept] = useState<Set<number>>(new Set());
@@ -918,10 +920,13 @@ export function AIExtractDialog({
   }, [open, entityQuery.data]);
 
   // Once in the extract phase, kick off the run so the user lands on the
-  // running state rather than a "click to start" screen.
+  // running state rather than a "click to start" screen. Skipped when autoRun
+  // is off (e.g. a list already exists) so we don't burn Claude tokens on every
+  // re-open / tab change — the user runs it explicitly via the button.
   useEffect(() => {
     if (
       open &&
+      autoRun &&
       phase === "extract" &&
       !response &&
       !extractMutation.isPending &&
@@ -930,7 +935,7 @@ export function AIExtractDialog({
       extractMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, phase]);
+  }, [open, phase, autoRun]);
 
   function answer(key: string, value: string) {
     setAnswers((a) => ({ ...a, [key]: value }));
@@ -1051,10 +1056,18 @@ export function AIExtractDialog({
                   Try again
                 </Button>
               </div>
-            ) : (
+            ) : extractMutation.isPending ? (
               <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin text-aspora-600 shrink-0" />
                 Finding finance regulations for this license… (~20–30s)
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
+                <Button size="sm" onClick={() => extractMutation.mutate()}>
+                  <Sparkles className="h-4 w-4" />
+                  Find Regulations
+                </Button>
+                <span>You already have a list — running again only when you ask.</span>
               </div>
             )
           ) : !response.available ? (

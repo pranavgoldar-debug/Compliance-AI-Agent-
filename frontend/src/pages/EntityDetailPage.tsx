@@ -589,6 +589,7 @@ function ComplianceRulesTab({
           open={aiOpen}
           onOpenChange={setAiOpen}
           existingForms={confirmedForms}
+          autoRun={review.length + confirmed.length === 0}
           onCreated={refresh}
         />
       )}
@@ -1090,7 +1091,8 @@ const DEMO_REGISTRATIONS_PER_JURISDICTION: Record<
 function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const rows = DEMO_REGISTRATIONS_PER_JURISDICTION[entity.jurisdiction_code] ?? [];
   const queryClient = useQueryClient();
-  const [aiOpen, setAiOpen] = useState(false);
+  // Reveal the filtered result only after the user clicks Find Regulations.
+  const [ran, setRan] = useState(false);
 
   const { data: production = [] } = useQuery({
     queryKey: ["rules", "production"],
@@ -1100,11 +1102,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
     queryKey: ["rules", "staging"],
     queryFn: () => api.get<Rule[]>("/api/rules?status=staging"),
   });
-  const { data: licenses = [] } = useQuery({
-    queryKey: ["entity-licenses", entity.id],
-    queryFn: () => api.get<License[]>(`/api/licenses?entity_id=${entity.id}`),
-  });
-  const license = licenses[0];
 
   const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
   const inReview = staging.filter((r) => r.entity_ids.includes(entity.id));
@@ -1112,7 +1109,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
   const identified = discovered.length;
   const mandatory = discovered.filter((r) => r.applicability === "Mandatory");
   const conditional = discovered.filter((r) => r.applicability !== "Mandatory");
-  const confirmedForms = confirmed.map((r) => r.form_name || r.name);
 
   return (
     <div className="space-y-4">
@@ -1123,25 +1119,26 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
             <div>
               <h3 className="font-semibold">What applies to this entity</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Run Find Regulations to discover obligations, then your Primary &
-                Secondary Activity answers decide what's mandatory vs conditional.
+                Reads the obligations discovered under Compliance Rules and your
+                Primary &amp; Secondary Activity answers, then splits them into
+                mandatory vs conditional. No new AI call — it just filters.
               </p>
             </div>
-            {isAdmin && (
-              <Button
-                onClick={() => setAiOpen(true)}
-                disabled={!license}
-                title={license ? undefined : "Add a license to this entity first"}
-              >
-                <Sparkles className="h-4 w-4" />
-                Find Regulations
-              </Button>
-            )}
+            <Button onClick={() => { queryClient.invalidateQueries({ queryKey: ["rules"] }); setRan(true); }}>
+              <Sparkles className="h-4 w-4" />
+              Find Regulations
+            </Button>
           </div>
 
-          {identified === 0 ? (
+          {!ran ? (
             <p className="text-sm text-muted-foreground">
-              Nothing discovered yet. Click Find Regulations above.
+              Click <strong>Find Regulations</strong> to see what's mandatory for
+              this entity.
+            </p>
+          ) : identified === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing discovered yet — run Find Regulations under the Compliance
+              Rules tab first.
             </p>
           ) : (
             <>
@@ -1246,16 +1243,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
         </table>
       )}
     </Card>
-
-      {license && (
-        <AIExtractDialog
-          license={license}
-          open={aiOpen}
-          onOpenChange={setAiOpen}
-          existingForms={confirmedForms}
-          onCreated={() => queryClient.invalidateQueries({ queryKey: ["rules"] })}
-        />
-      )}
     </div>
   );
 }
