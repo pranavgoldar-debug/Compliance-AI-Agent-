@@ -18,7 +18,11 @@ import {
   ChevronUp,
   ChevronDown,
   ArrowDown,
+  Sparkles,
+  Check,
+  X,
 } from "lucide-react";
+import { AIExtractDialog } from "@/pages/LicensesPage";
 import { api } from "@/lib/api";
 import {
   Dialog,
@@ -45,7 +49,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { gatesForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, Entity, License, Obligation } from "@/types/api";
+import type { ActivityOut, Entity, License, Obligation, Rule } from "@/types/api";
 
 
 function StatTile({
@@ -142,6 +146,7 @@ export function EntityDetailPage() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="profile">Activity Profile</TabsTrigger>
+          <TabsTrigger value="rules">Compliance Rules</TabsTrigger>
           <TabsTrigger value="registrations">Registrations</TabsTrigger>
           <TabsTrigger value="licenses">
             Licenses
@@ -165,6 +170,14 @@ export function EntityDetailPage() {
 
         <TabsContent value="profile">
           <ActivityProfileTab entity={entity} isAdmin={isAdmin} />
+        </TabsContent>
+
+        <TabsContent value="rules">
+          <ComplianceRulesTab
+            entity={entity}
+            licenses={entityLicenses}
+            isAdmin={isAdmin}
+          />
         </TabsContent>
 
         <TabsContent value="registrations">
@@ -266,6 +279,206 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Compliance Rules — AI-generated obligations awaiting review + confirmed ones
+// ---------------------------------------------------------------------------
+function ComplianceRulesTab({
+  entity,
+  licenses,
+  isAdmin,
+}: {
+  entity: Entity;
+  licenses: License[];
+  isAdmin: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [aiOpen, setAiOpen] = useState(false);
+
+  const { data: staging = [], isLoading: loadingStaging } = useQuery({
+    queryKey: ["rules", "staging"],
+    queryFn: () => api.get<Rule[]>("/api/rules?status=staging"),
+  });
+  const { data: production = [], isLoading: loadingProd } = useQuery({
+    queryKey: ["rules", "production"],
+    queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
+  });
+
+  const review = staging.filter((r) => r.entity_ids.includes(entity.id));
+  const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["rules"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["obligations"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
+  const approve = useMutation({
+    mutationFn: (id: number) =>
+      api.patch(`/api/rules/${id}`, { status: "production" }),
+    onSuccess: refresh,
+  });
+  const reject = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/rules/${id}`),
+    onSuccess: refresh,
+  });
+
+  // AI generation needs a license to read; use the first one the entity holds.
+  const license = licenses[0];
+  const confirmedForms = confirmed.map((r) => r.form_name || r.name);
+
+  const RuleRow = ({ r, mode }: { r: Rule; mode: "review" | "confirmed" }) => (
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm">{r.name}</span>
+          <Badge variant={r.applicability === "Mandatory" ? "alert" : "neutral"}>
+            {r.applicability}
+          </Badge>
+        </div>
+        <div className="text-xs text-muted-foreground mt-0.5">
+          {r.authority} · {r.category} · {r.frequency}
+        </div>
+      </div>
+      {isAdmin && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          {mode === "review" ? (
+            <>
+              <Button
+                size="sm"
+                onClick={() => approve.mutate(r.id)}
+                disabled={approve.isPending || reject.isPending}
+              >
+                <Check className="h-3.5 w-3.5" />
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => reject.mutate(r.id)}
+                disabled={approve.isPending || reject.isPending}
+              >
+                <X className="h-3.5 w-3.5" />
+                Reject
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => {
+                if (window.confirm(`Remove "${r.name}" from this entity's confirmed rules?`)) {
+                  reject.mutate(r.id);
+                }
+              }}
+              disabled={reject.isPending}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-5 space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="font-semibold">Compliance rules</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                AI proposes the regulatory obligations this entity owes. Review
+                each one, then approve to confirm it.
+              </p>
+            </div>
+            {isAdmin && (
+              <Button
+                onClick={() => setAiOpen(true)}
+                disabled={!license}
+                title={license ? undefined : "Add a license to this entity first"}
+              >
+                <Sparkles className="h-4 w-4" />
+                Generate with AI
+              </Button>
+            )}
+          </div>
+          {!license && (
+            <p className="text-xs text-amber-700 pt-1">
+              No license on this entity yet — add one under the Licenses tab to
+              scan with AI.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Review (AI Generated) */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-sm">Review (AI generated)</h3>
+            <Badge variant="alert">{review.length}</Badge>
+          </div>
+          {loadingStaging ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+              <Loader2 className="h-4 w-4 animate-spin text-aspora-600" /> Loading…
+            </div>
+          ) : review.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing awaiting review. Use “Generate with AI” to find obligations.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {review.map((r) => (
+                <RuleRow key={r.id} r={r} mode="review" />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Confirmed */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-sm">Confirmed</h3>
+            <Badge variant="completed">{confirmed.length}</Badge>
+          </div>
+          {loadingProd ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+              <Loader2 className="h-4 w-4 animate-spin text-aspora-600" /> Loading…
+            </div>
+          ) : confirmed.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No confirmed rules yet. Approve items from Review to add them here.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {confirmed.map((r) => (
+                <RuleRow key={r.id} r={r} mode="confirmed" />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {license && (
+        <AIExtractDialog
+          license={license}
+          open={aiOpen}
+          onOpenChange={setAiOpen}
+          existingForms={confirmedForms}
+          onCreated={refresh}
+        />
+      )}
     </div>
   );
 }

@@ -789,7 +789,7 @@ function isTracked(candidateForm: string, existing: string[]): boolean {
   });
 }
 
-function AIExtractDialog({
+export function AIExtractDialog({
   license,
   open,
   onOpenChange,
