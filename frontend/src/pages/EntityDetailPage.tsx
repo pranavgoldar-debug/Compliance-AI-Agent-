@@ -159,6 +159,7 @@ export function EntityDetailPage() {
             entity={entity}
             obligations={obligations ?? []}
             licenses={entityLicenses}
+            onManageLicenses={() => setTab("licenses")}
           />
         </TabsContent>
 
@@ -397,20 +398,7 @@ function EditEntityDialog({
   const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
   const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
   const [shortCode, setShortCode] = useState(entity.short_code ?? "");
-  const [countryLeadId, setCountryLeadId] = useState<number | "">(
-    entity.country_lead?.id ?? "",
-  );
   const [error, setError] = useState<string | null>(null);
-
-  // Users list for the country-lead picker. Admin-only endpoint covers
-  // every user incl. inactive ones; if non-admin somehow opens this
-  // dialog the call returns 403 and the dropdown stays empty (which is
-  // fine — only admins can hit the Edit button anyway).
-  const { data: users = [] } = useQuery({
-    queryKey: ["users", "admin"],
-    queryFn: () => api.get<{ id: number; full_name: string; email: string }[]>("/api/users/admin"),
-    enabled: open,
-  });
 
   // Re-sync the form when the entity object changes (e.g. polling refresh).
   useEffect(() => {
@@ -421,7 +409,6 @@ function EditEntityDialog({
       setFye(entity.fiscal_year_end ?? "");
       setIncDate(entity.incorporation_date ?? "");
       setShortCode(entity.short_code ?? "");
-      setCountryLeadId(entity.country_lead?.id ?? "");
       setError(null);
     }
   }, [open, entity]);
@@ -435,7 +422,6 @@ function EditEntityDialog({
         fiscal_year_end: fye.trim() || null,
         incorporation_date: incDate || null,
         short_code: shortCode.trim() || null,
-        country_lead_id: countryLeadId === "" ? null : Number(countryLeadId),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entity", entity.id] });
@@ -500,28 +486,6 @@ function EditEntityDialog({
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Country lead</label>
-            <select
-              value={countryLeadId}
-              onChange={(e) =>
-                setCountryLeadId(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="">— None —</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name || u.email}
-                </option>
-              ))}
-            </select>
-            <p className="text-[11px] text-muted-foreground">
-              Single owner for this entity — they get pinged first on
-              regulator changes + escalations.
-            </p>
-          </div>
-
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {error}
@@ -553,10 +517,12 @@ function OverviewTab({
   entity,
   obligations,
   licenses,
+  onManageLicenses,
 }: {
   entity: Entity;
   obligations: Obligation[];
   licenses: License[];
+  onManageLicenses: () => void;
 }) {
   // Recent 5 obligation changes — fake "recent activity" feed sourced from
   // updated_at on this entity's obligations. Real activity feed lands in P5.
@@ -595,39 +561,16 @@ function OverviewTab({
       <div className="space-y-4">
         <Card>
           <CardContent className="p-6 space-y-3">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Country lead
-            </h3>
-            {entity.country_lead ? (
-              <div className="flex items-center gap-3">
-                <Avatar className="h-11 w-11">
-                  <AvatarFallback>{userInitials(entity.country_lead.full_name)}</AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{entity.country_lead.full_name}</div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {entity.country_lead.email}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground italic">Unassigned</div>
-            )}
-            <div className="text-xs text-muted-foreground pt-2 border-t border-border">
-              Backup: <span className="italic">Unassigned</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Licenses held
               </h3>
-              <Link to="/licenses" className="text-xs text-aspora-700 hover:underline">
+              <button
+                onClick={onManageLicenses}
+                className="text-xs text-aspora-700 hover:underline"
+              >
                 Manage
-              </Link>
+              </button>
             </div>
             {licenses.length === 0 ? (
               <div className="text-sm text-muted-foreground italic">
@@ -654,37 +597,6 @@ function OverviewTab({
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Linked key persons
-              </h3>
-              <button className="text-xs text-aspora-700 hover:underline" disabled>
-                View all
-              </button>
-            </div>
-            <ul className="space-y-2 text-sm">
-              {entity.country_lead && (
-                <li className="flex items-center gap-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-[10px]">
-                      {userInitials(entity.country_lead.full_name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <div className="font-medium">{entity.country_lead.full_name}</div>
-                    <div className="text-xs text-muted-foreground">Authorised signatory</div>
-                  </div>
-                </li>
-              )}
-              <li className="text-xs text-muted-foreground italic pl-1 pt-1">
-                Add directors and signatories from the Key Persons tab.
-              </li>
-            </ul>
           </CardContent>
         </Card>
       </div>
