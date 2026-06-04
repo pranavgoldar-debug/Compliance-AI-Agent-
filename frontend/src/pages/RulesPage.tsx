@@ -10,6 +10,8 @@ import {
   CircleCheck,
   CircleAlert,
   CircleHelp,
+  Archive,
+  AlertTriangle,
   ExternalLink,
   FileText,
   Loader2,
@@ -71,6 +73,20 @@ export function RulesPage() {
       return rs.length;
     },
   });
+
+  // Regulatory changes detected by monitoring (source_changed_at set on a live
+  // rule). These surface in For Action for human review alongside new rules.
+  const { data: changedRules = [] } = useQuery({
+    queryKey: ["rules-changes"],
+    queryFn: async () => {
+      const rs = await api.get<Rule[]>("/api/rules?status=production");
+      return rs.filter((r) => r.source_changed_at);
+    },
+    enabled: tab === "staging",
+  });
+  const changes = jurisdictionCode
+    ? changedRules.filter((r) => r.jurisdiction_code === jurisdictionCode)
+    : changedRules;
 
   const filtered = useMemo(() => {
     if (!rules) return [];
@@ -181,13 +197,15 @@ export function RulesPage() {
         </select>
       </div>
 
+      {tab === "staging" && changes.length > 0 && <ChangesPanel rules={changes} />}
+
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-12" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : filtered.length === 0 && !(tab === "staging" && changes.length > 0) ? (
         <EmptyState
           icon={<FileText className="h-6 w-6" />}
           title={
@@ -225,6 +243,57 @@ export function RulesPage() {
 
 
 // ---------------------------------------------------------------------------
+// Detected regulatory changes — surfaced in For Action for human review.
+// ---------------------------------------------------------------------------
+function ChangesPanel({ rules }: { rules: Rule[] }) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4 text-amber-600" />
+        <h3 className="text-sm font-semibold text-amber-900">
+          Regulatory changes detected ({rules.length})
+        </h3>
+      </div>
+      <p className="text-xs text-amber-800/80">
+        Weekly monitoring flagged updates on these live obligations. Review the
+        source, then edit or re-approve the rule under Approved.
+      </p>
+      <div className="space-y-2">
+        {rules.map((r) => (
+          <div
+            key={r.id}
+            className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-background px-3 py-2"
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <JurisdictionBadge code={r.jurisdiction_code} showName={false} />
+                <span className="font-medium text-sm truncate">{r.form_name}</span>
+                <Badge variant="alert">Change detected</Badge>
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {r.authority} · {r.category} · detected{" "}
+                {r.source_changed_at ? fmtRelative(r.source_changed_at) : "—"}
+              </div>
+            </div>
+            {r.source_url && (
+              <a
+                href={r.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-aspora-700 hover:underline inline-flex items-center gap-1 shrink-0"
+              >
+                View source <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
 // Production table
 // ---------------------------------------------------------------------------
 function ProductionTable({ rules }: { rules: Rule[] }) {
@@ -256,6 +325,18 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
       window.alert(
         `Removed ${r.deleted_rules} draft rule(s) and ${r.deleted_obligations} filing(s) you added in the last 24 hours. Production catalogue rules were left untouched.`,
       );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  // Mark an approved obligation inactive (archive it) when it no longer applies.
+  const archiveMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.patch<Rule>(`/api/rules/${id}`, { status: "archived" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
@@ -368,6 +449,8 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-right font-medium">Entities</th>
               <th className="px-3 py-2.5 text-left font-medium">Owner</th>
+              <th className="px-3 py-2.5 text-left font-medium">Reviewer</th>
+              <th className="px-3 py-2.5 text-left font-medium">Approver</th>
               <th className="px-3 py-2.5 text-left font-medium">Approved</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
               <th className="px-3 py-2.5 w-8" />
@@ -398,6 +481,12 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   {userName(r.owner_id)}
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                  {userName(r.reviewer_id)}
+                </td>
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                  {userName(r.approver_id)}
+                </td>
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {r.approved_at ? fmtRelative(r.approved_at) : "—"}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
@@ -418,7 +507,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                     )}
                   </button>
                 </td>
-                <td className="px-3 py-2.5 text-right">
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -428,6 +517,26 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
+                  {isAdmin && r.status === "production" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      title="Mark inactive — archive this obligation (no longer applies)"
+                      disabled={archiveMutation.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Mark "${r.form_name}" inactive? It will be archived and stop generating filings.`,
+                          )
+                        ) {
+                          archiveMutation.mutate(r.id);
+                        }
+                      }}
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}

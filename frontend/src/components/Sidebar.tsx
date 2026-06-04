@@ -67,7 +67,7 @@ const NAV_GROUPS: NavGroup[] = [
     adminOnly: true,
     items: [
       { to: "/entities", label: "Entities", icon: Building2, adminOnly: true },
-      { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
+      { to: "/rules", label: "Review & Assign", icon: Library, adminOnly: true },
       // /regulations (Regulation Library) intentionally hidden — overlaps
       // with "Add rule from text" on the Compliance Rules page and was
       // confusing users with a slow/blank state. Re-add the line above to
