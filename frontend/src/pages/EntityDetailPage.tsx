@@ -147,7 +147,7 @@ export function EntityDetailPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="profile">Activity Profile</TabsTrigger>
           <TabsTrigger value="rules">Compliance Rules</TabsTrigger>
-          <TabsTrigger value="detailed">Detailed Questions</TabsTrigger>
+          <TabsTrigger value="detailed">Scoping Questions</TabsTrigger>
           <TabsTrigger value="registrations">Registrations</TabsTrigger>
           <TabsTrigger value="licenses">
             Licenses
@@ -318,7 +318,7 @@ function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: bo
     <Card>
       <CardContent className="p-5 space-y-3">
         <div>
-          <h3 className="font-semibold">Detailed questions</h3>
+          <h3 className="font-semibold">Scoping questions</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Specific scoping questions for this entity's jurisdiction and
             activities. Answer these after running Find Regulations — they narrow
@@ -1089,100 +1089,7 @@ const DEMO_REGISTRATIONS_PER_JURISDICTION: Record<
 
 function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const rows = DEMO_REGISTRATIONS_PER_JURISDICTION[entity.jurisdiction_code] ?? [];
-  const { data: production = [] } = useQuery({
-    queryKey: ["rules", "production"],
-    queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
-  });
-  const { data: staging = [] } = useQuery({
-    queryKey: ["rules", "staging"],
-    queryFn: () => api.get<Rule[]>("/api/rules?status=staging"),
-  });
-  const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
-  const inReview = staging.filter((r) => r.entity_ids.includes(entity.id));
-  const identified = confirmed.length + inReview.length;
-  const mandatory = confirmed.filter((r) => r.applicability === "Mandatory");
-  const conditional = confirmed.filter((r) => r.applicability !== "Mandatory");
-
   return (
-    <div className="space-y-4">
-      {/* Validation outcome — what's mandatory for this entity */}
-      <Card>
-        <CardContent className="p-5 space-y-3">
-          <div>
-            <h3 className="font-semibold">What applies to this entity</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Based on the uploaded licenses and the Activity Profile answers,
-              here's what's mandatory vs conditional. Confirm obligations under
-              the Compliance Rules tab to populate this.
-            </p>
-          </div>
-          {identified > 0 && (
-            <div className="flex items-center gap-2 text-xs flex-wrap">
-              <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
-                {identified} identified
-              </span>
-              <span className="text-muted-foreground">→</span>
-              <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
-                {confirmed.length} confirmed
-              </span>
-              <span className="text-muted-foreground">→</span>
-              <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
-                {mandatory.length} mandatory
-              </span>
-            </div>
-          )}
-          {confirmed.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No confirmed obligations yet. Run Find Regulations and approve them
-              under Compliance Rules.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="alert">{mandatory.length}</Badge>
-                  <span className="text-sm font-medium">Mandatory</span>
-                </div>
-                {mandatory.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">None.</p>
-                ) : (
-                  <ul className="space-y-1 text-sm">
-                    {mandatory.map((r) => (
-                      <li key={r.id} className="truncate">
-                        {r.name}{" "}
-                        <span className="text-[11px] text-muted-foreground">· {r.frequency}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div className="rounded-lg border border-border bg-secondary/30 p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="neutral">{conditional.length}</Badge>
-                  <span className="text-sm font-medium">Conditional / optional</span>
-                </div>
-                {conditional.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">None.</p>
-                ) : (
-                  <ul className="space-y-1 text-sm">
-                    {conditional.map((r) => (
-                      <li key={r.id} className="truncate">
-                        {r.name}
-                        {r.applicability_note && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {" "}· {r.applicability_note}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30">
         <h3 className="text-sm font-semibold">Tax & legal registrations</h3>
@@ -1224,7 +1131,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
         </table>
       )}
     </Card>
-    </div>
   );
 }
 
