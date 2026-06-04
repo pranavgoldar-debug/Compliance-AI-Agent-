@@ -15,6 +15,9 @@ import {
   KeyRound,
   Plus,
   Trash2,
+  ChevronUp,
+  ChevronDown,
+  ArrowDown,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -42,7 +45,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { gatesForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, Entity, License, Obligation, OwnerStake } from "@/types/api";
+import type { ActivityOut, Entity, License, Obligation, OwnershipStage } from "@/types/api";
 
 
 function StatTile({
@@ -220,21 +223,31 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     saveProfile.mutate(next);
   };
 
-  // Ownership — editable list of owners / controllers with % holding.
-  const [owners, setOwners] = useState<OwnerStake[]>(entity.ownership ?? []);
+  // Ownership — ordered chain of layers, ultimate parent → … → this entity.
+  const [stages, setStages] = useState<OwnershipStage[]>(entity.ownership ?? []);
   const [dirty, setDirty] = useState(false);
   const saveOwners = useMutation({
-    mutationFn: (next: OwnerStake[]) =>
+    mutationFn: (next: OwnershipStage[]) =>
       api.patch<Entity>(`/api/entities/${entity.id}`, {
-        ownership: next.filter((o) => o.name.trim()),
+        ownership: next.filter((s) => s.name.trim()),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entity"] });
       setDirty(false);
     },
   });
-  const setOwner = (i: number, patch: Partial<OwnerStake>) => {
-    setOwners((arr) => arr.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
+  const setStage = (i: number, patch: Partial<OwnershipStage>) => {
+    setStages((arr) => arr.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+    setDirty(true);
+  };
+  const moveStage = (i: number, dir: -1 | 1) => {
+    setStages((arr) => {
+      const j = i + dir;
+      if (j < 0 || j >= arr.length) return arr;
+      const next = [...arr];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
     setDirty(true);
   };
 
@@ -307,7 +320,7 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
             <div>
               <h3 className="font-semibold">Ownership structure</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Owners / controllers and their shareholding.
+                The ownership chain, from the ultimate parent down to this entity.
               </p>
             </div>
             {isAdmin && (
@@ -315,62 +328,86 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setOwners((arr) => [...arr, { name: "", percent: null }]);
+                  setStages((arr) => [...arr, { name: "", role: "" }]);
                   setDirty(true);
                 }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add owner
+                Add layer
               </Button>
             )}
           </div>
 
-          {owners.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No owners recorded yet.</p>
+          {stages.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No ownership layers recorded yet.
+            </p>
           ) : (
-            <div className="space-y-2">
-              {owners.map((o, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <Input
-                    value={o.name}
-                    disabled={!isAdmin}
-                    placeholder="Owner / controller name"
-                    onChange={(e) => setOwner(i, { name: e.target.value })}
-                    className="flex-1"
-                  />
-                  <div className="relative w-28">
+            <div className="space-y-0">
+              {stages.map((s, i) => (
+                <div key={i}>
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2">
+                    {isAdmin && (
+                      <div className="flex flex-col">
+                        <button
+                          type="button"
+                          disabled={i === 0}
+                          onClick={() => moveStage(i, -1)}
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                          title="Move up"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={i === stages.length - 1}
+                          onClick={() => moveStage(i, 1)}
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                          title="Move down"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                     <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={o.percent ?? ""}
+                      value={s.name}
                       disabled={!isAdmin}
-                      placeholder="%"
-                      onChange={(e) =>
-                        setOwner(i, {
-                          percent: e.target.value === "" ? null : Number(e.target.value),
-                        })
-                      }
-                      className="pr-6"
+                      placeholder="Company / owner name"
+                      onChange={(e) => setStage(i, { name: e.target.value })}
+                      className="flex-1"
                     />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      %
-                    </span>
+                    <Input
+                      value={s.role}
+                      disabled={!isAdmin}
+                      placeholder="Role (e.g. Ultimate parent)"
+                      onChange={(e) => setStage(i, { role: e.target.value })}
+                      className="w-52"
+                    />
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setStages((arr) => arr.filter((_, idx) => idx !== i));
+                          setDirty(true);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    )}
                   </div>
-                  {isAdmin && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setOwners((arr) => arr.filter((_, idx) => idx !== i));
-                        setDirty(true);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  )}
+                  <div className="flex justify-center py-1 text-muted-foreground">
+                    <ArrowDown className="h-4 w-4" />
+                  </div>
                 </div>
               ))}
+              {/* This entity is always the final node in the chain. */}
+              <div className="flex items-center gap-2 rounded-lg border border-aspora-300 bg-aspora-50/40 px-3 py-2">
+                <span className="font-medium text-sm">{entity.name}</span>
+                <Badge variant="neutral" className="ml-auto">
+                  This entity
+                </Badge>
+              </div>
             </div>
           )}
 
@@ -378,7 +415,7 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
             <div className="flex justify-end">
               <Button
                 size="sm"
-                onClick={() => saveOwners.mutate(owners)}
+                onClick={() => saveOwners.mutate(stages)}
                 disabled={saveOwners.isPending}
               >
                 {saveOwners.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -32,9 +32,10 @@ export interface UserBrief {
   department?: Department | null;
 }
 
-export interface OwnerStake {
+// One layer in the ownership chain, ordered ultimate-parent → … → this entity.
+export interface OwnershipStage {
   name: string;
-  percent: number | null;
+  role: string;
 }
 
 export interface Entity {
@@ -47,7 +48,7 @@ export interface Entity {
   incorporation_date: string | null;
   fiscal_year_end: string | null;
   finance_profile: Record<string, string> | null;
-  ownership: OwnerStake[] | null;
+  ownership: OwnershipStage[] | null;
   country_lead: UserBrief | null;
   archived_at: string | null;
   created_at: string;
