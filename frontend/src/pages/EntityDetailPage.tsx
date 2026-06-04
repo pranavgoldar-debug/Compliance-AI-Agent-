@@ -1033,10 +1033,18 @@ function ObligationsTab({
 function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [aiLicense, setAiLicense] = useState<License | null>(null);
   const { data: licenses = [], isLoading } = useQuery({
     queryKey: ["entity-licenses", entity.id],
     queryFn: () => api.get<License[]>(`/api/licenses?entity_id=${entity.id}`),
     refetchInterval: 30_000,
+  });
+  const refreshLicenses = () =>
+    queryClient.invalidateQueries({ queryKey: ["entity-licenses", entity.id] });
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/licenses/${id}`),
+    onSuccess: refreshLicenses,
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
   return (
     <Card>
@@ -1068,6 +1076,7 @@ function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) 
                   <th className="text-left px-3 py-2 font-medium">Authority</th>
                   <th className="text-left px-3 py-2 font-medium">No.</th>
                   <th className="text-left px-3 py-2 font-medium">Expiry</th>
+                  {isAdmin && <th className="px-3 py-2 w-24" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1090,6 +1099,36 @@ function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) 
                     <td className="px-3 py-2 text-muted-foreground">
                       {l.expiry_date || "No expiry"}
                     </td>
+                    {isAdmin && (
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Find regulations with AI"
+                          onClick={() => setAiLicense(l)}
+                        >
+                          <Sparkles className="h-3.5 w-3.5 text-aspora-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-destructive"
+                          title="Delete license"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Delete "${l.name}"? This removes the license and its file. This can't be undone.`,
+                              )
+                            ) {
+                              deleteMutation.mutate(l.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1102,10 +1141,22 @@ function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) 
         onOpenChange={setUploadOpen}
         presetEntityId={entity.id}
         onUploaded={() => {
-          queryClient.invalidateQueries({ queryKey: ["entity-licenses", entity.id] });
+          refreshLicenses();
           setUploadOpen(false);
         }}
       />
+      {aiLicense && (
+        <AIExtractDialog
+          license={aiLicense}
+          open={!!aiLicense}
+          onOpenChange={(v) => !v && setAiLicense(null)}
+          existingForms={[]}
+          onCreated={() => {
+            queryClient.invalidateQueries({ queryKey: ["rules"] });
+            refreshLicenses();
+          }}
+        />
+      )}
     </Card>
   );
 }
