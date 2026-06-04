@@ -1114,6 +1114,7 @@ type AssessResp = { available: boolean; items: AssessItem[]; notes?: string | nu
 
 function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const rows = DEMO_REGISTRATIONS_PER_JURISDICTION[entity.jurisdiction_code] ?? [];
+  const queryClient = useQueryClient();
 
   // AI assessment: read the entity's activity answers + discovered list and
   // classify each obligation as mandatory / conditional / not-applicable.
@@ -1127,6 +1128,48 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
   const mandatory = group("mandatory");
   const conditional = group("conditional");
   const notApplicable = group("not_applicable");
+
+  // Human curates which assessed obligations go into Review & Assign. Default:
+  // mandatory + conditional ticked; not-applicable left for the human to add.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (result) {
+      setPicked(
+        new Set(
+          items.filter((i) => i.verdict !== "not_applicable").map((i) => i.form_name),
+        ),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assess.data]);
+  const toggle = (form: string) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      n.has(form) ? n.delete(form) : n.add(form);
+      return n;
+    });
+
+  // Push the human-selected obligations into Review & Assign (For Action),
+  // setting applicability per the AI verdict. Unticked → archived (kept out).
+  const addToReview = useMutation({
+    mutationFn: async () => {
+      await Promise.all(
+        items
+          .filter((i) => i.rule_id)
+          .map((i) =>
+            api.patch(`/api/rules/${i.rule_id}`, {
+              status: picked.has(i.form_name) ? "staging" : "archived",
+              applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
+            }),
+          ),
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      window.alert(`${picked.size} obligation(s) sent to Review & Assign.`);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
   const Col = ({
     title,
@@ -1158,16 +1201,24 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
       ) : (
         <ul className="space-y-1.5 text-sm">
           {list.map((i) => (
-            <li key={i.form_name}>
-              <div className="font-medium">
-                {i.name}{" "}
-                {i.frequency && (
-                  <span className="text-[11px] text-muted-foreground">· {i.frequency}</span>
+            <li key={i.form_name} className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-1 accent-aspora-600 shrink-0"
+                checked={picked.has(i.form_name)}
+                onChange={() => toggle(i.form_name)}
+              />
+              <div className="min-w-0">
+                <div className="font-medium">
+                  {i.name}{" "}
+                  {i.frequency && (
+                    <span className="text-[11px] text-muted-foreground">· {i.frequency}</span>
+                  )}
+                </div>
+                {i.reason && (
+                  <div className="text-[11px] text-muted-foreground">{i.reason}</div>
                 )}
               </div>
-              {i.reason && (
-                <div className="text-[11px] text-muted-foreground">{i.reason}</div>
-              )}
             </li>
           ))}
         </ul>
@@ -1187,6 +1238,7 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
                 AI reads your Primary &amp; Secondary Activity answers and the
                 obligations discovered under Compliance Rules, then decides which
                 are mandatory, which stay conditional, and which don't apply.
+                Tick the ones to send to Review &amp; Assign.
               </p>
             </div>
             <Button onClick={() => assess.mutate()} disabled={assess.isPending}>
@@ -1215,18 +1267,30 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
             </p>
           ) : (
             <>
-              <div className="flex items-center gap-2 text-xs flex-wrap">
-                <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
-                  {items.length} identified
-                </span>
-                <span className="text-muted-foreground">→</span>
-                <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
-                  {mandatory.length} mandatory
-                </span>
-                <span className="text-muted-foreground">→</span>
-                <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-1 font-medium">
-                  {notApplicable.length} not applicable
-                </span>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 text-xs flex-wrap">
+                  <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
+                    {items.length} identified
+                  </span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
+                    {mandatory.length} mandatory
+                  </span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-1 font-medium">
+                    {notApplicable.length} not applicable
+                  </span>
+                </div>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    onClick={() => addToReview.mutate()}
+                    disabled={addToReview.isPending}
+                  >
+                    {addToReview.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Add {picked.size} to Review &amp; Assign
+                  </Button>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <Col title="Mandatory" list={mandatory} tone="alert" />
