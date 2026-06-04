@@ -152,7 +152,6 @@ export function EntityDetailPage() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -187,10 +186,6 @@ export function EntityDetailPage() {
 
         <TabsContent value="licenses">
           <LicensesTab entity={entity} isAdmin={isAdmin} />
-        </TabsContent>
-
-        <TabsContent value="documents">
-          <DocumentsTab entity={entity} />
         </TabsContent>
       </Tabs>
     </div>

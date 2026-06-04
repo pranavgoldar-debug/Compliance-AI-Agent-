@@ -83,6 +83,30 @@ def remove_pending_obligations_for_rule(db: Session, rule: Rule) -> None:
     )
 
 
+@router.post("/ensure-calendar")
+def ensure_calendar(
+    db: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Make sure every rule that's in review (staging) or approved (production)
+    has its calendar obligation. Safe to call repeatedly — idempotent. Used so
+    For Action items auto-appear on the calendar even if they predate the
+    auto-generation logic."""
+    rules = (
+        db.execute(
+            select(Rule).where(
+                Rule.status.in_([RuleStatus.staging, RuleStatus.production])
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for rule in rules:
+        ensure_obligations_for_rule(db, rule)
+    db.commit()
+    return {"checked": len(rules)}
+
+
 def _serialize_rule(rule: Rule) -> RuleOut:
     return RuleOut(
         id=rule.id,

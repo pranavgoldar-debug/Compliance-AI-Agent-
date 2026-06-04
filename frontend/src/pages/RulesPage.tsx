@@ -100,6 +100,12 @@ export function RulesPage() {
     },
   });
 
+  // On open, make sure every For Action / Approved rule has its calendar
+  // obligation — so items show on the calendar automatically.
+  useEffect(() => {
+    api.post("/api/rules/ensure-calendar").catch(() => {});
+  }, []);
+
   // Regulatory changes detected by monitoring (source_changed_at set on a live
   // rule). These surface in For Action for human review alongside new rules.
   const { data: changedRules = [] } = useQuery({
