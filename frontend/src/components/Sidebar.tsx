@@ -43,7 +43,7 @@ interface NavGroup {
 // with the Awaiting payment chip distinguishing the two phases.
 const NAV_GROUPS: NavGroup[] = [
   {
-    heading: "Compliance OS",
+    heading: "Finance Compliance OS",
     items: [
       { to: "/", label: "Home", icon: LayoutDashboard, exact: true },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },

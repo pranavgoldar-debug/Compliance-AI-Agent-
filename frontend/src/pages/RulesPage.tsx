@@ -45,7 +45,31 @@ import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtRelative, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Rule, RuleStatus, UserBrief } from "@/types/api";
+import type { Rule, RuleStatus, UserBrief, Obligation } from "@/types/api";
+import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
+
+// Open the obligation (filing) generated from a rule — looks it up by the
+// rule's first entity and opens the same detail drawer used on Filings.
+function useOpenFiling() {
+  const { openObligation } = useObligationDrawer();
+  return async (rule: Rule) => {
+    const eid = rule.entity_ids[0];
+    if (!eid) {
+      window.alert("No entity linked to this rule yet.");
+      return;
+    }
+    try {
+      const obs = await api.get<Obligation[]>(
+        `/api/obligations?entity_id=${eid}&limit=300`,
+      );
+      const match = obs.find((o) => o.rule_id === rule.id);
+      if (match) openObligation(match.id);
+      else window.alert("No filing generated for this rule yet — approve it first.");
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+}
 
 export function RulesPage() {
   const [tab, setTab] = useState<RuleStatus>("staging");
@@ -53,6 +77,7 @@ export function RulesPage() {
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
+  const [dateOrder, setDateOrder] = useState<"latest" | "oldest">("latest");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -91,16 +116,23 @@ export function RulesPage() {
 
   const filtered = useMemo(() => {
     if (!rules) return [];
-    if (!q.trim()) return rules;
-    const needle = q.trim().toLowerCase();
-    return rules.filter(
-      (r) =>
-        r.name.toLowerCase().includes(needle) ||
-        r.form_name.toLowerCase().includes(needle) ||
-        r.authority.toLowerCase().includes(needle) ||
-        r.area.toLowerCase().includes(needle),
-    );
-  }, [rules, q]);
+    let arr = rules;
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase();
+      arr = arr.filter(
+        (r) =>
+          r.name.toLowerCase().includes(needle) ||
+          r.form_name.toLowerCase().includes(needle) ||
+          r.authority.toLowerCase().includes(needle) ||
+          r.area.toLowerCase().includes(needle),
+      );
+    }
+    // Sort by when the item was added (created_at) — latest or oldest first.
+    return [...arr].sort((a, b) => {
+      const cmp = a.created_at.localeCompare(b.created_at);
+      return dateOrder === "latest" ? -cmp : cmp;
+    });
+  }, [rules, q, dateOrder]);
 
   const categories = useMemo(() => {
     if (!rules) return [];
@@ -190,6 +222,14 @@ export function RulesPage() {
               {c}
             </option>
           ))}
+        </select>
+        <select
+          value={dateOrder}
+          onChange={(e) => setDateOrder(e.target.value as "latest" | "oldest")}
+          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          <option value="latest">Latest first</option>
+          <option value="oldest">Oldest first</option>
         </select>
       </div>
 
@@ -345,6 +385,7 @@ function ChangesPanel({ rules }: { rules: Rule[] }) {
 // Production table
 // ---------------------------------------------------------------------------
 function ProductionTable({ rules }: { rules: Rule[] }) {
+  const openFiling = useOpenFiling();
   const [checking, setChecking] = useState<Rule | null>(null);
   const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
   const queryClient = useQueryClient();
@@ -519,7 +560,13 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   <JurisdictionBadge code={r.jurisdiction_code} />
                 </td>
                 <td className="px-3 py-2.5">
-                  <div className="font-medium">{r.form_name}</div>
+                  <button
+                    type="button"
+                    onClick={() => openFiling(r)}
+                    className="font-medium text-left hover:text-aspora-700 hover:underline"
+                  >
+                    {r.form_name}
+                  </button>
                   {r.area && <div className="text-xs text-muted-foreground truncate">{r.area}</div>}
                 </td>
                 <td className="px-3 py-2.5 text-muted-foreground">{r.authority}</td>
@@ -908,6 +955,7 @@ function StagingCard({ rule }: { rule: Rule }) {
 // lives in the card view.
 function StagingTable({ rules }: { rules: Rule[] }) {
   const queryClient = useQueryClient();
+  const openFiling = useOpenFiling();
   const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
@@ -948,7 +996,15 @@ function StagingTable({ rules }: { rules: Rule[] }) {
                 <td className="px-3 py-2.5">
                   <JurisdictionBadge code={r.jurisdiction_code} />
                 </td>
-                <td className="px-3 py-2.5 font-medium">{r.form_name}</td>
+                <td className="px-3 py-2.5 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => openFiling(r)}
+                    className="text-left hover:text-aspora-700 hover:underline"
+                  >
+                    {r.form_name}
+                  </button>
+                </td>
                 <td className="px-3 py-2.5 text-muted-foreground">{r.authority}</td>
                 <td className="px-3 py-2.5">
                   <Badge variant="neutral">{r.category}</Badge>
