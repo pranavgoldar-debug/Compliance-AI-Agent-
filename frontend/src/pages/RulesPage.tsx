@@ -504,8 +504,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-right font-medium">Entities</th>
               <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
-              <th className="px-3 py-2.5 text-left font-medium">Approver</th>
-              <th className="px-3 py-2.5 text-left font-medium">Approved</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
               <th className="px-3 py-2.5 w-8" />
             </tr>
@@ -533,12 +531,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {userName(r.owner_id)}
-                </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {userName(r.approver_id)}
-                </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {r.approved_at ? fmtRelative(r.approved_at) : "—"}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
                   <button
