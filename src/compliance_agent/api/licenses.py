@@ -884,24 +884,11 @@ def ai_extract_obligations(
         )
 
     text = _read_license_text(lic)
-    has_file = bool(lic.storage_path)
 
-    # A file is attached but we couldn't pull readable text — that's a scanned
-    # PDF / image. Don't silently fall back to knowledge-mode; tell the admin.
-    if has_file and len(text.strip()) < 200:
-        return LicenseAIExtractResponse(
-            available=False,
-            license_id=license_id,
-            jurisdiction_hint=lic.jurisdiction_code,
-            extracted_chars=len(text),
-            notes=(
-                "Couldn't pull readable text from the uploaded file. If it's "
-                "a scanned PDF, run it through OCR first. If it's an image, "
-                "convert to PDF / paste the relevant text into Compliance "
-                "Rules → Add from text instead."
-            ),
-        )
-
+    # If a file is attached but yields no readable text (scanned PDF / image),
+    # don't fail — fall back to knowledge mode using the licence's metadata
+    # (jurisdiction, authority, type, name) + the entity's activity profile, so
+    # the admin still gets a list to review.
     from_document = len(text.strip()) >= 200
     # Shared instruction: the licensee is also an operating company, so the
     # extract must be a SUPERSET — the licence's own obligations PLUS the
