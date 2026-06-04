@@ -418,6 +418,22 @@ function ComplianceRulesTab({
               scan with AI.
             </p>
           )}
+          {/* Discovery funnel: discovered → in review → confirmed */}
+          {(review.length > 0 || confirmed.length > 0) && (
+            <div className="flex items-center gap-2 pt-2 text-xs">
+              <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
+                {review.length + confirmed.length} discovered
+              </span>
+              <span className="text-muted-foreground">→</span>
+              <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
+                {review.length} in review
+              </span>
+              <span className="text-muted-foreground">→</span>
+              <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
+                {confirmed.length} confirmed
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
 

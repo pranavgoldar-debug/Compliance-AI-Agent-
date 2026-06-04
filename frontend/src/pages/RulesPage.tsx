@@ -636,6 +636,15 @@ function StagingCard({ rule }: { rule: Rule }) {
   const [reviewer, setReviewer] = useState(rule.reviewer_id ? String(rule.reviewer_id) : "");
   const [approver, setApprover] = useState(rule.approver_id ? String(rule.approver_id) : "");
 
+  // Smart assignment: map the rule's function to a team and suggest a person
+  // from it. Admins can override via the dropdown.
+  const suggestedDept = suggestDepartment(rule);
+  const suggested = users.find((u) => u.department === suggestedDept);
+  useEffect(() => {
+    if (!rule.owner_id && !owner && suggested) setOwner(String(suggested.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggested?.id]);
+
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
@@ -737,8 +746,13 @@ function StagingCard({ rule }: { rule: Rule }) {
 
             {/* Assignment — Owner / Reviewer / Approver */}
             <div className="px-5 pb-5 pt-1">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
-                Assign ownership
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2 flex items-center gap-2">
+                <span>Assign ownership</span>
+                {suggested && (
+                  <span className="normal-case tracking-normal text-aspora-700 font-normal">
+                    · auto-suggested {suggestedDept} team
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <AssignSelect label="Owner" value={owner} users={users} onChange={setOwner} />
@@ -824,6 +838,16 @@ function StagingCard({ rule }: { rule: Rule }) {
   );
 }
 
+
+// Map a rule's responsible function / category to the team that should own it.
+function suggestDepartment(rule: Rule): string {
+  const f = `${rule.responsible_function ?? ""} ${rule.category}`.toLowerCase();
+  if (f.includes("legal")) return "legal";
+  if (f.includes("compliance") || f.includes("aml")) return "compliance";
+  if (f.includes("risk")) return "risk";
+  // Finance / tax / accounting → finance team (default).
+  return "finance";
+}
 
 function AssignSelect({
   label,
