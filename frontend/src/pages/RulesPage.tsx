@@ -14,8 +14,10 @@ import {
   AlertTriangle,
   ExternalLink,
   FileText,
+  LayoutList,
   Loader2,
   RefreshCw,
+  Table2,
   Search,
   Sparkles,
   Upload,
@@ -48,6 +50,7 @@ import type { Rule, RuleStatus, UserBrief } from "@/types/api";
 
 export function RulesPage() {
   const [tab, setTab] = useState<RuleStatus>("staging");
+  const [stagingView, setStagingView] = useState<"card" | "table">("card");
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
@@ -230,9 +233,39 @@ export function RulesPage() {
         />
       ) : tab === "staging" ? (
         <div className="space-y-3">
-          {filtered.map((r) => (
-            <StagingCard key={r.id} rule={r} />
-          ))}
+          <div className="flex justify-end">
+            <div className="inline-flex rounded-lg border border-input overflow-hidden text-sm">
+              <button
+                onClick={() => setStagingView("card")}
+                className={cn(
+                  "px-3 h-8 inline-flex items-center gap-1.5",
+                  stagingView === "card"
+                    ? "bg-aspora-600 text-white"
+                    : "bg-background hover:bg-secondary",
+                )}
+              >
+                <LayoutList className="h-3.5 w-3.5" />
+                Cards
+              </button>
+              <button
+                onClick={() => setStagingView("table")}
+                className={cn(
+                  "px-3 h-8 inline-flex items-center gap-1.5 border-l border-input",
+                  stagingView === "table"
+                    ? "bg-aspora-600 text-white"
+                    : "bg-background hover:bg-secondary",
+                )}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+                Table
+              </button>
+            </div>
+          </div>
+          {stagingView === "table" ? (
+            <StagingTable rules={filtered} />
+          ) : (
+            filtered.map((r) => <StagingCard key={r.id} rule={r} />)
+          )}
         </div>
       ) : (
         <ProductionTable rules={filtered} />
@@ -835,6 +868,93 @@ function StagingCard({ rule }: { rule: Rule }) {
         </CardContent>
       )}
     </Card>
+  );
+}
+
+
+// Compact table view for For Action — quick triage. Full review + assignment
+// lives in the card view.
+function StagingTable({ rules }: { rules: Rule[] }) {
+  const queryClient = useQueryClient();
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["rules"] });
+    queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+  };
+  const approve = useMutation({
+    mutationFn: (id: number) => api.patch<Rule>(`/api/rules/${id}`, { status: "production" }),
+    onSuccess: refresh,
+  });
+  const reject = useMutation({
+    mutationFn: (id: number) => api.patch<Rule>(`/api/rules/${id}`, { status: "archived" }),
+    onSuccess: refresh,
+  });
+  const busy = approve.isPending || reject.isPending;
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[900px]">
+          <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2.5 text-left font-medium">Jurisdiction</th>
+              <th className="px-3 py-2.5 text-left font-medium">Obligation</th>
+              <th className="px-3 py-2.5 text-left font-medium">Authority</th>
+              <th className="px-3 py-2.5 text-left font-medium">Category</th>
+              <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
+              <th className="px-3 py-2.5 text-left font-medium">Detected</th>
+              <th className="px-3 py-2.5 text-left font-medium">Source</th>
+              <th className="px-3 py-2.5 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rules.map((r) => (
+              <tr key={r.id} className="hover:bg-secondary/30">
+                <td className="px-3 py-2.5">
+                  <JurisdictionBadge code={r.jurisdiction_code} />
+                </td>
+                <td className="px-3 py-2.5 font-medium">{r.form_name}</td>
+                <td className="px-3 py-2.5 text-muted-foreground">{r.authority}</td>
+                <td className="px-3 py-2.5">
+                  <Badge variant="neutral">{r.category}</Badge>
+                </td>
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.frequency}</td>
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                  {fmtRelative(r.created_at)}
+                </td>
+                <td className="px-3 py-2.5 text-xs">
+                  {r.source_url ? (
+                    <a
+                      href={r.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-aspora-700 hover:underline inline-flex items-center gap-1"
+                    >
+                      Source <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                  <Button size="sm" disabled={busy} onClick={() => approve.mutate(r.id)}>
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-600 ml-1"
+                    disabled={busy}
+                    onClick={() => reject.mutate(r.id)}
+                  >
+                    Reject
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
