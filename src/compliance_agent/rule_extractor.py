@@ -135,6 +135,72 @@ def extract_rules_from_text(
 
 
 # ---------------------------------------------------------------------------
+# Obligation assessment — given a company's profile answers + the discovered
+# obligation list, decide which are mandatory / conditional / not-applicable.
+# ---------------------------------------------------------------------------
+ASSESS_PROMPT = """You are a compliance specialist. Given a SPECIFIC company's profile answers and a list of obligations that were discovered for it, decide for EACH obligation whether it is:
+- "mandatory" — the company's answers make this clearly required.
+- "conditional" — it may apply but a trigger/threshold is uncertain from the answers.
+- "not_applicable" — the company's answers show this does NOT apply to it.
+
+Decide ONLY from the provided answers and obligation details — do not invent facts.
+For every obligation, copy its `form_name` EXACTLY as given, give a `verdict`, and a one-line `reason` that references the company's answers (e.g. "Not VAT-registered, so VAT return doesn't apply", "Employs staff and pays via WPS, so WPS report is required")."""
+
+
+class ObligationVerdict(BaseModel):
+    form_name: str = Field(description="The obligation's form_name, copied EXACTLY.")
+    verdict: str = Field(description="One of: mandatory, conditional, not_applicable")
+    reason: str = Field(description="One-line reason referencing the company's answers.")
+
+
+class AssessmentResult(BaseModel):
+    verdicts: list[ObligationVerdict]
+    notes: Optional[str] = None
+
+
+def assess_obligations(
+    profile_block: str,
+    obligations_block: str,
+    *,
+    jurisdiction_hint: Optional[str] = None,
+    model: str = "claude-opus-4-7",
+) -> AssessmentResult:
+    """Classify each discovered obligation as mandatory / conditional /
+    not_applicable for this company, based on its profile answers."""
+    if not is_live():
+        raise RuleExtractorUnavailable(
+            "AI assessment requires COMPLIANCE_AGENT_LIVE=1 plus an API key."
+        )
+    client = make_client()
+    user_content = (
+        (f"Jurisdiction: {jurisdiction_hint}\n\n" if jurisdiction_hint else "")
+        + profile_block
+        + "\n\nOBLIGATIONS DISCOVERED:\n"
+        + obligations_block
+    )
+    response = client.messages.parse(
+        model=model,
+        max_tokens=8000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "high"},
+        system=[
+            {
+                "type": "text",
+                "text": ASSESS_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_format=AssessmentResult,
+    )
+    if response.parsed_output is None:
+        raise RuntimeError(
+            f"Assessment failed — stop_reason={response.stop_reason}."
+        )
+    return response.parsed_output
+
+
+# ---------------------------------------------------------------------------
 # License metadata extraction — read a regulator's license/authorisation PDF
 # and pull out the fields needed to pre-fill the "Add license" form.
 # ---------------------------------------------------------------------------

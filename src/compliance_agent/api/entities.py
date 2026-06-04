@@ -258,3 +258,91 @@ def delete_entity(
         except Exception:  # noqa: BLE001
             pass
     return Response(status_code=204)
+
+
+@router.post("/{entity_id}/assess-obligations")
+def assess_entity_obligations(
+    entity_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """AI step: read the entity's Primary + Secondary Activity answers and the
+    obligations discovered for it, and classify each as mandatory / conditional
+    / not_applicable for THIS entity. Returns per-obligation verdicts."""
+    from compliance_agent.db import Rule, RuleStatus
+    from compliance_agent.api.licenses import _build_profile_block
+    from compliance_agent.rule_extractor import (
+        assess_obligations,
+        is_live,
+        RuleExtractorUnavailable,
+    )
+
+    entity = db.get(Entity, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found.")
+
+    discovered = [
+        r
+        for r in entity.rules
+        if r.status in (RuleStatus.staging, RuleStatus.production)
+    ]
+    if not discovered:
+        return {
+            "available": True,
+            "items": [],
+            "notes": "Nothing discovered yet — run Find Regulations first.",
+        }
+
+    profile_block = _build_profile_block(entity.finance_profile) or (
+        "\n\nCOMPANY PROFILE: (no activity answers provided)"
+    )
+    obligations_block = "\n".join(
+        f"- {r.form_name} | {r.category} | {r.frequency} | "
+        f"currently {getattr(r.applicability, 'value', r.applicability)}"
+        + (f" | note: {r.applicability_note}" if r.applicability_note else "")
+        for r in discovered
+    )
+
+    if not is_live():
+        return {
+            "available": False,
+            "items": [],
+            "notes": "AI is off — set COMPLIANCE_AGENT_LIVE=1 plus an API key.",
+        }
+
+    try:
+        result = assess_obligations(
+            profile_block,
+            obligations_block,
+            jurisdiction_hint=entity.jurisdiction_code,
+        )
+    except RuleExtractorUnavailable as exc:
+        return {"available": False, "items": [], "notes": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
+
+    by_form = {r.form_name: r for r in discovered}
+    items = []
+    for v in result.verdicts:
+        r = by_form.get(v.form_name)
+        items.append(
+            {
+                "rule_id": r.id if r else None,
+                "name": r.name if r else v.form_name,
+                "form_name": v.form_name,
+                "category": r.category if r else None,
+                "frequency": r.frequency if r else None,
+                "verdict": v.verdict,
+                "reason": v.reason,
+            }
+        )
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="entity.assessed_obligations",
+        target_type="entity",
+        target_id=entity_id,
+        payload={"count": len(items)},
+    )
+    db.commit()
+    return {"available": True, "items": items, "notes": result.notes}

@@ -1101,63 +1101,123 @@ const DEMO_REGISTRATIONS_PER_JURISDICTION: Record<
 };
 
 
+type AssessItem = {
+  rule_id: number | null;
+  name: string;
+  form_name: string;
+  category: string | null;
+  frequency: string | null;
+  verdict: string;
+  reason: string;
+};
+type AssessResp = { available: boolean; items: AssessItem[]; notes?: string | null };
+
 function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const rows = DEMO_REGISTRATIONS_PER_JURISDICTION[entity.jurisdiction_code] ?? [];
-  const queryClient = useQueryClient();
-  // Reveal the filtered result only after the user clicks Find Regulations.
-  const [ran, setRan] = useState(false);
 
-  const { data: production = [] } = useQuery({
-    queryKey: ["rules", "production"],
-    queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
+  // AI assessment: read the entity's activity answers + discovered list and
+  // classify each obligation as mandatory / conditional / not-applicable.
+  const assess = useMutation({
+    mutationFn: () => api.post<AssessResp>(`/api/entities/${entity.id}/assess-obligations`),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
-  const { data: staging = [] } = useQuery({
-    queryKey: ["rules", "staging"],
-    queryFn: () => api.get<Rule[]>("/api/rules?status=staging"),
-  });
+  const result = assess.data;
+  const items = result?.items ?? [];
+  const group = (v: string) => items.filter((i) => i.verdict === v);
+  const mandatory = group("mandatory");
+  const conditional = group("conditional");
+  const notApplicable = group("not_applicable");
 
-  const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
-  const inReview = staging.filter((r) => r.entity_ids.includes(entity.id));
-  const discovered = [...confirmed, ...inReview];
-  const identified = discovered.length;
-  const mandatory = discovered.filter((r) => r.applicability === "Mandatory");
-  const conditional = discovered.filter((r) => r.applicability !== "Mandatory");
+  const Col = ({
+    title,
+    list,
+    tone,
+  }: {
+    title: string;
+    list: AssessItem[];
+    tone: "alert" | "neutral" | "muted";
+  }) => (
+    <div
+      className={cn(
+        "rounded-lg border p-3",
+        tone === "alert"
+          ? "border-amber-200 bg-amber-50/50"
+          : tone === "neutral"
+            ? "border-emerald-200 bg-emerald-50/40"
+            : "border-border bg-secondary/30",
+      )}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Badge variant={tone === "alert" ? "alert" : tone === "neutral" ? "completed" : "neutral"}>
+          {list.length}
+        </Badge>
+        <span className="text-sm font-medium">{title}</span>
+      </div>
+      {list.length === 0 ? (
+        <p className="text-xs text-muted-foreground">None.</p>
+      ) : (
+        <ul className="space-y-1.5 text-sm">
+          {list.map((i) => (
+            <li key={i.form_name}>
+              <div className="font-medium">
+                {i.name}{" "}
+                {i.frequency && (
+                  <span className="text-[11px] text-muted-foreground">· {i.frequency}</span>
+                )}
+              </div>
+              {i.reason && (
+                <div className="text-[11px] text-muted-foreground">{i.reason}</div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-4">
-      {/* Validation outcome — reads the discovered list + scoping answers */}
+      {/* AI validation — reads activity answers + discovered list */}
       <Card>
         <CardContent className="p-5 space-y-3">
           <div className="flex items-start justify-between gap-2">
             <div>
               <h3 className="font-semibold">What applies to this entity</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Reads the obligations discovered under Compliance Rules and your
-                Primary &amp; Secondary Activity answers, then splits them into
-                mandatory vs conditional. No new AI call — it just filters.
+                AI reads your Primary &amp; Secondary Activity answers and the
+                obligations discovered under Compliance Rules, then decides which
+                are mandatory, which stay conditional, and which don't apply.
               </p>
             </div>
-            <Button onClick={() => { queryClient.invalidateQueries({ queryKey: ["rules"] }); setRan(true); }}>
-              <Sparkles className="h-4 w-4" />
+            <Button onClick={() => assess.mutate()} disabled={assess.isPending}>
+              {assess.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
               Find Regulations
             </Button>
           </div>
 
-          {!ran ? (
+          {assess.isPending ? (
+            <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
+              Assessing against your answers… (~15–25s)
+            </div>
+          ) : !result ? (
             <p className="text-sm text-muted-foreground">
-              Click <strong>Find Regulations</strong> to see what's mandatory for
-              this entity.
+              Click <strong>Find Regulations</strong> — AI will tell you what's
+              mandatory for this entity based on your answers.
             </p>
-          ) : identified === 0 ? (
+          ) : items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing discovered yet — run Find Regulations under the Compliance
-              Rules tab first.
+              {result.notes || "Nothing to assess — run Find Regulations under Compliance Rules first."}
             </p>
           ) : (
             <>
               <div className="flex items-center gap-2 text-xs flex-wrap">
                 <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
-                  {identified} identified
+                  {items.length} identified
                 </span>
                 <span className="text-muted-foreground">→</span>
                 <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
@@ -1165,50 +1225,13 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
                 </span>
                 <span className="text-muted-foreground">→</span>
                 <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-1 font-medium">
-                  {conditional.length} conditional
+                  {notApplicable.length} not applicable
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="alert">{mandatory.length}</Badge>
-                    <span className="text-sm font-medium">Mandatory</span>
-                  </div>
-                  {mandatory.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">None.</p>
-                  ) : (
-                    <ul className="space-y-1 text-sm">
-                      {mandatory.map((r) => (
-                        <li key={r.id} className="truncate">
-                          {r.name}{" "}
-                          <span className="text-[11px] text-muted-foreground">· {r.frequency}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div className="rounded-lg border border-border bg-secondary/30 p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="neutral">{conditional.length}</Badge>
-                    <span className="text-sm font-medium">Conditional / optional</span>
-                  </div>
-                  {conditional.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">None.</p>
-                  ) : (
-                    <ul className="space-y-1 text-sm">
-                      {conditional.map((r) => (
-                        <li key={r.id} className="truncate">
-                          {r.name}
-                          {r.applicability_note && (
-                            <span className="text-[11px] text-muted-foreground">
-                              {" "}· {r.applicability_note}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Col title="Mandatory" list={mandatory} tone="alert" />
+                <Col title="Conditional" list={conditional} tone="neutral" />
+                <Col title="Not applicable" list={notApplicable} tone="muted" />
               </div>
             </>
           )}
