@@ -147,6 +147,7 @@ export function EntityDetailPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="profile">Activity Profile</TabsTrigger>
           <TabsTrigger value="rules">Compliance Rules</TabsTrigger>
+          <TabsTrigger value="detailed">Detailed Questions</TabsTrigger>
           <TabsTrigger value="registrations">Registrations</TabsTrigger>
           <TabsTrigger value="licenses">
             Licenses
@@ -179,6 +180,10 @@ export function EntityDetailPage() {
             licenses={entityLicenses}
             isAdmin={isAdmin}
           />
+        </TabsContent>
+
+        <TabsContent value="detailed">
+          <DetailedQuestionsTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="registrations">
@@ -218,20 +223,12 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     else next[key] = value;
     saveProfile.mutate(next);
   };
-  const setAnswer = (key: string, value: string) =>
-    saveProfile.mutate({ ...profile, [key]: value });
 
   const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
     { value: "yes", label: "Yes" },
     { value: "no", label: "No" },
     { value: "tbc", label: "TBC" },
   ];
-
-  // Detailed (entity + country specific) follow-ups: only for gates answered
-  // "Yes", and only those that apply to this jurisdiction.
-  const detailGates = gates.filter(
-    (g) => profile[g.key] === "yes" && followupsForJurisdiction(g, juris).length > 0,
-  );
 
   return (
     <div className="space-y-4">
@@ -289,63 +286,91 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
           </div>
         </CardContent>
       </Card>
-
-      {/* Detailed, country/entity-specific follow-ups (Stage C) */}
-      <Card>
-        <CardContent className="p-5 space-y-3">
-          <div>
-            <h3 className="font-semibold">Detailed questions</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              More specific questions, tailored to this entity's jurisdiction and
-              what it does. They appear as you answer "Yes" above and refine which
-              obligations are mandatory.
-            </p>
-          </div>
-          {detailGates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Answer "Yes" to the activity questions above to unlock the relevant
-              detailed questions here.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {detailGates.map((g) => (
-                <div key={g.id} className="rounded-lg border border-border bg-background/60 px-3 py-2.5">
-                  <div className="text-xs font-medium text-aspora-700 mb-2">{g.drives}</div>
-                  <div className="space-y-2.5">
-                    {followupsForJurisdiction(g, juris).map((f) => (
-                      <div
-                        key={f.key}
-                        className="flex items-center justify-between gap-3 flex-wrap"
-                      >
-                        <div className="text-sm">{f.question}</div>
-                        <div className="inline-flex flex-wrap gap-1">
-                          {f.options.map((o) => (
-                            <button
-                              key={o.value}
-                              type="button"
-                              disabled={!isAdmin || saveProfile.isPending}
-                              onClick={() => setAnswer(f.key, o.value)}
-                              className={cn(
-                                "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-                                profile[f.key] === o.value
-                                  ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
-                                  : "border-input bg-background hover:bg-secondary text-muted-foreground",
-                              )}
-                            >
-                              {o.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Detailed Questions — country/entity-specific scoping, AFTER AI discovery.
+// Narrows the generated filings down to what's actually mandatory.
+// ---------------------------------------------------------------------------
+function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const juris = entity.jurisdiction_code;
+  const gates = gatesForJurisdiction(juris);
+  const profile = entity.finance_profile ?? {};
+  const saveProfile = useMutation({
+    mutationFn: (next: Record<string, string>) =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, { finance_profile: next }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+  });
+  const setAnswer = (key: string, value: string) =>
+    saveProfile.mutate({ ...profile, [key]: value });
+
+  // Only show follow-ups for activities that apply (answered "Yes") and that
+  // exist for this jurisdiction — so the set changes per entity/country.
+  const detailGates = gates.filter(
+    (g) => profile[g.key] === "yes" && followupsForJurisdiction(g, juris).length > 0,
+  );
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-3">
+        <div>
+          <h3 className="font-semibold">Detailed questions</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Specific scoping questions for this entity's jurisdiction and
+            activities. Answer these after running Find Regulations — they narrow
+            the discovered filings down to what's actually mandatory. See the
+            outcome under Registrations.
+          </p>
+        </div>
+        {detailGates.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No detailed questions yet. Set the Activity Profile (mark the
+            relevant activities "Yes") and the jurisdiction-specific questions
+            will appear here.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {detailGates.map((g) => (
+              <div key={g.id} className="rounded-lg border border-border bg-background/60 px-3 py-2.5">
+                <div className="text-xs font-medium text-aspora-700 mb-2">{g.drives}</div>
+                <div className="space-y-2.5">
+                  {followupsForJurisdiction(g, juris).map((f) => (
+                    <div
+                      key={f.key}
+                      className="flex items-center justify-between gap-3 flex-wrap"
+                    >
+                      <div className="text-sm">{f.question}</div>
+                      <div className="inline-flex flex-wrap gap-1">
+                        {f.options.map((o) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            disabled={!isAdmin || saveProfile.isPending}
+                            onClick={() => setAnswer(f.key, o.value)}
+                            className={cn(
+                              "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                              profile[f.key] === o.value
+                                ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+                                : "border-input bg-background hover:bg-secondary text-muted-foreground",
+                            )}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1068,7 +1093,13 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
     queryKey: ["rules", "production"],
     queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
   });
+  const { data: staging = [] } = useQuery({
+    queryKey: ["rules", "staging"],
+    queryFn: () => api.get<Rule[]>("/api/rules?status=staging"),
+  });
   const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
+  const inReview = staging.filter((r) => r.entity_ids.includes(entity.id));
+  const identified = confirmed.length + inReview.length;
   const mandatory = confirmed.filter((r) => r.applicability === "Mandatory");
   const conditional = confirmed.filter((r) => r.applicability !== "Mandatory");
 
@@ -1085,6 +1116,21 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
               the Compliance Rules tab to populate this.
             </p>
           </div>
+          {identified > 0 && (
+            <div className="flex items-center gap-2 text-xs flex-wrap">
+              <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
+                {identified} identified
+              </span>
+              <span className="text-muted-foreground">→</span>
+              <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
+                {confirmed.length} confirmed
+              </span>
+              <span className="text-muted-foreground">→</span>
+              <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
+                {mandatory.length} mandatory
+              </span>
+            </div>
+          )}
           {confirmed.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No confirmed obligations yet. Run Find Regulations and approve them
