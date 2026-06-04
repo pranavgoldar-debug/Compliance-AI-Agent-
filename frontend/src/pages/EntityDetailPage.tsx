@@ -1133,6 +1133,8 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
       window.alert(`${picked.size} obligation(s) sent to Review & Assign.`);
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),

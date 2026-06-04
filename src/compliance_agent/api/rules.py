@@ -30,6 +30,59 @@ from compliance_agent.db import (
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
 
+def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
+    """Create a calendar obligation for each attached entity on the computed
+    due date (idempotent), and keep the assignee in sync with the rule's owner.
+    Runs for rules that are in review (staging) OR approved (production), so an
+    obligation shows on the calendar as soon as it enters the review flow."""
+    if rule.status not in (RuleStatus.staging, RuleStatus.production):
+        return
+    if not rule.entities:
+        return
+    from datetime import date
+    from compliance_agent.api.licenses import _next_due_for_rule
+    from compliance_agent.db import ObligationStatus, Department
+
+    due = _next_due_for_rule(rule, date.today())
+    for ent in rule.entities:
+        exists = db.execute(
+            select(Obligation).where(
+                Obligation.rule_id == rule.id,
+                Obligation.entity_id == ent.id,
+                Obligation.due_date == due,
+                Obligation.department == Department.compliance,
+            )
+        ).scalar_one_or_none()
+        if exists is None:
+            db.add(
+                Obligation(
+                    rule_id=rule.id,
+                    entity_id=ent.id,
+                    due_date=due,
+                    status=ObligationStatus.not_started,
+                    department=Department.compliance,
+                    assignee_id=rule.owner_id,
+                )
+            )
+        elif rule.owner_id and exists.assignee_id != rule.owner_id:
+            exists.assignee_id = rule.owner_id
+
+
+def remove_pending_obligations_for_rule(db: Session, rule: Rule) -> None:
+    """Remove a rule's not-yet-completed obligations from the calendar (e.g.
+    when it's archived). Completed filings are kept for history."""
+    from compliance_agent.db import ObligationStatus
+
+    db.execute(
+        sa_delete(Obligation).where(
+            Obligation.rule_id == rule.id,
+            Obligation.status.in_(
+                [ObligationStatus.not_started, ObligationStatus.in_progress]
+            ),
+        )
+    )
+
+
 def _serialize_rule(rule: Rule) -> RuleOut:
     return RuleOut(
         id=rule.id,
@@ -152,39 +205,13 @@ def update_rule(
         if rule.approver_id is None:
             rule.approver_id = user.id
 
-    # For ANY production rule (on approval OR a later assignee/edit), make sure
-    # a calendar obligation exists for each attached entity on the computed due
-    # date, and keep its assignee in sync with the rule's Assignee — so the
-    # assigned person actually sees it in their Filings / tasks.
-    if rule.status == RuleStatus.production:
-        from datetime import date
-        from compliance_agent.api.licenses import _next_due_for_rule
-        from compliance_agent.db import Obligation, ObligationStatus, Department
-
-        due = _next_due_for_rule(rule, date.today())
-        for ent in rule.entities:
-            exists = db.execute(
-                select(Obligation).where(
-                    Obligation.rule_id == rule.id,
-                    Obligation.entity_id == ent.id,
-                    Obligation.due_date == due,
-                    Obligation.department == Department.compliance,
-                )
-            ).scalar_one_or_none()
-            if exists is None:
-                db.add(
-                    Obligation(
-                        rule_id=rule.id,
-                        entity_id=ent.id,
-                        due_date=due,
-                        status=ObligationStatus.not_started,
-                        department=Department.compliance,
-                        assignee_id=rule.owner_id,
-                    )
-                )
-            elif rule.owner_id and exists.assignee_id != rule.owner_id:
-                # Keep the obligation assignee in sync with the rule's Assignee.
-                exists.assignee_id = rule.owner_id
+    # Calendar sync: as soon as a rule is in review (staging) or approved
+    # (production) it gets a calendar obligation; when archived its pending
+    # obligations are removed so it drops off the calendar.
+    if rule.status == RuleStatus.archived:
+        remove_pending_obligations_for_rule(db, rule)
+    else:
+        ensure_obligations_for_rule(db, rule)
     log_activity(
         db,
         actor_id=user.id,

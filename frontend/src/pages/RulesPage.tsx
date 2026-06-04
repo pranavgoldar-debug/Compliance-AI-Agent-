@@ -712,6 +712,9 @@ function StagingCard({ rule }: { rule: Rule }) {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["obligations"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const saveMutation = useMutation({
@@ -908,6 +911,9 @@ function StagingTable({ rules }: { rules: Rule[] }) {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["obligations"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
   const approve = useMutation({
     mutationFn: (id: number) => api.patch<Rule>(`/api/rules/${id}`, { status: "production" }),

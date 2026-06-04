@@ -160,6 +160,12 @@ def bulk_create_rules(
         created.append(rule)
     db.flush()
 
+    # As soon as obligations enter review (staging), put them on the calendar.
+    from compliance_agent.api.rules import ensure_obligations_for_rule
+
+    for rule in created:
+        ensure_obligations_for_rule(db, rule)
+
     log_activity(
         db,
         actor_id=user.id,

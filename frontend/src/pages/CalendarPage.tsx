@@ -173,6 +173,8 @@ export function CalendarPage() {
       filters.assigneeIds.forEach((id) => params.append("assignee_ids", String(id)));
       return api.get<CalendarObligation[]>(`/api/calendar?${params.toString()}`);
     },
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
 
   const activeFilterCount =
