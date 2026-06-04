@@ -369,14 +369,16 @@ interface LicenseAnalyze {
   expiry_date: string | null;
 }
 
-function UploadDialog({
+export function UploadDialog({
   open,
   onOpenChange,
   onUploaded,
+  presetEntityId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onUploaded: () => void;
+  presetEntityId?: number;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [aiNote, setAiNote] = useState<string | null>(null);
@@ -405,6 +407,14 @@ function UploadDialog({
     const ent = entities.find((e) => e.id === id);
     if (ent && !jurisdictionCode) setJurisdictionCode(ent.jurisdiction_code);
   }
+
+  // Pre-select the entity when opened from an entity's Licenses tab.
+  useEffect(() => {
+    if (open && presetEntityId && entityId === "" && entities.length > 0) {
+      pickEntity(presetEntityId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, presetEntityId, entities]);
 
   function reset() {
     setEntityId("");

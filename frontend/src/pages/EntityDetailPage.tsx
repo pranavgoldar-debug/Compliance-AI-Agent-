@@ -22,7 +22,7 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { AIExtractDialog } from "@/pages/LicensesPage";
+import { AIExtractDialog, UploadDialog } from "@/pages/LicensesPage";
 import { api } from "@/lib/api";
 import {
   Dialog,
@@ -185,7 +185,7 @@ export function EntityDetailPage() {
         </TabsContent>
 
         <TabsContent value="licenses">
-          <LicensesTab entity={entity} />
+          <LicensesTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="documents">
@@ -1030,7 +1030,9 @@ function ObligationsTab({
 // ---------------------------------------------------------------------------
 // Documents tab — wired to /api/documents via DocumentList.
 // ---------------------------------------------------------------------------
-function LicensesTab({ entity }: { entity: Entity }) {
+function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const [uploadOpen, setUploadOpen] = useState(false);
   const { data: licenses = [], isLoading } = useQuery({
     queryKey: ["entity-licenses", entity.id],
     queryFn: () => api.get<License[]>(`/api/licenses?entity_id=${entity.id}`),
@@ -1039,15 +1041,23 @@ function LicensesTab({ entity }: { entity: Entity }) {
   return (
     <Card>
       <CardContent className="p-5">
-        <div className="text-sm font-medium mb-3">
-          Licenses held by {entity.name}
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-medium">Licenses held by {entity.name}</div>
+          {isAdmin && (
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Upload license
+            </Button>
+          )}
         </div>
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
         ) : licenses.length === 0 ? (
           <div className="text-sm text-muted-foreground">
-            No licenses yet. Upload one on the Licenses page (admin) — it’ll
-            show here and surface the filings this entity owes.
+            No licenses yet.{" "}
+            {isAdmin
+              ? "Upload one — Claude reads it and surfaces the filings this entity owes."
+              : "An admin can upload one here."}
           </div>
         ) : (
           <div className="rounded-lg border border-border overflow-hidden">
@@ -1064,7 +1074,7 @@ function LicensesTab({ entity }: { entity: Entity }) {
                 {licenses.map((l) => (
                   <tr key={l.id} className="hover:bg-secondary/20">
                     <td className="px-3 py-2 font-medium">
-                      <Link to="/licenses" className="hover:underline">
+                      <Link to={`/licenses/${l.id}`} className="hover:underline">
                         {l.name}
                       </Link>
                       {l.license_type && (
@@ -1087,6 +1097,15 @@ function LicensesTab({ entity }: { entity: Entity }) {
           </div>
         )}
       </CardContent>
+      <UploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        presetEntityId={entity.id}
+        onUploaded={() => {
+          queryClient.invalidateQueries({ queryKey: ["entity-licenses", entity.id] });
+          setUploadOpen(false);
+        }}
+      />
     </Card>
   );
 }
