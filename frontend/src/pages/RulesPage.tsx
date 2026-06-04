@@ -361,6 +361,18 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
     return u ? u.full_name || u.email : "—";
   };
 
+  // Change the assignee on an approved rule — syncs onto its obligation too.
+  const assignMutation = useMutation({
+    mutationFn: (args: { id: number; ownerId: number | null }) =>
+      api.patch(`/api/rules/${args.id}`, { owner_id: args.ownerId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   const cleanupMutation = useMutation({
     mutationFn: () =>
       api.post<{ deleted_rules: number; deleted_obligations: number }>(
@@ -518,8 +530,29 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                 <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[240px] truncate">
                   {r.due_date_rule}
                 </td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {userName(r.owner_id)}
+                <td className="px-3 py-2.5 text-xs">
+                  {isAdmin ? (
+                    <select
+                      value={r.owner_id ?? ""}
+                      disabled={assignMutation.isPending}
+                      onChange={(e) =>
+                        assignMutation.mutate({
+                          id: r.id,
+                          ownerId: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      className="h-8 rounded border border-input bg-background px-1.5 text-xs max-w-[140px]"
+                    >
+                      <option value="">— Unassigned —</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.full_name || u.email}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-muted-foreground">{userName(r.owner_id)}</span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
                   <button
