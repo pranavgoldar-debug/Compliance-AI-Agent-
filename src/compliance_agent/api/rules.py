@@ -101,10 +101,15 @@ def ensure_calendar(
         .scalars()
         .all()
     )
+    made = 0
     for rule in rules:
-        ensure_obligations_for_rule(db, rule)
+        try:
+            ensure_obligations_for_rule(db, rule)
+            made += 1
+        except Exception:  # noqa: BLE001 — one bad rule shouldn't block the rest
+            continue
     db.commit()
-    return {"checked": len(rules)}
+    return {"checked": len(rules), "processed": made}
 
 
 def _serialize_rule(rule: Rule) -> RuleOut:

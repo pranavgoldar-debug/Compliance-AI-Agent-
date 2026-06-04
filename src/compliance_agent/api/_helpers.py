@@ -25,8 +25,8 @@ from compliance_agent.api.schemas import (
 )
 
 
-# Fallback for legacy callers — alert lead time = 2× effort-band days.
-ALERT_WINDOW_DAYS = 14
+# Alert window = obligations coming due within the next 30 days.
+ALERT_WINDOW_DAYS = 30
 
 
 def now_utc() -> datetime:
