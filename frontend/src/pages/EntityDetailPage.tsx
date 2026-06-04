@@ -15,12 +15,7 @@ import {
   KeyRound,
   Plus,
   Trash2,
-  ChevronUp,
-  ChevronDown,
-  ArrowDown,
   Sparkles,
-  Check,
-  X,
 } from "lucide-react";
 import { AIExtractDialog, UploadDialog } from "@/pages/LicensesPage";
 import { api } from "@/lib/api";
@@ -418,12 +413,6 @@ function ComplianceRulesTab({
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
-  const approve = useMutation({
-    mutationFn: (id: number) =>
-      api.patch(`/api/rules/${id}`, { status: "production" }),
-    onSuccess: refresh,
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
   const reject = useMutation({
     mutationFn: (id: number) => api.delete(`/api/rules/${id}`),
     onSuccess: refresh,
@@ -449,44 +438,21 @@ function ComplianceRulesTab({
           {r.authority} · {r.category} · {r.frequency}
         </div>
       </div>
-      {isAdmin && (
+      {isAdmin && mode === "confirmed" && (
         <div className="flex items-center gap-1.5 shrink-0">
-          {mode === "review" ? (
-            <>
-              <Button
-                size="sm"
-                onClick={() => approve.mutate(r.id)}
-                disabled={approve.isPending || reject.isPending}
-              >
-                <Check className="h-3.5 w-3.5" />
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => reject.mutate(r.id)}
-                disabled={approve.isPending || reject.isPending}
-              >
-                <X className="h-3.5 w-3.5" />
-                Reject
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={() => {
-                if (window.confirm(`Remove "${r.name}" from this entity's confirmed rules?`)) {
-                  reject.mutate(r.id);
-                }
-              }}
-              disabled={reject.isPending}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => {
+              if (window.confirm(`Remove "${r.name}" from this entity's confirmed rules?`)) {
+                reject.mutate(r.id);
+              }
+            }}
+            disabled={reject.isPending}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
       )}
     </div>
@@ -500,8 +466,9 @@ function ComplianceRulesTab({
             <div>
               <h3 className="font-semibold">Compliance rules</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                AI proposes the regulatory obligations this entity owes. Review
-                each one, then approve to confirm it.
+                AI proposes the regulatory obligations this entity owes. Assess
+                them under Registrations and send the ones you want to Review &
+                Assign for approval.
               </p>
             </div>
             {isAdmin && (

@@ -502,7 +502,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Category</th>
               <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
-              <th className="px-3 py-2.5 text-right font-medium">Entities</th>
               <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
               <th className="px-3 py-2.5 w-8" />
@@ -525,9 +524,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.frequency}</td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[240px] truncate">
                   {r.due_date_rule}
-                </td>
-                <td className="px-3 py-2.5 text-right text-xs tabular-nums">
-                  {r.entity_ids.length}
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {userName(r.owner_id)}
