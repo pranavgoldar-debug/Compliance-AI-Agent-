@@ -421,7 +421,9 @@ function ComplianceRulesTab({
 
   // AI generation needs a license to read; use the first one the entity holds.
   const license = licenses[0];
-  const confirmedForms = confirmed.map((r) => r.form_name || r.name);
+  // Both staging + confirmed forms, so a re-run doesn't duplicate what's
+  // already in Review or Confirmed.
+  const confirmedForms = [...confirmed, ...review].map((r) => r.form_name || r.name);
 
   const RuleRow = ({ r, mode }: { r: Rule; mode: "review" | "confirmed" }) => (
     <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5">

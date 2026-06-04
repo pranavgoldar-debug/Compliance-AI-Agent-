@@ -838,14 +838,32 @@ export function AIExtractDialog({
   const juris = entityQuery.data?.jurisdiction_code ?? license.jurisdiction_code;
   const gates = gatesForJurisdiction(juris);
 
+  // Persist candidates as Staging rules so the discovered list is FROZEN in the
+  // DB — it survives tab changes / re-opens and is read by Registrations,
+  // without re-calling Claude.
+  const autoPersist = useMutation({
+    mutationFn: (args: {
+      picked: AIExtractResponse["candidates"];
+      hint: string | null;
+    }) =>
+      api.post("/api/rules/bulk-create", {
+        jurisdiction_code: args.hint ?? license.jurisdiction_code,
+        rules: args.picked,
+        entity_ids: [license.entity_id],
+        status: "staging",
+      }),
+    onSuccess: () => onCreated(),
+  });
+
   const extractMutation = useMutation({
     mutationFn: () =>
       api.post<AIExtractResponse>(`/api/licenses/${license.id}/ai-extract`),
     onSuccess: (data) => {
       setResponse(data);
-      // Default-tick ONLY the genuinely new filings (not already in your
-      // tracked list). So "Search again" with nothing new ticks nothing —
-      // it won't create duplicates of what you already track.
+      // Genuinely new filings (not already tracked in staging/production).
+      const newOnes = data.candidates.filter(
+        (c) => !isTracked(c.name || c.form_name, existingForms),
+      );
       setKept(
         new Set(
           data.candidates
@@ -854,6 +872,10 @@ export function AIExtractDialog({
             .map(({ i }) => i),
         ),
       );
+      // Freeze immediately: save the new candidates as Staging.
+      if (newOnes.length > 0) {
+        autoPersist.mutate({ picked: newOnes, hint: data.jurisdiction_hint });
+      }
     },
   });
 
@@ -1368,6 +1390,13 @@ export function AIExtractDialog({
             </Button>
           ) : (
             <>
+              {response.available && response.candidates.length > 0 && (
+                <span className="text-xs text-emerald-700 self-center mr-auto">
+                  {autoPersist.isPending
+                    ? "Saving to Review…"
+                    : "✓ Saved to Review — frozen until you Search again"}
+                </span>
+              )}
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1379,17 +1408,7 @@ export function AIExtractDialog({
               >
                 Search again
               </Button>
-              {response.available && response.candidates.length > 0 && (
-                <Button
-                  onClick={() => createMutation.mutate()}
-                  disabled={kept.size === 0 || createMutation.isPending}
-                >
-                  {createMutation.isPending && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )}
-                  Create {kept.size} rule{kept.size === 1 ? "" : "s"} as Staging
-                </Button>
-              )}
+              <Button onClick={() => onOpenChange(false)}>Done</Button>
             </>
           )}
         </div>
