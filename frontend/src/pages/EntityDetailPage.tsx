@@ -47,7 +47,7 @@ import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
-import { gatesForJurisdiction } from "@/lib/financeGates";
+import { gatesForJurisdiction, followupsForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, BankDetails, Entity, License, Obligation, Rule } from "@/types/api";
 
@@ -203,7 +203,8 @@ export function EntityDetailPage() {
 // ---------------------------------------------------------------------------
 function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
-  const gates = gatesForJurisdiction(entity.jurisdiction_code);
+  const juris = entity.jurisdiction_code;
+  const gates = gatesForJurisdiction(juris);
   const profile = entity.finance_profile ?? {};
 
   const saveProfile = useMutation({
@@ -217,12 +218,20 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     else next[key] = value;
     saveProfile.mutate(next);
   };
+  const setAnswer = (key: string, value: string) =>
+    saveProfile.mutate({ ...profile, [key]: value });
 
   const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
     { value: "yes", label: "Yes" },
     { value: "no", label: "No" },
     { value: "tbc", label: "TBC" },
   ];
+
+  // Detailed (entity + country specific) follow-ups: only for gates answered
+  // "Yes", and only those that apply to this jurisdiction.
+  const detailGates = gates.filter(
+    (g) => profile[g.key] === "yes" && followupsForJurisdiction(g, juris).length > 0,
+  );
 
   return (
     <div className="space-y-4">
@@ -278,6 +287,62 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Detailed, country/entity-specific follow-ups (Stage C) */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div>
+            <h3 className="font-semibold">Detailed questions</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              More specific questions, tailored to this entity's jurisdiction and
+              what it does. They appear as you answer "Yes" above and refine which
+              obligations are mandatory.
+            </p>
+          </div>
+          {detailGates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Answer "Yes" to the activity questions above to unlock the relevant
+              detailed questions here.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {detailGates.map((g) => (
+                <div key={g.id} className="rounded-lg border border-border bg-background/60 px-3 py-2.5">
+                  <div className="text-xs font-medium text-aspora-700 mb-2">{g.drives}</div>
+                  <div className="space-y-2.5">
+                    {followupsForJurisdiction(g, juris).map((f) => (
+                      <div
+                        key={f.key}
+                        className="flex items-center justify-between gap-3 flex-wrap"
+                      >
+                        <div className="text-sm">{f.question}</div>
+                        <div className="inline-flex flex-wrap gap-1">
+                          {f.options.map((o) => (
+                            <button
+                              key={o.value}
+                              type="button"
+                              disabled={!isAdmin || saveProfile.isPending}
+                              onClick={() => setAnswer(f.key, o.value)}
+                              className={cn(
+                                "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                                profile[f.key] === o.value
+                                  ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+                                  : "border-input bg-background hover:bg-secondary text-muted-foreground",
+                              )}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -999,7 +1064,79 @@ const DEMO_REGISTRATIONS_PER_JURISDICTION: Record<
 
 function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const rows = DEMO_REGISTRATIONS_PER_JURISDICTION[entity.jurisdiction_code] ?? [];
+  const { data: production = [] } = useQuery({
+    queryKey: ["rules", "production"],
+    queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
+  });
+  const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
+  const mandatory = confirmed.filter((r) => r.applicability === "Mandatory");
+  const conditional = confirmed.filter((r) => r.applicability !== "Mandatory");
+
   return (
+    <div className="space-y-4">
+      {/* Validation outcome — what's mandatory for this entity */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div>
+            <h3 className="font-semibold">What applies to this entity</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Based on the uploaded licenses and the Activity Profile answers,
+              here's what's mandatory vs conditional. Confirm obligations under
+              the Compliance Rules tab to populate this.
+            </p>
+          </div>
+          {confirmed.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No confirmed obligations yet. Run Find Regulations and approve them
+              under Compliance Rules.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="alert">{mandatory.length}</Badge>
+                  <span className="text-sm font-medium">Mandatory</span>
+                </div>
+                {mandatory.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">None.</p>
+                ) : (
+                  <ul className="space-y-1 text-sm">
+                    {mandatory.map((r) => (
+                      <li key={r.id} className="truncate">
+                        {r.name}{" "}
+                        <span className="text-[11px] text-muted-foreground">· {r.frequency}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="neutral">{conditional.length}</Badge>
+                  <span className="text-sm font-medium">Conditional / optional</span>
+                </div>
+                {conditional.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">None.</p>
+                ) : (
+                  <ul className="space-y-1 text-sm">
+                    {conditional.map((r) => (
+                      <li key={r.id} className="truncate">
+                        {r.name}
+                        {r.applicability_note && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {" "}· {r.applicability_note}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30">
         <h3 className="text-sm font-semibold">Tax & legal registrations</h3>
@@ -1041,6 +1178,7 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
         </table>
       )}
     </Card>
+    </div>
   );
 }
 
