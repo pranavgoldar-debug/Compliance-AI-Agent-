@@ -188,8 +188,8 @@ export function daysRemainingLabel(days: number): string {
     return `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
   }
   if (days === 0) return "Due today";
-  if (days === 1) return "1 day";
-  return `${days} days`;
+  if (days === 1) return "1 day remaining";
+  return `${days} days remaining`;
 }
 
 export function userInitials(name: string | null | undefined, fallback = "?"): string {

@@ -37,7 +37,6 @@ type SortKey = "due_date" | "recently_updated" | "priority";
 
 const SCOPES: { key: Scope; label: string }[] = [
   { key: "assigned", label: "Assigned to me" },
-  { key: "watching", label: "Watching" },
   { key: "completed", label: "Completed" },
   { key: "all", label: "All" },
 ];
@@ -100,7 +99,7 @@ function TaskRow({ ob }: { ob: Obligation }) {
       onKeyDown={(e) => {
         if (e.key === "Enter") openObligation(ob.id);
       }}
-      className="group w-full grid grid-cols-[1.4fr_2fr_120px_120px_90px_60px] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm cursor-pointer"
+      className="group w-full grid grid-cols-[1.4fr_2fr_120px_140px_60px] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm cursor-pointer"
     >
       <div className="flex items-center gap-2 min-w-0">
         <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
@@ -122,7 +121,6 @@ function TaskRow({ ob }: { ob: Obligation }) {
         daysRemaining={ob.days_remaining}
         showDays
       />
-      <EffortBandBadge band={ob.effort_band} />
 
       <div className="flex items-center justify-end gap-1.5">
         <AssigneeChip user={ob.assignee} size="sm" />
