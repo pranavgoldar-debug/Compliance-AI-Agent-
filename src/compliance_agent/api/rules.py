@@ -175,6 +175,9 @@ def update_rule(
                         due_date=due,
                         status=ObligationStatus.not_started,
                         department=Department.compliance,
+                        # Carry the rule's Assignee onto the obligation so it
+                        # lands in that person's Filings / task queue.
+                        assignee_id=rule.owner_id,
                     )
                 )
     log_activity(
