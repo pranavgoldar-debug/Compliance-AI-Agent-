@@ -407,7 +407,7 @@ function ComplianceRulesTab({
                 title={license ? undefined : "Add a license to this entity first"}
               >
                 <Sparkles className="h-4 w-4" />
-                Generate with AI
+                Find Regulations
               </Button>
             )}
           </div>
@@ -433,7 +433,7 @@ function ComplianceRulesTab({
             </div>
           ) : review.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing awaiting review. Use “Generate with AI” to find obligations.
+              Nothing awaiting review. Use “Find Regulations” to find obligations.
             </p>
           ) : (
             <div className="space-y-2">
