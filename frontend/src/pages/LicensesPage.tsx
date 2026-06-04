@@ -732,6 +732,7 @@ interface CandidateRule {
   payment_rule: string | null;
   applicability: string;
   applicability_note: string | null;
+  tax_type?: string | null;
   // Reconciliation against the curated catalogue (the website's source of truth).
   matched_standard?: boolean;
   catalogue_due_date_rule?: string | null;
@@ -822,6 +823,7 @@ export function AIExtractDialog({
   const [candCat, setCandCat] = useState("");
   const [candFreq, setCandFreq] = useState("");
   const [candAppl, setCandAppl] = useState("");
+  const [candTax, setCandTax] = useState("");
 
   // Qualifying-questions step. `phase` is "questionnaire" until we have the
   // entity's answers, then "extract" (the running / results view).
@@ -1222,6 +1224,7 @@ export function AIExtractDialog({
                   <div className="flex flex-wrap gap-2">
                     {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
                     {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
+                    {sel(candTax, setCandTax, uniq(response.candidates.map((r) => r.tax_type ?? "").filter((t) => t && t !== "Not a Tax")), "tax types")}
                     {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
                     {sel(candAppl, setCandAppl, ["Mandatory", "Conditional", "Sector-specific"], "status")}
                   </div>
@@ -1241,6 +1244,7 @@ export function AIExtractDialog({
                       return false;
                     if (candReg && r.authority !== candReg) return false;
                     if (candCat && r.category !== candCat) return false;
+                    if (candTax && r.tax_type !== candTax) return false;
                     if (candFreq && r.frequency !== candFreq) return false;
                     if (candAppl && r.applicability !== candAppl) return false;
                     return true;
