@@ -916,7 +916,7 @@ function StagingTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Authority</th>
               <th className="px-3 py-2.5 text-left font-medium">Category</th>
               <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
-              <th className="px-3 py-2.5 text-left font-medium">Detected</th>
+              <th className="px-3 py-2.5 text-left font-medium">Due date</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
               <th className="px-3 py-2.5 text-right font-medium">Actions</th>
             </tr>
@@ -933,8 +933,8 @@ function StagingTable({ rules }: { rules: Rule[] }) {
                   <Badge variant="neutral">{r.category}</Badge>
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.frequency}</td>
-                <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {fmtRelative(r.created_at)}
+                <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[220px] truncate" title={r.due_date_rule}>
+                  {r.due_date_rule || "—"}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
                   {r.source_url ? (

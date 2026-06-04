@@ -151,6 +151,32 @@ def update_rule(
         rule.approved_at = datetime.utcnow()
         if rule.approver_id is None:
             rule.approver_id = user.id
+        # Generate a calendar obligation for each attached entity on the
+        # computed due date, so an approved rule shows up on the calendar.
+        from datetime import date
+        from compliance_agent.api.licenses import _next_due_for_rule
+        from compliance_agent.db import Obligation, ObligationStatus, Department
+
+        due = _next_due_for_rule(rule, date.today())
+        for ent in rule.entities:
+            exists = db.execute(
+                select(Obligation).where(
+                    Obligation.rule_id == rule.id,
+                    Obligation.entity_id == ent.id,
+                    Obligation.due_date == due,
+                    Obligation.department == Department.compliance,
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                db.add(
+                    Obligation(
+                        rule_id=rule.id,
+                        entity_id=ent.id,
+                        due_date=due,
+                        status=ObligationStatus.not_started,
+                        department=Department.compliance,
+                    )
+                )
     log_activity(
         db,
         actor_id=user.id,
