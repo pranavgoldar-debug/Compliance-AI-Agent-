@@ -45,7 +45,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { gatesForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, Entity, License, Obligation, OwnershipStage } from "@/types/api";
+import type { ActivityOut, Entity, License, Obligation } from "@/types/api";
 
 
 function StatTile({
@@ -143,12 +143,6 @@ export function EntityDetailPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="profile">Activity Profile</TabsTrigger>
           <TabsTrigger value="registrations">Registrations</TabsTrigger>
-          <TabsTrigger value="obligations">
-            Compliance Items
-            <Badge variant="neutral" className="ml-1">
-              {obligations?.length ?? 0}
-            </Badge>
-          </TabsTrigger>
           <TabsTrigger value="licenses">
             Licenses
             {entityLicenses.length > 0 && (
@@ -158,8 +152,6 @@ export function EntityDetailPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="people">Key Persons</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -178,24 +170,12 @@ export function EntityDetailPage() {
           <RegistrationsTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
 
-        <TabsContent value="obligations">
-          <ObligationsTab obligations={obligations} loading={loadingObs} />
-        </TabsContent>
-
         <TabsContent value="licenses">
           <LicensesTab entity={entity} />
         </TabsContent>
 
         <TabsContent value="documents">
           <DocumentsTab entity={entity} />
-        </TabsContent>
-
-        <TabsContent value="people">
-          <KeyPersonsTab entity={entity} isAdmin={isAdmin} />
-        </TabsContent>
-
-        <TabsContent value="activity">
-          <ActivityTab entity={entity} />
         </TabsContent>
       </Tabs>
     </div>
@@ -221,34 +201,6 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     if (value === "tbc") delete next[key];
     else next[key] = value;
     saveProfile.mutate(next);
-  };
-
-  // Ownership — ordered chain of layers, ultimate parent → … → this entity.
-  const [stages, setStages] = useState<OwnershipStage[]>(entity.ownership ?? []);
-  const [dirty, setDirty] = useState(false);
-  const saveOwners = useMutation({
-    mutationFn: (next: OwnershipStage[]) =>
-      api.patch<Entity>(`/api/entities/${entity.id}`, {
-        ownership: next.filter((s) => s.name.trim()),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["entity"] });
-      setDirty(false);
-    },
-  });
-  const setStage = (i: number, patch: Partial<OwnershipStage>) => {
-    setStages((arr) => arr.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-    setDirty(true);
-  };
-  const moveStage = (i: number, dir: -1 | 1) => {
-    setStages((arr) => {
-      const j = i + dir;
-      if (j < 0 || j >= arr.length) return arr;
-      const next = [...arr];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
-    setDirty(true);
   };
 
   const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
@@ -311,118 +263,6 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
               );
             })}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold">Ownership structure</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                The ownership chain, from the ultimate parent down to this entity.
-              </p>
-            </div>
-            {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setStages((arr) => [...arr, { name: "", role: "" }]);
-                  setDirty(true);
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add layer
-              </Button>
-            )}
-          </div>
-
-          {stages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No ownership layers recorded yet.
-            </p>
-          ) : (
-            <div className="space-y-0">
-              {stages.map((s, i) => (
-                <div key={i}>
-                  <div className="flex items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2">
-                    {isAdmin && (
-                      <div className="flex flex-col">
-                        <button
-                          type="button"
-                          disabled={i === 0}
-                          onClick={() => moveStage(i, -1)}
-                          className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                          title="Move up"
-                        >
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={i === stages.length - 1}
-                          onClick={() => moveStage(i, 1)}
-                          className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                          title="Move down"
-                        >
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-                    <Input
-                      value={s.name}
-                      disabled={!isAdmin}
-                      placeholder="Company / owner name"
-                      onChange={(e) => setStage(i, { name: e.target.value })}
-                      className="flex-1"
-                    />
-                    <Input
-                      value={s.role}
-                      disabled={!isAdmin}
-                      placeholder="Role (e.g. Ultimate parent)"
-                      onChange={(e) => setStage(i, { role: e.target.value })}
-                      className="w-52"
-                    />
-                    {isAdmin && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setStages((arr) => arr.filter((_, idx) => idx !== i));
-                          setDirty(true);
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex justify-center py-1 text-muted-foreground">
-                    <ArrowDown className="h-4 w-4" />
-                  </div>
-                </div>
-              ))}
-              {/* This entity is always the final node in the chain. */}
-              <div className="flex items-center gap-2 rounded-lg border border-aspora-300 bg-aspora-50/40 px-3 py-2">
-                <span className="font-medium text-sm">{entity.name}</span>
-                <Badge variant="neutral" className="ml-auto">
-                  This entity
-                </Badge>
-              </div>
-            </div>
-          )}
-
-          {isAdmin && dirty && (
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={() => saveOwners.mutate(stages)}
-                disabled={saveOwners.isPending}
-              >
-                {saveOwners.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                Save ownership
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
@@ -945,7 +785,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
               <th className="px-4 py-2 text-left font-medium">Number</th>
               <th className="px-4 py-2 text-left font-medium">Status</th>
               <th className="px-4 py-2 text-left font-medium">Frequency</th>
-              <th className="px-4 py-2 text-left font-medium">Credentials</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -957,12 +796,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
                   <Badge variant="completed">{r.status}</Badge>
                 </td>
                 <td className="px-4 py-2.5 text-muted-foreground">{r.frequency}</td>
-                <td className="px-4 py-2.5">
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <Lock className="h-3 w-3" />
-                    Stored — admin only
-                  </span>
-                </td>
               </tr>
             ))}
           </tbody>
