@@ -433,48 +433,21 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
   const prepareTeam =
     fn === "finance" ? "Finance" : fn === "legal" ? "Legal" : "Compliance";
 
-  // Which step is "active right now"?
-  let activeStep: 1 | 2 | 3 | 4 | 5 = 1; // 5 = done
+  // Work stages — driven purely by the obligation's status. The assignee moves
+  // it along via the status control; there's no admin verify/sign-off gate.
+  let activeStep: 1 | 2 | 3 | 4 = 1; // 4 = all done (completed)
   if (obligation.status === "completed") {
-    activeStep = 5;
-  } else if (obligation.status === "pending_review") {
-    // Pick which admin step we're at based on whose leg just submitted.
-    // Finance just submitted → final sign-off (step 4). Compliance just
-    // submitted → verify filing (step 2). Without this, the stepper
-    // appeared to "go backwards to step 2" right after finance hit
-    // Submit, which made the user think their work was lost.
-    activeStep = isFinanceLeg ? 4 : 2;
-  } else if (isFinanceLeg) {
-    activeStep = 3;
+    activeStep = 4;
+  } else if (obligation.status === "in_progress" || obligation.status === "pending_review") {
+    activeStep = 2;
   } else {
     activeStep = 1;
   }
 
-  const steps: { n: number; title: string; team: string; action: string }[] = [
-    {
-      n: 1,
-      title: "Prepare filing",
-      team: prepareTeam,
-      action: "Fill the filing reference + supporting docs, then Submit for review.",
-    },
-    {
-      n: 2,
-      title: "Verify filing",
-      team: "Admin",
-      action: "Review compliance's work. Approve & hand off to finance, or Send back.",
-    },
-    {
-      n: 3,
-      title: "Log payment",
-      team: "Finance",
-      action: "Enter payment amount + UTR / transaction id, then Submit for review.",
-    },
-    {
-      n: 4,
-      title: "Final sign-off",
-      team: "Admin",
-      action: "Verify the payment reference. Click Approve & close.",
-    },
+  const steps: { n: number; title: string; action: string }[] = [
+    { n: 1, title: "Not started", action: "Update the status to In progress when work begins." },
+    { n: 2, title: "In progress", action: "Filing under way — mark it Completed once filed." },
+    { n: 3, title: "Completed", action: "Filed and complete." },
   ];
 
   const active = steps.find((s) => s.n === activeStep);
@@ -525,7 +498,7 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
 
       {/* Active step's action */}
       <div className="px-5 py-2 border-t border-border/60 bg-amber-50/40">
-        {activeStep === 5 ? (
+        {obligation.status === "completed" ? (
           <div className="text-sm flex items-center gap-2">
             <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-emerald-600 text-white text-[11px]">
               ✓
