@@ -24,6 +24,11 @@ export type FollowUp = {
   options: GateOption[];
   // Some follow-ups only make sense in certain jurisdictions (e.g. WPS in UAE).
   jurisdictions?: string[];
+  // Jurisdiction-specific threshold figure shown under the question so the user
+  // knows the number they're answering against. Keyed by jurisdiction code;
+  // `default` is the fallback hint. Headline figures — verify against current
+  // local rules before relying on them.
+  thresholds?: Record<string, string>;
 };
 
 export type FilingGate = {
@@ -75,6 +80,17 @@ export const FINANCE_GATES: FilingGate[] = [
         key: "ct_income_band",
         question: "Is taxable income above the local corporate-tax threshold?",
         options: BAND,
+        thresholds: {
+          uae: "UAE: 9% applies above AED 375,000 taxable income (0% below).",
+          uk: "UK: 19% up to £50,000; 25% above £250,000 (marginal relief between).",
+          india: "India: no income threshold — all company profits are taxable.",
+          singapore: "Singapore: flat 17%; partial exemption on the first S$200,000.",
+          us: "US: flat 21% federal corporate tax — no threshold.",
+          canada: "Canada: small-business rate on active income up to CAD 500,000.",
+          lithuania: "Lithuania: standard 15%; reduced rate for revenue under €300,000 & ≤10 staff.",
+          eu: "EU: varies by member state — check the local rate threshold.",
+          default: "Check the corporate-tax threshold for this jurisdiction.",
+        },
       },
     ],
   },
@@ -137,6 +153,17 @@ export const FINANCE_GATES: FilingGate[] = [
         key: "tp_threshold",
         question: "Are those transactions above the TP documentation threshold?",
         options: BAND,
+        thresholds: {
+          uae: "UAE: Local File if revenue ≥ AED 200m; Master File if group revenue ≥ AED 3.15bn.",
+          uk: "UK: Master & Local File required for groups with turnover ≥ €750m.",
+          india: "India: TP documentation if cross-border related-party transactions exceed ₹1 crore; Master File if group revenue > ₹500 crore.",
+          singapore: "Singapore: TP documentation required if gross revenue > S$10m.",
+          us: "US: contemporaneous documentation expected for material related-party dealings (no de-minimis).",
+          canada: "Canada: contemporaneous documentation if transactions exceed CAD 1m.",
+          lithuania: "Lithuania: Local File required if revenue > €3m.",
+          eu: "EU: typically aligned to the €750m CbCR group threshold — check locally.",
+          default: "Check the transfer-pricing documentation threshold for this jurisdiction.",
+        },
       },
     ],
   },
@@ -224,4 +251,15 @@ export function followupsForJurisdiction(
   return (gate.followups ?? []).filter(
     (f) => !f.jurisdictions || f.jurisdictions.includes(c),
   );
+}
+
+// The threshold hint for a follow-up in a given jurisdiction, falling back to
+// the `default` entry. Null when the follow-up carries no thresholds.
+export function thresholdForJurisdiction(
+  followup: FollowUp,
+  code: string | null | undefined,
+): string | null {
+  if (!followup.thresholds) return null;
+  const c = (code ?? "").toLowerCase();
+  return followup.thresholds[c] ?? followup.thresholds.default ?? null;
 }

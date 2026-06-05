@@ -42,7 +42,7 @@ import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
-import { gatesForJurisdiction, followupsForJurisdiction } from "@/lib/financeGates";
+import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, BankDetails, Entity, License, Obligation, OwnershipStage, Rule } from "@/types/api";
 
@@ -341,12 +341,21 @@ function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: bo
               <div key={g.id} className="rounded-lg border border-border bg-background/60 px-3 py-2.5">
                 <div className="text-xs font-medium text-aspora-700 mb-2">{g.drives}</div>
                 <div className="space-y-2.5">
-                  {followupsForJurisdiction(g, juris).map((f) => (
+                  {followupsForJurisdiction(g, juris).map((f) => {
+                    const threshold = thresholdForJurisdiction(f, juris);
+                    return (
                     <div
                       key={f.key}
                       className="flex items-center justify-between gap-3 flex-wrap"
                     >
-                      <div className="text-sm">{f.question}</div>
+                      <div className="min-w-0">
+                        <div className="text-sm">{f.question}</div>
+                        {threshold && (
+                          <div className="text-[11px] text-muted-foreground mt-0.5">
+                            {threshold}
+                          </div>
+                        )}
+                      </div>
                       <div className="inline-flex flex-wrap gap-1">
                         {f.options.map((o) => (
                           <button
@@ -366,7 +375,8 @@ function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: bo
                         ))}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
