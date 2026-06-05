@@ -440,17 +440,18 @@ function GeneratedQuestionRow({
 }
 
 
-// "See what's applicable" → the qualification questionnaire: fixed primary
-// questions, each revealing its AI-generated follow-ups beneath it when set to
-// "Yes", plus operation-specific questions. Then the Find-applicable inventory.
+// "Activities" → a pop-up questionnaire (fixed primary questions, each
+// revealing its AI-generated follow-ups when set to "Yes", plus operation-
+// specific questions). On "Find applicable regulations" the AI reads the
+// answers + discovered list and returns the inventory shown below.
 function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
   const gates = gatesForJurisdiction(entity.jurisdiction_code);
   const qual = entity.qualification ?? {};
   const questions = qual.questions ?? [];
   const secAnswers = qual.answers ?? {};
   const profile = entity.finance_profile ?? {};
-  const hasQuestions = questions.length > 0;
 
   const generate = useMutation({
     mutationFn: () => api.post(`/api/entities/${entity.id}/generate-questions`),
@@ -478,6 +479,64 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
   const setAnswer = (key: string, value: string) =>
     saveSecondary.mutate({ ...secAnswers, [key]: value });
 
+  // Find applicable regulations — AI reads answers + discovered list. Cached per
+  // entity so the inventory survives tab switches; only re-runs on click.
+  const assess = useQuery<AssessResp>({
+    queryKey: ["assess", entity.id],
+    queryFn: () => api.post<AssessResp>(`/api/entities/${entity.id}/assess-obligations`),
+    enabled: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  });
+  useEffect(() => {
+    if (assess.isError && assess.error) {
+      window.alert(assess.error instanceof Error ? assess.error.message : String(assess.error));
+    }
+  }, [assess.isError, assess.error]);
+  const result = assess.data;
+  const items = result?.items ?? [];
+  const grp = (v: string) => items.filter((i) => i.verdict === v);
+  const mandatory = grp("mandatory");
+  const conditional = grp("conditional");
+  const notApplicable = grp("not_applicable");
+
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (result) {
+      setPicked(new Set(items.filter((i) => i.verdict !== "not_applicable").map((i) => i.form_name)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assess.data]);
+  const toggle = (form: string) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      n.has(form) ? n.delete(form) : n.add(form);
+      return n;
+    });
+
+  const addToReview = useMutation({
+    mutationFn: async () => {
+      await Promise.all(
+        items
+          .filter((i) => i.rule_id)
+          .map((i) =>
+            api.patch(`/api/rules/${i.rule_id}`, {
+              status: picked.has(i.form_name) ? "staging" : "archived",
+              applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
+            }),
+          ),
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      window.alert(`${picked.size} obligation(s) sent to Review & Assign.`);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   const gateKeys = new Set(gates.map((g) => g.key));
   const followupsFor = (primaryKey: string) =>
     questions.filter((q) => q.primary_key === primaryKey);
@@ -491,138 +550,226 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
     { value: "tbc", label: "TBC" },
   ];
 
-  // Before questions exist: a single call-to-action that generates them.
-  if (!hasQuestions) {
-    return (
-      <Card>
-        <CardContent className="p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="font-semibold">See what's applicable</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Answer a short set of primary + operation-specific questions to
-                narrow the discovered list down to what actually applies. Run{" "}
-                <strong>Refresh Regulations</strong> first so the questions are
-                tailored to the findings.
-              </p>
-            </div>
-            {isAdmin && (
-              <Button onClick={() => generate.mutate()} disabled={generate.isPending}>
-                {generate.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                See what's applicable
-              </Button>
-            )}
-          </div>
-          {generate.isPending && (
-            <div className="flex items-center gap-3 pt-3 text-sm text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
-              Generating questions… (~15–25s)
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
+  const openActivities = () => {
+    if (questions.length === 0 && isAdmin) generate.mutate();
+    setOpen(true);
+  };
+  const findApplicable = () => {
+    setOpen(false);
+    assess.refetch();
+  };
+
+  const Col = ({ title, list, tone }: { title: string; list: AssessItem[]; tone: "alert" | "neutral" | "muted" }) => (
+    <div
+      className={cn(
+        "rounded-lg border p-3",
+        tone === "alert"
+          ? "border-amber-200 bg-amber-50/50"
+          : tone === "neutral"
+            ? "border-emerald-200 bg-emerald-50/40"
+            : "border-border bg-secondary/30",
+      )}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Badge variant={tone === "alert" ? "alert" : tone === "neutral" ? "completed" : "neutral"}>
+          {list.length}
+        </Badge>
+        <span className="text-sm font-medium">{title}</span>
+      </div>
+      {list.length === 0 ? (
+        <p className="text-xs text-muted-foreground">None.</p>
+      ) : (
+        <ul className="space-y-1.5 text-sm">
+          {list.map((i) => (
+            <li key={i.form_name} className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-1 accent-aspora-600 shrink-0"
+                checked={picked.has(i.form_name)}
+                onChange={() => toggle(i.form_name)}
+              />
+              <div className="min-w-0">
+                <div className="font-medium">
+                  {i.name}
+                  {i.frequency && (
+                    <span className="text-[11px] text-muted-foreground"> · {i.frequency}</span>
+                  )}
+                </div>
+                {i.reason && <div className="text-[11px] text-muted-foreground">{i.reason}</div>}
+                {i.due && <div className="text-[11px] text-muted-foreground">Due: {i.due}</div>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  const renderQuestion = (q: GeneratedQuestion) => (
+    <GeneratedQuestionRow
+      key={q.key}
+      q={q}
+      value={secAnswers[q.key]}
+      onPick={(v) => setAnswer(q.key, v)}
+      disabled={!isAdmin || saveSecondary.isPending}
+    />
+  );
 
   return (
     <>
+      {/* Call-to-action: open the Activities questionnaire */}
       <Card>
-        <CardContent className="p-5 space-y-3">
+        <CardContent className="p-5 flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h3 className="font-semibold">Qualification questions</h3>
+            <h3 className="font-semibold">See what's required</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Answer the primary questions; operation-specific follow-ups appear
-              beneath each as you answer. Then click{" "}
-              <strong>Find applicable regulations</strong> below.
-            </p>
-            <p className="text-xs text-amber-600 mt-1">
-              Answer carefully — changing an answer changes what this entity is
-              assessed against.
+              Answer a few questions about this entity to filter the discovered
+              list down to what's mandatory and applicable.
             </p>
           </div>
-          <div className="space-y-2">
-            {gates.map((g) => {
-              const val = profile[g.key];
-              const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
-              const fups = current === "yes" ? followupsFor(g.key) : [];
-              return (
-                <div
-                  key={g.id}
-                  className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm">{g.question}</div>
-                      <div className="text-[11px] text-muted-foreground truncate">
-                        {g.drives}
-                      </div>
-                    </div>
-                    <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
-                      {FLAG_OPTIONS.map((o) => (
-                        <button
-                          key={o.value}
-                          type="button"
-                          disabled={!isAdmin || savePrimary.isPending}
-                          onClick={() => setFlag(g.key, o.value)}
-                          className={cn(
-                            "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-                            current === o.value
-                              ? o.value === "yes"
-                                ? "bg-emerald-500 text-white"
-                                : o.value === "no"
-                                  ? "bg-slate-700 text-white"
-                                  : "bg-secondary text-foreground"
-                              : "bg-background hover:bg-secondary text-muted-foreground",
-                            o.value !== "yes" && "border-l border-input",
-                          )}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {fups.length > 0 && (
-                    <div className="mt-2.5 pl-3 border-l-2 border-aspora-100 space-y-2.5">
-                      {fups.map((q) => (
-                        <GeneratedQuestionRow
-                          key={q.key}
-                          q={q}
-                          value={secAnswers[q.key]}
-                          onPick={(v) => setAnswer(q.key, v)}
-                          disabled={!isAdmin || saveSecondary.isPending}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {generalQuestions.length > 0 && (
-            <div className="space-y-2.5 pt-1">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Operation-specific
-              </div>
-              {generalQuestions.map((q) => (
-                <GeneratedQuestionRow
-                  key={q.key}
-                  q={q}
-                  value={secAnswers[q.key]}
-                  onPick={(v) => setAnswer(q.key, v)}
-                  disabled={!isAdmin || saveSecondary.isPending}
-                />
-              ))}
-            </div>
+          {isAdmin && (
+            <Button onClick={openActivities}>
+              <Sparkles className="h-4 w-4" />
+              Activities
+            </Button>
           )}
         </CardContent>
       </Card>
 
-      <RegistrationsTab entity={entity} isAdmin={isAdmin} />
+      {assess.isFetching && (
+        <Card>
+          <CardContent className="p-5 flex items-center gap-3 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
+            Finding applicable regulations… (~15–25s)
+          </CardContent>
+        </Card>
+      )}
+
+      {!assess.isFetching && result && items.length > 0 && (
+        <Card>
+          <CardContent className="p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 text-xs flex-wrap">
+                <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
+                  {items.length} identified
+                </span>
+                <span className="text-muted-foreground">→</span>
+                <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
+                  {mandatory.length} mandatory
+                </span>
+                <span className="text-muted-foreground">→</span>
+                <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-1 font-medium">
+                  {notApplicable.length} not applicable
+                </span>
+              </div>
+              {isAdmin && (
+                <Button size="sm" onClick={() => addToReview.mutate()} disabled={addToReview.isPending}>
+                  {addToReview.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Add {picked.size} to Review &amp; Assign
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Col title="Mandatory" list={mandatory} tone="alert" />
+              <Col title="Conditional" list={conditional} tone="neutral" />
+              <Col title="Not applicable" list={notApplicable} tone="muted" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Activities pop-up */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>Activities</DialogTitle>
+          </DialogHeader>
+          <div className="p-6 space-y-3 max-h-[65vh] overflow-y-auto">
+            <p className="text-xs text-muted-foreground">
+              Answer the primary questions; operation-specific follow-ups appear
+              beneath each as you answer <strong>Yes</strong>. These are tailored
+              to this entity's nature of operations and jurisdiction. Then click{" "}
+              <strong>Find applicable regulations</strong>.
+            </p>
+            {generate.isPending ? (
+              <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
+                Generating questions… (~15–25s)
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  {gates.map((g) => {
+                    const val = profile[g.key];
+                    const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
+                    const fups = current === "yes" ? followupsFor(g.key) : [];
+                    return (
+                      <div
+                        key={g.id}
+                        className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm">{g.question}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">
+                              {g.drives}
+                            </div>
+                          </div>
+                          <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
+                            {FLAG_OPTIONS.map((o) => (
+                              <button
+                                key={o.value}
+                                type="button"
+                                disabled={!isAdmin || savePrimary.isPending}
+                                onClick={() => setFlag(g.key, o.value)}
+                                className={cn(
+                                  "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                                  current === o.value
+                                    ? o.value === "yes"
+                                      ? "bg-emerald-500 text-white"
+                                      : o.value === "no"
+                                        ? "bg-slate-700 text-white"
+                                        : "bg-secondary text-foreground"
+                                    : "bg-background hover:bg-secondary text-muted-foreground",
+                                  o.value !== "yes" && "border-l border-input",
+                                )}
+                              >
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {fups.length > 0 && (
+                          <div className="mt-2.5 pl-3 border-l-2 border-aspora-100 space-y-2.5">
+                            {fups.map(renderQuestion)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {generalQuestions.length > 0 && (
+                  <div className="space-y-2.5 pt-1">
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Operation-specific
+                    </div>
+                    {generalQuestions.map(renderQuestion)}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={findApplicable} disabled={generate.isPending}>
+              <Sparkles className="h-4 w-4" />
+              Find applicable regulations
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -804,7 +951,7 @@ function ComplianceRulesTab({
               <select
                 value={fnFilter}
                 onChange={(e) => setFnFilter(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-8 min-w-[140px] rounded-md border border-input bg-background px-2 text-xs"
               >
                 <option value="">All functions</option>
                 {functions.map((f) => (
@@ -814,7 +961,7 @@ function ComplianceRulesTab({
               <select
                 value={catFilter}
                 onChange={(e) => setCatFilter(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-8 min-w-[150px] rounded-md border border-input bg-background px-2 text-xs"
               >
                 <option value="">All categories</option>
                 {categories.map((c) => (
