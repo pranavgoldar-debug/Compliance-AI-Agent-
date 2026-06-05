@@ -231,6 +231,10 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
               <strong>Find Regulations</strong> marks mandatory vs conditional.
               TBC = awaiting confirmation (doesn't switch anything on).
             </p>
+            <p className="text-xs text-amber-600 mt-1.5">
+              Answer carefully — changing an answer changes the regulations and
+              filings this entity is assessed against.
+            </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {gates.map((g) => {
@@ -1046,6 +1050,40 @@ function OverviewTab({
         </Card>
 
         <BankDetailsCard entity={entity} isAdmin={isAdmin} />
+
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Ownership
+            </h3>
+            {!entity.ownership || entity.ownership.length === 0 ? (
+              <div className="text-sm text-muted-foreground italic">
+                No ownership recorded{isAdmin ? " — add it under Edit." : "."}
+              </div>
+            ) : (
+              <ol className="space-y-2 text-sm">
+                {entity.ownership.map((stage, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start justify-between gap-2 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{stage.name}</div>
+                      {stage.role && (
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {stage.role}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                      {i === entity.ownership!.length - 1 ? "This entity" : `Tier ${i + 1}`}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="md:col-span-3">
