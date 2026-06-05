@@ -397,6 +397,115 @@ def _secondary_answers_block(qualification: Optional[dict]) -> str:
     return "\n\nADAPTIVE QUALIFICATION ANSWERS:\n" + "\n".join(lines)
 
 
+@router.post("/{entity_id}/discover-regulations")
+def discover_entity_regulations(
+    entity_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """Entity-level discovery: from the entity's Nature of Operations,
+    jurisdiction and ALL its licenses, ask the AI for the MAXIMAL set of
+    regulatory obligations (all functions / item types, assume every activity
+    present). Works even with no license. Persists new items as Staging."""
+    from compliance_agent.db import License, Rule, RuleStatus
+    from compliance_agent.classification import derive_function
+    from compliance_agent.rule_extractor import (
+        extract_rules_from_text,
+        is_live,
+        RuleExtractorUnavailable,
+    )
+    from compliance_agent.api.rules import ensure_obligations_for_rule
+    from compliance_agent.api.licenses import _read_license_text, _MAX_PROMPT_CHARS
+
+    entity = db.get(Entity, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found.")
+    if not is_live():
+        return {"available": False, "created": 0, "notes": "AI is off — set COMPLIANCE_AGENT_LIVE=1 + an API key."}
+
+    juris = entity.jurisdiction_code
+    licenses = db.execute(select(License).where(License.entity_id == entity_id)).scalars().all()
+    lic_lines = [
+        f"- {l.name} | {l.authority} | type {l.license_type or 'n/a'} | no {l.license_number or 'n/a'}"
+        for l in licenses
+    ] or ["(no licenses uploaded)"]
+    lic_texts: list[str] = []
+    for l in licenses:
+        try:
+            t = _read_license_text(l)
+        except Exception:  # noqa: BLE001
+            t = ""
+        if t and len(t.strip()) >= 200:
+            lic_texts.append(f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:8000]}")
+
+    context = (
+        "Discover the MAXIMAL set of regulatory obligations for the entity below.\n"
+        "ASSUME EVERY ACTIVITY IS PRESENT — return the broadest plausible list "
+        "across ALL functions (Finance/Tax, Legal/Corporate, Compliance/AML, "
+        "HR/Payroll) and ALL item types: filings, returns, licenses, permits, "
+        "registrations, ongoing compliance obligations and reporting "
+        "requirements. Use the NATURE OF OPERATIONS and the licenses to surface "
+        "industry-specific regulations. When unsure, INCLUDE it — narrowing "
+        "happens later via qualification questions. One entry per distinct item.\n\n"
+        f"ENTITY: {entity.name}\n"
+        f"Jurisdiction: {juris}\n"
+        f"Legal type: {entity.legal_type or '(unknown)'}\n"
+        f"Nature of operations: {entity.nature_of_operation or '(not provided)'}\n\n"
+        f"LICENSES HELD:\n" + "\n".join(lic_lines) + "\n" + "".join(lic_texts)
+    )[:_MAX_PROMPT_CHARS]
+
+    try:
+        result = extract_rules_from_text(context, jurisdiction_hint=juris)
+    except RuleExtractorUnavailable as exc:
+        return {"available": False, "created": 0, "notes": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
+
+    existing = {
+        (r.form_name or r.name or "").strip().lower()
+        for r in entity.rules
+    }
+    created: list = []
+    for cand in result.rules:
+        key = (cand.form_name or cand.name or "").strip().lower()
+        if not key or key in existing:
+            continue
+        existing.add(key)
+        rule = Rule(
+            name=cand.name,
+            jurisdiction_code=(juris or "xx")[:16],
+            category=cand.category,
+            area=cand.area,
+            form_name=cand.form_name,
+            authority=cand.authority,
+            frequency=cand.frequency,
+            due_date_rule=cand.due_date_rule,
+            payment_rule=cand.payment_rule,
+            applicability=cand.applicability,
+            applicability_note=cand.applicability_note,
+            tax_type=cand.tax_type,
+            plain_description=cand.plain_description,
+            responsible_function=derive_function(cand.category, cand.area),
+            status=RuleStatus.staging,
+            created_by_id=user.id,
+        )
+        rule.entities = [entity]
+        db.add(rule)
+        created.append(rule)
+    db.flush()
+    for r in created:
+        try:
+            ensure_obligations_for_rule(db, r)
+        except Exception:  # noqa: BLE001
+            pass
+    log_activity(
+        db, actor_id=user.id, action="entity.discovered_regulations",
+        target_type="entity", target_id=entity_id, payload={"created": len(created)},
+    )
+    db.commit()
+    return {"available": True, "created": len(created), "notes": result.notes}
+
+
 @router.post("/{entity_id}/generate-questions")
 def generate_entity_questions(
     entity_id: int,

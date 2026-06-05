@@ -641,7 +641,8 @@ function ComplianceRulesTab({
   isAdmin: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [aiOpen, setAiOpen] = useState(false);
+  const [fnFilter, setFnFilter] = useState("");
+  const [catFilter, setCatFilter] = useState("");
 
   const { data: staging = [], isLoading: loadingStaging } = useQuery({
     queryKey: ["rules", "staging", entity.id],
@@ -654,6 +655,20 @@ function ComplianceRulesTab({
 
   const review = staging.filter((r) => r.entity_ids.includes(entity.id));
   const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
+
+  // Filters for the discovered list — by function and category.
+  const allDiscovered = [...review, ...confirmed];
+  const functions = Array.from(
+    new Set(allDiscovered.map((r) => r.responsible_function).filter(Boolean) as string[]),
+  ).sort();
+  const categories = Array.from(
+    new Set(allDiscovered.map((r) => r.category).filter(Boolean)),
+  ).sort();
+  const matchFilter = (r: Rule) =>
+    (!fnFilter || r.responsible_function === fnFilter) &&
+    (!catFilter || r.category === catFilter);
+  const reviewShown = review.filter(matchFilter);
+  const confirmedShown = confirmed.filter(matchFilter);
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
@@ -668,8 +683,20 @@ function ComplianceRulesTab({
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  // AI generation needs a license to read; use the first one the entity holds.
-  const license = licenses[0];
+  // Entity-level discovery — driven by Nature of Operations + jurisdiction +
+  // ALL licenses. Works with no license attached.
+  const discover = useMutation<{ available: boolean; created: number; notes?: string | null }>({
+    mutationFn: () => api.post(`/api/entities/${entity.id}/discover-regulations`),
+    onSuccess: (r) => {
+      refresh();
+      if (r && r.available === false) {
+        window.alert(r.notes || "AI is off in this deployment.");
+      }
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  void licenses; // discovery is entity-level now; licenses no longer gate it
   // Both staging + confirmed forms, so a re-run doesn't duplicate what's
   // already in Review or Confirmed.
   const confirmedForms = [...confirmed, ...review].map((r) => r.form_name || r.name);
@@ -728,26 +755,26 @@ function ComplianceRulesTab({
             <div>
               <h3 className="font-semibold">Compliance rules</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                AI proposes the regulatory obligations this entity owes. Assess
-                them under Registrations and send the ones you want to Review &
-                Assign for approval.
+                AI discovers the regulations this entity could owe — from its
+                Nature of Operations, jurisdiction and any uploaded licenses.
+                Answer the questions below to narrow it to what applies.
               </p>
             </div>
             {isAdmin && (
-              <Button
-                onClick={() => setAiOpen(true)}
-                disabled={!license}
-                title={license ? undefined : "Add a license to this entity first"}
-              >
-                <Sparkles className="h-4 w-4" />
+              <Button onClick={() => discover.mutate()} disabled={discover.isPending}>
+                {discover.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
                 Refresh Regulations
               </Button>
             )}
           </div>
-          {!license && (
-            <p className="text-xs text-amber-700 pt-1">
-              No license on this entity yet — add one under the Licenses tab to
-              scan with AI.
+          {discover.isPending && (
+            <p className="text-xs text-muted-foreground pt-1 flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-aspora-600" />
+              Finding all applicable regulations for this entity… (~20–30s)
             </p>
           )}
           {/* Discovery funnel: discovered → in review → confirmed (→ mandatory) */}
@@ -772,21 +799,43 @@ function ComplianceRulesTab({
               )}
             </div>
           )}
+          {allDiscovered.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <select
+                value={fnFilter}
+                onChange={(e) => setFnFilter(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="">All functions</option>
+                {functions.map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+              <select
+                value={catFilter}
+                onChange={(e) => setCatFilter(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="">All categories</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              {(fnFilter || catFilter) && (
+                <button
+                  onClick={() => {
+                    setFnFilter("");
+                    setCatFilter("");
+                  }}
+                  className="text-xs text-aspora-700 hover:underline"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {/* Discovery panel opens here, directly under the Refresh button, so it's
-          visible at the top without scrolling. */}
-      {license && (
-        <AIExtractDialog
-          license={license}
-          open={aiOpen}
-          onOpenChange={setAiOpen}
-          existingForms={confirmedForms}
-          autoRun={review.length + confirmed.length === 0}
-          onCreated={refresh}
-        />
-      )}
 
       {/* Review (AI Generated) */}
       <Card>
@@ -799,13 +848,15 @@ function ComplianceRulesTab({
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
               <Loader2 className="h-4 w-4 animate-spin text-aspora-600" /> Loading…
             </div>
-          ) : review.length === 0 ? (
+          ) : reviewShown.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing awaiting review. Use “Refresh Regulations” to find obligations.
+              {review.length === 0
+                ? "Nothing awaiting review. Use “Refresh Regulations” to find obligations."
+                : "No items match the current filter."}
             </p>
           ) : (
             <div className="space-y-2">
-              {review.map((r) => (
+              {reviewShown.map((r) => (
                 <RuleRow key={r.id} r={r} mode="review" />
               ))}
             </div>
@@ -824,13 +875,15 @@ function ComplianceRulesTab({
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
               <Loader2 className="h-4 w-4 animate-spin text-aspora-600" /> Loading…
             </div>
-          ) : confirmed.length === 0 ? (
+          ) : confirmedShown.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No confirmed rules yet. Approve items from Review to add them here.
+              {confirmed.length === 0
+                ? "No confirmed rules yet. Approve items from Review to add them here."
+                : "No items match the current filter."}
             </p>
           ) : (
             <div className="space-y-2">
-              {confirmed.map((r) => (
+              {confirmedShown.map((r) => (
                 <RuleRow key={r.id} r={r} mode="confirmed" />
               ))}
             </div>
@@ -1568,11 +1621,6 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
                 </div>
                 {i.reason && (
                   <div className="text-[11px] text-muted-foreground">{i.reason}</div>
-                )}
-                {i.triggering_factors && (
-                  <div className="text-[11px] text-aspora-700">
-                    Triggers: {i.triggering_factors}
-                  </div>
                 )}
                 {i.due && (
                   <div className="text-[11px] text-muted-foreground">Due: {i.due}</div>
