@@ -831,8 +831,8 @@ function EditEntityDialog({
                     />
                     <Input
                       value={stage.role}
-                      placeholder="Role / stake (e.g. 100% parent)"
-                      className="flex-1"
+                      placeholder="Stake % (e.g. 100)"
+                      className="w-28 shrink-0"
                       onChange={(e) => setStage(i, { role: e.target.value })}
                     />
                     <Button
@@ -880,6 +880,16 @@ function EditEntityDialog({
 // ---------------------------------------------------------------------------
 // Overview tab
 // ---------------------------------------------------------------------------
+// Format an ownership stake: a bare number gets a "%" suffix automatically, so
+// the user only types "100". Values that already include "%" (or free text)
+// are shown as-is.
+function fmtStake(role: string | undefined): string | null {
+  const v = (role ?? "").trim();
+  if (!v) return null;
+  if (v.includes("%")) return v;
+  return /^\d+(\.\d+)?$/.test(v) ? `${v}%` : v;
+}
+
 const BANK_FIELDS: { key: keyof BankDetails; label: string; placeholder: string }[] = [
   { key: "account_name", label: "Account name", placeholder: "Account holder" },
   { key: "bank_name", label: "Bank", placeholder: "Bank name" },
@@ -1068,26 +1078,24 @@ function OverviewTab({
                 No ownership recorded{isAdmin ? " — add it under Edit." : "."}
               </div>
             ) : (
-              <ol className="space-y-2 text-sm">
-                {entity.ownership.map((stage, i) => (
-                  <li
-                    key={i}
-                    className="flex items-start justify-between gap-2 border-b border-border/60 pb-2 last:border-0 last:pb-0"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{stage.name}</div>
-                      {stage.role && (
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          {stage.role}
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                      {i === entity.ownership!.length - 1 ? "This entity" : `Tier ${i + 1}`}
-                    </span>
-                  </li>
-                ))}
-              </ol>
+              <ul className="space-y-2 text-sm">
+                {entity.ownership.map((stage, i) => {
+                  const stake = fmtStake(stage.role);
+                  return (
+                    <li
+                      key={i}
+                      className="border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                    >
+                      <div className="font-medium">
+                        {stake && (
+                          <span className="text-aspora-700">{stake}</span>
+                        )}{" "}
+                        {stage.name}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </CardContent>
         </Card>
