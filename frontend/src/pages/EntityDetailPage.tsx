@@ -43,7 +43,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, BankDetails, Entity, License, Obligation, OwnershipStage, Rule } from "@/types/api";
+import type { ActivityOut, BankDetails, Entity, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
 
 
 function StatTile({
@@ -393,29 +393,82 @@ function RegulatoryAssessmentTab({
   return (
     <div className="space-y-4">
       <ComplianceRulesTab entity={entity} licenses={licenses} isAdmin={isAdmin} />
-      <ActivityProfileTab entity={entity} isAdmin={isAdmin} />
-      <DynamicQuestionsCard entity={entity} isAdmin={isAdmin} />
-      <RegistrationsTab entity={entity} isAdmin={isAdmin} />
+      <ApplicabilitySection entity={entity} isAdmin={isAdmin} />
     </div>
   );
 }
 
 
-// Adaptive (secondary) qualification questions — AI-generated per entity from
-// nature of operations + licenses + jurisdiction + discovered items. Answers
-// persist on entity.qualification and feed the Reassess step below.
-function DynamicQuestionsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+// One generated (secondary) question rendered as an option row.
+function GeneratedQuestionRow({
+  q,
+  value,
+  onPick,
+  disabled,
+}: {
+  q: GeneratedQuestion;
+  value: string | undefined;
+  onPick: (v: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="min-w-0">
+        <div className="text-sm">{q.question}</div>
+        {q.drives && <div className="text-[11px] text-muted-foreground">{q.drives}</div>}
+      </div>
+      <div className="inline-flex flex-wrap gap-1">
+        {q.options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(o.value)}
+            className={cn(
+              "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+              value === o.value
+                ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+                : "border-input bg-background hover:bg-secondary text-muted-foreground",
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+// "See what's applicable" → the qualification questionnaire: fixed primary
+// questions, each revealing its AI-generated follow-ups beneath it when set to
+// "Yes", plus operation-specific questions. Then the Find-applicable inventory.
+function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
+  const gates = gatesForJurisdiction(entity.jurisdiction_code);
   const qual = entity.qualification ?? {};
   const questions = qual.questions ?? [];
-  const answers = qual.answers ?? {};
+  const secAnswers = qual.answers ?? {};
+  const profile = entity.finance_profile ?? {};
+  const hasQuestions = questions.length > 0;
 
   const generate = useMutation({
     mutationFn: () => api.post(`/api/entities/${entity.id}/generate-questions`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
-  const saveAnswers = useMutation({
+  const savePrimary = useMutation({
+    mutationFn: (next: Record<string, string>) =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, { finance_profile: next }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+  });
+  const setFlag = (key: string, value: "yes" | "no" | "tbc") => {
+    const next = { ...profile };
+    if (value === "tbc") delete next[key];
+    else next[key] = value;
+    savePrimary.mutate(next);
+  };
+  const saveSecondary = useMutation({
     mutationFn: (next: Record<string, string>) =>
       api.patch<Entity>(`/api/entities/${entity.id}`, {
         qualification: { ...qual, answers: next },
@@ -423,75 +476,154 @@ function DynamicQuestionsCard({ entity, isAdmin }: { entity: Entity; isAdmin: bo
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
   });
   const setAnswer = (key: string, value: string) =>
-    saveAnswers.mutate({ ...answers, [key]: value });
+    saveSecondary.mutate({ ...secAnswers, [key]: value });
+
+  const gateKeys = new Set(gates.map((g) => g.key));
+  const followupsFor = (primaryKey: string) =>
+    questions.filter((q) => q.primary_key === primaryKey);
+  const generalQuestions = questions.filter(
+    (q) => !q.primary_key || !gateKeys.has(q.primary_key),
+  );
+
+  const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
+    { value: "yes", label: "Yes" },
+    { value: "no", label: "No" },
+    { value: "tbc", label: "TBC" },
+  ];
+
+  // Before questions exist: a single call-to-action that generates them.
+  if (!hasQuestions) {
+    return (
+      <Card>
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">See what's applicable</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Answer a short set of primary + operation-specific questions to
+                narrow the discovered list down to what actually applies. Run{" "}
+                <strong>Refresh Regulations</strong> first so the questions are
+                tailored to the findings.
+              </p>
+            </div>
+            {isAdmin && (
+              <Button onClick={() => generate.mutate()} disabled={generate.isPending}>
+                {generate.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                See what's applicable
+              </Button>
+            )}
+          </div>
+          {generate.isPending && (
+            <div className="flex items-center gap-3 pt-3 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
+              Generating questions… (~15–25s)
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <Card>
-      <CardContent className="p-5 space-y-3">
-        <div className="flex items-start justify-between gap-2">
+    <>
+      <Card>
+        <CardContent className="p-5 space-y-3">
           <div>
             <h3 className="font-semibold">Qualification questions</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Jurisdiction- and operation-specific follow-ups, generated from this
-              entity's nature of operations, licenses and the discovered list.
-              Answer them, then <strong>Reassess</strong> below.
+              Answer the primary questions; operation-specific follow-ups appear
+              beneath each as you answer. Then click{" "}
+              <strong>Find applicable regulations</strong> below.
+            </p>
+            <p className="text-xs text-amber-600 mt-1">
+              Answer carefully — changing an answer changes what this entity is
+              assessed against.
             </p>
           </div>
-          {isAdmin && (
-            <Button onClick={() => generate.mutate()} disabled={generate.isPending}>
-              {generate.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {questions.length ? "Regenerate" : "Generate questions"}
-            </Button>
-          )}
-        </div>
-        {generate.isPending ? (
-          <div className="flex items-center gap-3 py-3 text-sm text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
-            Generating questions… (~15–25s)
-          </div>
-        ) : questions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No questions yet. Run <strong>Refresh Regulations</strong> above, then
-            click <strong>Generate questions</strong>.
-          </p>
-        ) : (
-          <div className="space-y-2.5">
-            {questions.map((q) => (
-              <div key={q.key} className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <div className="text-sm">{q.question}</div>
-                  {q.drives && (
-                    <div className="text-[11px] text-muted-foreground">{q.drives}</div>
+          <div className="space-y-2">
+            {gates.map((g) => {
+              const val = profile[g.key];
+              const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
+              const fups = current === "yes" ? followupsFor(g.key) : [];
+              return (
+                <div
+                  key={g.id}
+                  className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm">{g.question}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {g.drives}
+                      </div>
+                    </div>
+                    <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
+                      {FLAG_OPTIONS.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          disabled={!isAdmin || savePrimary.isPending}
+                          onClick={() => setFlag(g.key, o.value)}
+                          className={cn(
+                            "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                            current === o.value
+                              ? o.value === "yes"
+                                ? "bg-emerald-500 text-white"
+                                : o.value === "no"
+                                  ? "bg-slate-700 text-white"
+                                  : "bg-secondary text-foreground"
+                              : "bg-background hover:bg-secondary text-muted-foreground",
+                            o.value !== "yes" && "border-l border-input",
+                          )}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {fups.length > 0 && (
+                    <div className="mt-2.5 pl-3 border-l-2 border-aspora-100 space-y-2.5">
+                      {fups.map((q) => (
+                        <GeneratedQuestionRow
+                          key={q.key}
+                          q={q}
+                          value={secAnswers[q.key]}
+                          onPick={(v) => setAnswer(q.key, v)}
+                          disabled={!isAdmin || saveSecondary.isPending}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
-                <div className="inline-flex flex-wrap gap-1">
-                  {q.options.map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      disabled={!isAdmin || saveAnswers.isPending}
-                      onClick={() => setAnswer(q.key, o.value)}
-                      className={cn(
-                        "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-                        answers[q.key] === o.value
-                          ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
-                          : "border-input bg-background hover:bg-secondary text-muted-foreground",
-                      )}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        )}
-      </CardContent>
-    </Card>
+
+          {generalQuestions.length > 0 && (
+            <div className="space-y-2.5 pt-1">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Operation-specific
+              </div>
+              {generalQuestions.map((q) => (
+                <GeneratedQuestionRow
+                  key={q.key}
+                  q={q}
+                  value={secAnswers[q.key]}
+                  onPick={(v) => setAnswer(q.key, v)}
+                  disabled={!isAdmin || saveSecondary.isPending}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <RegistrationsTab entity={entity} isAdmin={isAdmin} />
+    </>
   );
 }
 
@@ -554,9 +686,10 @@ function ComplianceRulesTab({
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">{r.name}</span>
-          {na ? (
-            <Badge variant="neutral">Not applicable</Badge>
-          ) : (
+          {/* Discovered list is the exhaustive candidate set (assume all
+              activities present) — no applicability label here; that's decided
+              by "Find applicable regulations" below. */}
+          {mode === "confirmed" && !na && (
             <Badge variant={r.applicability === "Mandatory" ? "alert" : "neutral"}>
               {r.applicability}
             </Badge>

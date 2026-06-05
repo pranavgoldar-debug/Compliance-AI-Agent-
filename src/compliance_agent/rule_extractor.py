@@ -180,8 +180,18 @@ Rules:
 - Tailor questions to THIS entity — its jurisdiction, industry, nature of operations, licenses, and the discovered items. Do NOT produce generic boilerplate.
 - Every question must change the applicability of at least one discovered item.
 - Prefer closed answers (yes/no, threshold bands, frequencies) over free text.
-- Produce 4-10 questions. Do NOT re-ask obvious primary questions (VAT-registered? employs staff? holds customer funds? etc.) — those are asked separately.
-- For each question give: a stable snake_case `key`, the `question` text, 2-4 `options` (each {value, label}), and `drives` (the item/family it gates).
+- THRESHOLDS: when a question turns on a threshold/limit, STATE THE ACTUAL FIGURE in the question text or the option labels (e.g. "Are cash transactions above the CAD 10,000 reporting threshold?", options "Over the AED 375,000 corporate-tax threshold"). Never ask "above the threshold?" without naming the number for that jurisdiction.
+- `primary_key`: these PRIMARY activities are already asked separately —
+  registered_company, licensed_financial_activity, holds_customer_funds,
+  employs_staff, grants_equity, takes_foreign_investment,
+  intra_group_transactions, holds_personal_data, vat_gst_registered,
+  has_owners_controllers, sanctions_exposure, conducts_esr_relevant_activity,
+  audit_required.
+  If a question is a FOLLOW-UP to one of these (only relevant once that primary
+  is "yes"), set `primary_key` to that id so it can be shown beneath it. If it
+  is a general operation/nature-driven question not tied to a primary, leave
+  `primary_key` null. Do NOT re-ask the primary questions themselves.
+- Produce 4-10 questions. Each needs: a stable snake_case `key`, the `question` text, 2-4 `options` (each {value, label}), `drives` (the item/family it gates), and `primary_key` (or null).
 Return ONLY JSON matching the schema — no prose."""
 
 
@@ -195,6 +205,10 @@ class GeneratedQuestion(BaseModel):
     question: str
     options: list[GenOption]
     drives: str = Field(default="", description="The item/family this question gates.")
+    primary_key: Optional[str] = Field(
+        default=None,
+        description="The primary activity id this is a follow-up to, or null.",
+    )
 
 
 class GeneratedQuestions(BaseModel):

@@ -39,6 +39,7 @@ export interface GeneratedQuestion {
   question: string;
   options: { value: string; label: string }[];
   drives?: string;
+  primary_key?: string | null;
 }
 export interface AssessmentItem {
   rule_id: number | null;

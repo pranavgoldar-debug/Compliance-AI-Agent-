@@ -452,6 +452,7 @@ def generate_entity_questions(
             "question": q.question,
             "options": [{"value": o.value, "label": o.label} for o in q.options],
             "drives": q.drives,
+            "primary_key": q.primary_key,
         }
         for q in result.questions
     ]
