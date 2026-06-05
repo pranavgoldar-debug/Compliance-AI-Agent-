@@ -40,7 +40,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
+import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, BankDetails, Entity, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
@@ -824,16 +824,16 @@ function ComplianceRulesTab({
   const review = staging.filter((r) => r.entity_ids.includes(entity.id));
   const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
 
-  // Filters for the discovered list — by function and category.
+  // Filters for the discovered list — by function and category. Fall back to a
+  // client-side derive when the server hasn't set responsible_function.
   const allDiscovered = [...review, ...confirmed];
-  const functions = Array.from(
-    new Set(allDiscovered.map((r) => r.responsible_function).filter(Boolean) as string[]),
-  ).sort();
+  const fnOf = (r: Rule) => r.responsible_function || deriveFunction(r.category, r.area);
+  const functions = Array.from(new Set(allDiscovered.map(fnOf))).sort();
   const categories = Array.from(
     new Set(allDiscovered.map((r) => r.category).filter(Boolean)),
   ).sort();
   const matchFilter = (r: Rule) =>
-    (!fnFilter || r.responsible_function === fnFilter) &&
+    (!fnFilter || fnOf(r) === fnFilter) &&
     (!catFilter || r.category === catFilter);
   const reviewShown = review.filter(matchFilter);
   const confirmedShown = confirmed.filter(matchFilter);
