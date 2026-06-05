@@ -970,6 +970,10 @@ function ComplianceRulesTab({
       refresh();
       if (r && r.available === false) {
         window.alert(r.notes || "AI is off in this deployment.");
+      } else if (r) {
+        window.alert(
+          `${r.created} regulation(s) discovered and added to Review & Assign (For Action).`,
+        );
       }
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
