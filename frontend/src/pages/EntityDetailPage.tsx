@@ -463,6 +463,15 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
   const hasDiscovered = [...staging, ...production].some((r) =>
     r.entity_ids.includes(entity.id),
   );
+  const { data: gaps } = useQuery<{
+    empty_domains: string[];
+    ungated_items: { form_name: string; category: string | null }[];
+    ungated_count: number;
+  }>({
+    queryKey: ["gaps", entity.id],
+    queryFn: () => api.get(`/api/entities/${entity.id}/gaps`),
+    enabled: hasDiscovered,
+  });
   const gates = gatesForJurisdiction(entity.jurisdiction_code);
   const qual = entity.qualification ?? {};
   const questions = qual.questions ?? [];
@@ -477,7 +486,10 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
   const savePrimary = useMutation({
     mutationFn: (next: Record<string, string>) =>
       api.patch<Entity>(`/api/entities/${entity.id}`, { finance_profile: next }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity"] });
+      queryClient.invalidateQueries({ queryKey: ["gaps", entity.id] });
+    },
   });
   const setFlag = (key: string, value: "yes" | "no" | "tbc") => {
     const next = { ...profile };
@@ -654,6 +666,44 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
           )}
         </CardContent>
       </Card>
+
+      {gaps && (gaps.empty_domains.length > 0 || gaps.ungated_count > 0) && (
+        <Card className="border-amber-200 bg-amber-50/40">
+          <CardContent className="p-5 space-y-2">
+            <h3 className="font-semibold text-sm text-amber-800">Coverage gaps</h3>
+            {gaps.empty_domains.length > 0 && (
+              <div>
+                <p className="text-xs text-amber-800 font-medium">
+                  Answered “Yes” but nothing was discovered for these — re-run{" "}
+                  <strong>Refresh Regulations</strong>:
+                </p>
+                <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
+                  {gaps.empty_domains.map((f) => (
+                    <li key={f}>{gates.find((g) => g.key === f)?.question ?? f}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {gaps.ungated_count > 0 && (
+              <div>
+                <p className="text-xs text-amber-800 font-medium">
+                  {gaps.ungated_count} discovered item(s) aren’t covered by any
+                  activity question — review manually:
+                </p>
+                <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
+                  {gaps.ungated_items.slice(0, 8).map((i, idx) => (
+                    <li key={idx}>
+                      {i.form_name}
+                      {i.category ? ` · ${i.category}` : ""}
+                    </li>
+                  ))}
+                  {gaps.ungated_count > 8 && <li>…and {gaps.ungated_count - 8} more</li>}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {assess.isFetching && (
         <Card>
@@ -843,6 +893,7 @@ function ComplianceRulesTab({
     queryClient.invalidateQueries({ queryKey: ["calendar"] });
     queryClient.invalidateQueries({ queryKey: ["obligations"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["gaps", entity.id] });
   };
 
   const reject = useMutation({

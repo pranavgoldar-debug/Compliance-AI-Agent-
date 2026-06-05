@@ -397,6 +397,55 @@ def _secondary_answers_block(qualification: Optional[dict]) -> str:
     return "\n\nADAPTIVE QUALIFICATION ANSWERS:\n" + "\n".join(lines)
 
 
+@router.get("/{entity_id}/gaps")
+def entity_gaps(
+    entity_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Gap-detection over the discovered list + Primary Activity answers:
+      - empty_domains: a flag answered Yes but NO discovered item maps to it
+        (that family likely wasn't researched — re-run discovery).
+      - ungated_items: discovered items that map to no primary flag at all
+        (the 'needs a new flag/question' class).
+    (The spec's 'partial domain' check needs coverage_notes, which our
+    discovery doesn't emit yet — omitted.)"""
+    from compliance_agent.db import RuleStatus
+    from compliance_agent.activity_gate import matched_activities, PRIMARY_ACTIVITY_FLAGS
+
+    entity = db.get(Entity, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found.")
+
+    discovered = [
+        r for r in entity.rules
+        if r.status in (RuleStatus.staging, RuleStatus.production)
+    ]
+    profile = entity.finance_profile or {}
+
+    flag_hits: dict[str, int] = {f: 0 for f in PRIMARY_ACTIVITY_FLAGS}
+    ungated: list[dict] = []
+    for r in discovered:
+        hits = matched_activities(r.name or "", r.form_name or "", r.category or "", r.area or "")
+        if not hits:
+            ungated.append({"form_name": r.form_name or r.name, "category": r.category})
+        for h in hits:
+            flag_hits[h] = flag_hits.get(h, 0) + 1
+
+    empty_domains = [
+        flag
+        for flag, ans in profile.items()
+        if str(ans).strip().lower() == "yes"
+        and flag in PRIMARY_ACTIVITY_FLAGS
+        and flag_hits.get(flag, 0) == 0
+    ]
+    return {
+        "empty_domains": empty_domains,
+        "ungated_items": ungated[:50],
+        "ungated_count": len(ungated),
+    }
+
+
 @router.post("/{entity_id}/discover-regulations")
 def discover_entity_regulations(
     entity_id: int,
