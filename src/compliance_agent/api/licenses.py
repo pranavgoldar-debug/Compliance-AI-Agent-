@@ -33,7 +33,12 @@ from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
-from compliance_agent.classification import FINANCE_ONLY, derive_function, keep_function
+from compliance_agent.classification import (
+    FINANCE_ONLY,
+    derive_function,
+    derive_tax_type,
+    keep_function,
+)
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
@@ -1266,7 +1271,10 @@ def applicable_rules(
                 or derive_function(rule.category, rule.area)
             ),
             plain_description=rule.plain_description,
-            tax_type=rule.tax_type.value if rule.tax_type else "Not a Tax",
+            tax_type=(
+                derive_tax_type(rule.name, rule.form_name, rule.category, rule.area)
+                or (rule.tax_type.value if rule.tax_type else "Not a Tax")
+            ),
             relevance=relevance,
             match_reason=match_reason,
             next_obligation_id=ob.id if ob else None,

@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from compliance_agent.classification import derive_function
+from compliance_agent.classification import derive_function, derive_tax_type
 
 from compliance_agent.db import (
     Activity,
@@ -154,7 +154,10 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
-        rule_tax_type=o.rule.tax_type,
+        rule_tax_type=(
+            derive_tax_type(o.rule.name, o.rule.form_name, o.rule.category, o.rule.area)
+            or o.rule.tax_type
+        ),
         rule_responsible_function=(
             o.rule.responsible_function
             or derive_function(o.rule.category, o.rule.area)
@@ -203,7 +206,10 @@ def serialize_calendar_obligation(o: Obligation) -> CalendarObligation:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
-        rule_tax_type=o.rule.tax_type,
+        rule_tax_type=(
+            derive_tax_type(o.rule.name, o.rule.form_name, o.rule.category, o.rule.area)
+            or o.rule.tax_type
+        ),
         rule_applicability=(
             o.rule.applicability.value if o.rule.applicability else "Mandatory"
         ),

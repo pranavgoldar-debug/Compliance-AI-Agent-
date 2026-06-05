@@ -51,6 +51,57 @@ def derive_function(category: str = "", area: str = "") -> str:
     return "Compliance"
 
 
+# --- Tax-type classification ------------------------------------------------
+# A filing is exactly one of: a tax on income/profits/gains (Direct), a tax on
+# goods/services/transactions collected on the authority's behalf (Indirect), or
+# not a tax at all (admin / statutory / social-security / regulatory filings).
+# The AI extractor sets `tax_type` per rule and was inconsistent across runs
+# (the same form labelled differently); this derives it deterministically so the
+# badge is identical for identical forms. Returns None when it can't tell — the
+# caller then keeps whatever is stored.
+#
+# Checked in priority order. Markers are matched against name + form_name +
+# category + area, all lowercased and space-padded.
+_INDIRECT_TAX = (
+    " vat", " gst", " hst", " pst", " qst", "sales tax", "sales/use", "use tax",
+    "value added", "excise", "customs", "import duty", "indirect tax",
+)
+# Things that look tax-ish by keyword but are NOT a tax — checked before Direct
+# so e.g. an "Employer Payment Summary" or "Pension contribution" isn't swept in.
+_NOT_A_TAX = (
+    "employer payment summary", " eps ", "wage protection", " wps ",
+    "pension", "social security", "gpssa", "gratuity", "provident",
+    "audit", "annual accounts", "statutory account", "financial statement",
+    "confirmation statement", "annual return", "beneficial owner", " ubo ",
+    " psc ", "economic substance", " esr ", "data protection", "sanction",
+    "incorporation", "share scheme", "share-based",
+)
+_DIRECT_TAX = (
+    "corporate tax", "corporation tax", "income tax", "ct600", "advance tax",
+    "capital gains", "dividend tax", "withholding", " tds ", " paye", " nic",
+    " cis", "real time information", " rti", "full payment submission", " fps",
+    "payroll tax", "employment tax", "transfer pricing", "self assessment",
+)
+
+
+def derive_tax_type(
+    name: str = "", form_name: str = "", category: str = "", area: str = ""
+) -> str | None:
+    """Deterministic 'Direct Tax' / 'Indirect Tax' / 'Not a Tax' for a filing,
+    or None when undecidable (caller keeps the stored value)."""
+    hay = f" {name} {form_name} {category} {area} ".lower()
+    for kw in _INDIRECT_TAX:
+        if kw in hay:
+            return "Indirect Tax"
+    for kw in _NOT_A_TAX:
+        if kw in hay:
+            return "Not a Tax"
+    for kw in _DIRECT_TAX:
+        if kw in hay:
+            return "Direct Tax"
+    return None
+
+
 def is_finance(
     category: str = "", area: str = "", responsible_function: str | None = None
 ) -> bool:
