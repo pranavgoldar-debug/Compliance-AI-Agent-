@@ -188,6 +188,9 @@ class Entity(Base):
     #    "assessment": [{form_name, verdict, reasoning, triggering_factors,
     #                    frequency, due, basis}]}
     qualification: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # User-creatable document folders for this entity (list of names). Seeded
+    # with the defaults on first read.
+    document_folders: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     country_lead_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     country_lead: Mapped[Optional[User]] = relationship(
@@ -420,6 +423,10 @@ class Activity(Base):
 # ---------------------------------------------------------------------------
 # Documents — uploaded files attached to entities and/or obligations
 # ---------------------------------------------------------------------------
+# Default per-entity document folders, seeded on first read.
+DEFAULT_DOCUMENT_FOLDERS = ["Filings", "Templates", "Incorporation Documents"]
+
+
 class DocumentCategory(str, enum.Enum):
     # Active categories — surfaced in the UI as upload targets.
     filings = "Filings"
@@ -465,6 +472,9 @@ class Document(Base):
     category: Mapped[DocumentCategory] = mapped_column(
         SAEnum(DocumentCategory), nullable=False, default=DocumentCategory.other, index=True
     )
+    # Free-text folder name (dynamic, user-creatable) — supersedes `category` as
+    # the organising dimension in the Documents UI. Defaults to "Filings".
+    folder: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
     tags: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # comma-separated
 
     uploaded_by_id: Mapped[Optional[int]] = mapped_column(

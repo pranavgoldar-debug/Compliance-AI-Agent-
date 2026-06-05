@@ -90,6 +90,7 @@ class EntityUpdate(BaseModel):
     ownership: Optional[list] = None
     bank_details: Optional[dict] = None
     qualification: Optional[dict] = None
+    document_folders: Optional[list] = None
 
 
 class EntityOut(_Base):
@@ -106,6 +107,7 @@ class EntityOut(_Base):
     ownership: Optional[list] = None
     bank_details: Optional[dict] = None
     qualification: Optional[dict] = None
+    document_folders: Optional[list] = None
     country_lead: Optional[UserBrief] = None
     archived_at: Optional[datetime] = None
     created_at: datetime
@@ -315,6 +317,7 @@ class DocumentOut(_Base):
     content_type: Optional[str] = None
     size_bytes: int
     category: DocumentCategory
+    folder: Optional[str] = None
     tags: Optional[str] = None
     # Set for "link" documents (a template/portal URL rather than an uploaded
     # file). None for normal file uploads.

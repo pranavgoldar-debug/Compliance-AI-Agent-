@@ -11,6 +11,7 @@ from compliance_agent.classification import derive_function, derive_tax_type
 
 from compliance_agent.db import (
     Activity,
+    DEFAULT_DOCUMENT_FOLDERS,
     EFFORT_BAND_DAYS,
     EffortBand,
     Entity,
@@ -302,6 +303,7 @@ def serialize_entity(entity: Entity, db: Session) -> EntityOut:
         ownership=entity.ownership,
         bank_details=entity.bank_details,
         qualification=entity.qualification,
+        document_folders=entity.document_folders or list(DEFAULT_DOCUMENT_FOLDERS),
         country_lead=serialize_user(entity.country_lead),
         archived_at=entity.archived_at,
         created_at=entity.created_at,

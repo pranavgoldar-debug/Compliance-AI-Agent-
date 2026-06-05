@@ -260,6 +260,12 @@ def _add_missing_columns() -> None:
             ("nature_of_operation", text_type),
             # Adaptive qualification: AI-generated questions + answers + last assessment.
             ("qualification", "JSON" if is_pg else text_type),
+            # User-creatable document folder names.
+            ("document_folders", "JSON" if is_pg else text_type),
+        ],
+        # Free-text folder for documents (dynamic, user-creatable).
+        "documents": [
+            ("folder", varchar(120)),
         ],
     }
 
