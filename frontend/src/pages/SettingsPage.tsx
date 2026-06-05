@@ -260,28 +260,26 @@ function ProfileTab({ user }: { user: UserBrief }) {
           </h3>
           <p className="text-xs text-muted-foreground">
             When `compliance-agent send-reminders` runs (daily cron), it pings
-            the assignee at each offset below for the relevant effort band.
-            Each (person, filing, offset) fires exactly once.
+            the assignee at the offset below for the filing's cadence. Each
+            (person, filing, offset) fires exactly once.
           </p>
           <div className="rounded-lg border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Effort band</th>
                   <th className="px-3 py-2 text-left font-medium">Typical cadence</th>
                   <th className="px-3 py-2 text-left font-medium">Reminders sent</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {[
-                  { band: "1w", cadence: "Monthly", offsets: "7 days before" },
-                  { band: "2w", cadence: "Quarterly", offsets: "25 + 15 days before" },
-                  { band: "4w", cadence: "Half-yearly", offsets: "30 + 15 days before" },
-                  { band: "8w", cadence: "Annual", offsets: "45 + 30 days before" },
-                  { band: "12w", cadence: "Multi-year / long-form", offsets: "60 + 30 days before" },
+                  { cadence: "Monthly", offsets: "7 days before" },
+                  { cadence: "Quarterly", offsets: "30 days before" },
+                  { cadence: "Half-yearly", offsets: "45 days before" },
+                  { cadence: "Annual", offsets: "60 days before" },
+                  { cadence: "Multi-year / long-form", offsets: "90 days before" },
                 ].map((r) => (
-                  <tr key={r.band}>
-                    <td className="px-3 py-2 font-mono text-xs">{r.band}</td>
+                  <tr key={r.cadence}>
                     <td className="px-3 py-2 text-muted-foreground">{r.cadence}</td>
                     <td className="px-3 py-2">{r.offsets}</td>
                   </tr>
@@ -289,11 +287,6 @@ function ProfileTab({ user }: { user: UserBrief }) {
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            To change the policy, edit{" "}
-            <code className="font-mono">_REMINDER_OFFSETS</code> in{" "}
-            <code className="font-mono">src/compliance_agent/api/_helpers.py</code>.
-          </p>
         </CardContent>
       </Card>
 

@@ -44,12 +44,12 @@ def days_remaining(due: date) -> int:
 def reminder_offsets_days(band: EffortBand) -> list[int]:
     """When to send reminders (days BEFORE due date). One entry per ping.
 
-    Aspora policy:
-      Monthly   (w1)  →  [7]              one reminder, a week before
-      Quarterly (w2)  →  [25, 15]         two reminders, 25 and 15 days before
-      Half-year (w4)  →  [30, 15]
-      Annual    (w8)  →  [45, 30]         two reminders, 45 and 30 days before
-      Long-form (w12) →  [60, 30]
+    Aspora policy — one reminder per cadence:
+      Monthly   (w1)  →  [7]
+      Quarterly (w2)  →  [30]
+      Half-year (w4)  →  [45]
+      Annual    (w8)  →  [60]
+      Long-form (w12) →  [90]
     """
     return _REMINDER_OFFSETS.get(band, [30])
 
@@ -62,16 +62,18 @@ def lead_time_days(band: EffortBand) -> int:
 
 
 def reminder_offsets_for_frequency(frequency: str) -> list[int]:
-    """Advance-notice offsets (days before due) driven by the filing's
-    FREQUENCY, per the revamp feedback:
+    """Advance-notice offset (days before due) driven by the filing's
+    FREQUENCY, per the revamp feedback — one reminder per cadence:
 
-      Monthly    →  7 days before   (one week)
-      Quarterly  →  30 days before  (one month)
-      Annual     →  45 days before
+      Monthly     →  7 days before
+      Quarterly   →  30 days before
+      Half-yearly →  45 days before
+      Annual      →  60 days before
+      Multi-year  →  90 days before
 
-    Half-yearly and other cadences get sensible defaults. Returns None-ish
-    behaviour ([]) only for cadences with no fixed due date (event-based,
-    one-time, continuous, per-consignment) where date reminders don't apply.
+    Returns None-ish behaviour ([]) only for cadences with no fixed due date
+    (event-based, one-time, continuous, per-consignment) where date reminders
+    don't apply.
     """
     f = (frequency or "").lower()
     if any(k in f for k in ("event", "one-time", "one time", "continuous", "consignment", "ad hoc", "ad-hoc")):
@@ -81,9 +83,11 @@ def reminder_offsets_for_frequency(frequency: str) -> list[int]:
     if "quarter" in f:
         return [30]
     if "half" in f or "semi" in f or "bi-annual" in f or "biannual" in f:
-        return [30, 15]
-    if "annual" in f or "year" in f:
         return [45]
+    if "multi" in f or "long" in f or "every" in f:  # multi-year / long-form
+        return [90]
+    if "annual" in f or "year" in f:
+        return [60]
     if "week" in f:
         return [3]
     return [30]
@@ -91,13 +95,14 @@ def reminder_offsets_for_frequency(frequency: str) -> list[int]:
 
 
 _REMINDER_OFFSETS: dict[EffortBand, list[int]] = {
-    # Aspora policy — first number = how early the FIRST reminder fires:
-    #   Monthly   → 1 week before · Quarterly → 1 month before · Annual → 45 days
+    # Aspora policy — one reminder per cadence, fired this many days before due:
+    #   Monthly → 7 · Quarterly → 30 · Half-yearly → 45 · Annual → 60 ·
+    #   Multi-year → 90.
     EffortBand.w1: [7],
-    EffortBand.w2: [30, 15],
-    EffortBand.w4: [30, 15],
-    EffortBand.w8: [45, 30],
-    EffortBand.w12: [60, 30],
+    EffortBand.w2: [30],
+    EffortBand.w4: [45],
+    EffortBand.w8: [60],
+    EffortBand.w12: [90],
 }
 
 
