@@ -300,10 +300,11 @@ export function TasksPage({
       );
     return { ...base, statuses: seeded };
   })();
-  // When the user arrives with a URL pre-filter, default scope to "all" so
-  // they see every match (not just their own assignments).
+  // When the user arrives with a URL pre-filter (status or awaiting-payment),
+  // default scope to "all" so they see every match, not just their own
+  // assignments (otherwise the Awaiting-payment tile lands on an empty list).
   const [scope, setScope] = useState<Scope>(
-    initialFilters.statuses.length > 0 ? "all" : "assigned",
+    initialFilters.statuses.length > 0 || initialAwaitingPayment ? "all" : "assigned",
   );
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
@@ -487,6 +488,20 @@ export function TasksPage({
           value={filters.dueWithinDays}
           onChange={(v) => setFilters((f) => ({ ...f, dueWithinDays: v }))}
         />
+        <button
+          type="button"
+          onClick={() => setAwaitingPayment((v) => !v)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border px-3 h-8 text-xs transition-colors",
+            awaitingPayment
+              ? "border-amber-300 bg-amber-50 text-amber-800 font-medium"
+              : "border-input bg-background text-muted-foreground hover:bg-secondary",
+          )}
+          title="Show only filings whose payment leg is still open"
+        >
+          Awaiting payment
+          <span className="tabular-nums">({chipCounts.awaitingPayment})</span>
+        </button>
         {activeFilterCount > 0 && (
           <button
             onClick={() => setFilters(emptyFilters())}
