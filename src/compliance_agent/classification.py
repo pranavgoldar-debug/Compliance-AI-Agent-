@@ -10,9 +10,11 @@ import os
 
 # Single app-wide switch. When on, every surface (license obligations, AI
 # extract, rules/filings catalog, calendar, dashboard) shows ONLY Finance-
-# function obligations — Compliance / Legal are hidden, not deleted. Flip the
-# env var to "0" to bring the full set back.
-FINANCE_ONLY = os.getenv("COMPLIANCE_AGENT_FINANCE_ONLY", "1") == "1"
+# function obligations — Compliance / Legal / HR are hidden, not deleted.
+# Default OFF: the adaptive assessment covers ALL functions & item types
+# (filings, licenses, permits, registrations). Set COMPLIANCE_AGENT_FINANCE_ONLY=1
+# to restrict back to finance only.
+FINANCE_ONLY = os.getenv("COMPLIANCE_AGENT_FINANCE_ONLY", "0") == "1"
 
 # Checked in priority order: a match in an earlier bucket wins.
 _COMPLIANCE = (

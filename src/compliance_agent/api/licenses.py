@@ -965,41 +965,40 @@ def ai_extract_obligations(
     )
 
     exhaustive_rule = (
-        "\n\nSCOPE — return FINANCE only. List ONLY ongoing FINANCIAL, TAX and "
-        "ACCOUNTING filings. Do NOT include legal, HR, governance or general "
-        "compliance items (e.g. UBO registers, AML/CFT reports, license "
-        "renewals, data-protection filings, board/secretarial matters) — those "
-        "are out of scope here.\n"
-        "Within finance, BE EXHAUSTIVE — list EVERY relevant filing, not just a "
-        "handful: corporate / income tax returns, VAT / GST / sales-tax "
-        "returns, annual financial statements, audit filing, payroll & "
-        "social-security / withholding returns, transfer-pricing documentation, "
-        "economic-substance filings, and any other periodic finance/tax filing "
-        "that applies. One entry per distinct filing; do NOT merge or "
-        "summarise. If unsure whether a finance filing applies, include it and "
-        "mark applicability Conditional rather than omitting it."
+        "\n\nSCOPE — ASSUME EVERY ACTIVITY IS PRESENT and return the MAXIMAL set. "
+        "Cover ALL functions — Finance/Tax, Legal/Corporate, Compliance/AML, and "
+        "HR/Payroll — and ALL item types: periodic filings & returns, licenses, "
+        "permits, registrations, ongoing compliance obligations, reporting "
+        "requirements, and industry-specific regulations.\n"
+        "BE EXHAUSTIVE — list EVERY item that could conceivably apply to an "
+        "entity of this type in this jurisdiction, not just a handful: corporate "
+        "/ income tax, VAT / GST / sales tax, annual financial statements & "
+        "audit, payroll & social-security / withholding, transfer pricing, "
+        "economic substance, AML/CFT reports, UBO / beneficial-ownership "
+        "registers, data-protection registrations, licence renewals, sector "
+        "permits, statutory / registry filings, and any other recurring or "
+        "event-based obligation. One entry per distinct item; do NOT merge or "
+        "summarise. When unsure, INCLUDE it — narrowing happens later via the "
+        "qualification questions. Do not pre-judge applicability here."
     )
 
     finance_addendum = (
-        f"\n\nIMPORTANT — also include the standard ongoing FINANCIAL, TAX and "
-        f"ACCOUNTING obligations any operating company in "
-        f"{lic.jurisdiction_code.upper()} owes, even though they sit with a "
-        f"different authority than this licence's regulator: corporate / income "
-        f"tax returns, VAT / GST / sales-tax returns, annual financial "
-        f"statements and audit filing, payroll & social-security / withholding "
-        f"returns, transfer pricing, and economic-substance filings where "
-        f"applicable. The licensee IS such a company, so these apply. Label "
-        f"their function/category as Finance/Tax accordingly."
+        f"\n\nAlso include the standard ongoing obligations any operating company "
+        f"in {lic.jurisdiction_code.upper()} owes across every function, even "
+        f"where they sit with a different authority than this licence's "
+        f"regulator. Label each item's function/category accordingly "
+        f"(Finance / Legal / Compliance / HR)."
     )
 
-    # Compliance Rules discovery reads ONLY the Primary Activity answers — it
-    # produces the exhaustive list, with primary answers setting mandatory vs
-    # conditional. Secondary (threshold) answers are deliberately excluded here;
-    # they do the finer filtering later under Secondary Activity / Registrations.
-    from compliance_agent.activity_gate import primary_only
-
-    profile_block = _build_profile_block(
-        primary_only(getattr(lic.entity, "finance_profile", None) if lic.entity else None)
+    # Discovery is deliberately answer-independent (assume all activities on) —
+    # the qualification questions + Reassess do the narrowing. So we do NOT feed
+    # the entity's answers into the discovery prompt.
+    profile_block = ""
+    # Nature of operations is a primary discovery input — what the entity does
+    # drives which regulations could apply.
+    _nature = getattr(lic.entity, "nature_of_operation", None) if lic.entity else None
+    nature_block = (
+        f"\n\nNATURE OF OPERATIONS (what this entity does): {_nature}" if _nature else ""
     )
     if from_document:
         # Document-grounded: read the actual license text.
@@ -1014,6 +1013,7 @@ def ai_extract_obligations(
             f"already happened."
             f"{exhaustive_rule}"
             f"{finance_addendum}"
+            f"{nature_block}"
             f"{profile_block}"
             f"{naming_rule}"
             f"{catalogue_ref}"
@@ -1038,6 +1038,7 @@ def ai_extract_obligations(
             f"or conditional, and its usual frequency."
             f"{exhaustive_rule}"
             f"{finance_addendum}"
+            f"{nature_block}"
             f"{profile_block}"
             f"{naming_rule}"
             f"{catalogue_ref}"
