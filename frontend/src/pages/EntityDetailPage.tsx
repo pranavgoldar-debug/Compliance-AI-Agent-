@@ -554,10 +554,13 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
         items
           .filter((i) => i.rule_id)
           .map((i) =>
-            api.patch(`/api/rules/${i.rule_id}`, {
-              status: picked.has(i.form_name) ? "staging" : "archived",
-              applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
-            }),
+            picked.has(i.form_name)
+              ? api.patch(`/api/rules/${i.rule_id}`, {
+                  status: "staging",
+                  sent_to_review: true,
+                  applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
+                })
+              : api.patch(`/api/rules/${i.rule_id}`, { status: "archived" }),
           ),
       );
     },
@@ -972,7 +975,7 @@ function ComplianceRulesTab({
         window.alert(r.notes || "AI is off in this deployment.");
       } else if (r) {
         window.alert(
-          `${r.created} regulation(s) discovered and added to Review & Assign (For Action).`,
+          `${r.created} regulation(s) discovered. Review them below, run "Activities" → "Find applicable regulations", then send the ones you want to Review & Assign.`,
         );
       }
     },
@@ -1875,10 +1878,13 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
         items
           .filter((i) => i.rule_id)
           .map((i) =>
-            api.patch(`/api/rules/${i.rule_id}`, {
-              status: picked.has(i.form_name) ? "staging" : "archived",
-              applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
-            }),
+            picked.has(i.form_name)
+              ? api.patch(`/api/rules/${i.rule_id}`, {
+                  status: "staging",
+                  sent_to_review: true,
+                  applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
+                })
+              : api.patch(`/api/rules/${i.rule_id}`, { status: "archived" }),
           ),
       );
     },

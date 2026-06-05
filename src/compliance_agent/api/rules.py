@@ -170,6 +170,7 @@ def _serialize_rule(rule: Rule, entity_applicability: Optional[str] = None) -> R
         reviewer_id=rule.reviewer_id,
         approver_id=rule.approver_id,
         approved_at=rule.approved_at,
+        sent_to_review=rule.sent_to_review,
         created_at=rule.created_at,
         updated_at=rule.updated_at,
     )
@@ -185,6 +186,11 @@ def list_rules(
         description="When set, annotate each rule with its Primary-Activity "
         "verdict (applicable / not_applicable) for that entity.",
     ),
+    in_review: Optional[bool] = Query(
+        None,
+        description="When true, only rules a human has sent to Review & Assign "
+        "(sent_to_review is True or NULL); hides freshly-discovered drafts.",
+    ),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ) -> list[RuleOut]:
@@ -195,6 +201,8 @@ def list_rules(
         stmt = stmt.where(Rule.category == category)
     if status:
         stmt = stmt.where(Rule.status == status)
+    if in_review:
+        stmt = stmt.where(Rule.sent_to_review.isnot(False))
     stmt = stmt.order_by(Rule.jurisdiction_code, Rule.category, Rule.name)
     rows = db.execute(stmt).scalars().all()
     # FINANCE_ONLY switch: hide non-Finance rules from the catalog.

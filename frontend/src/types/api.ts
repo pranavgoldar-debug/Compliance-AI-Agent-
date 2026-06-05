@@ -125,6 +125,7 @@ export interface Rule {
   approved_at: string | null;
   created_at: string;
   updated_at: string;
+  sent_to_review?: boolean | null;
   // Per-entity Primary-Activity verdict ("applicable" / "not_applicable"),
   // set only when the rule is fetched with an entity_id context.
   entity_applicability?: string | null;

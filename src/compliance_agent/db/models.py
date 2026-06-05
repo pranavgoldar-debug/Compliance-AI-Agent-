@@ -241,6 +241,10 @@ class Rule(Base):
     triggering_activity: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     anchor: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     confidence: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # Has a human sent this discovered item to Review & Assign? Discovery sets
+    # False; the "Add to Review & Assign" action sets True. NULL = legacy rule
+    # (treated as sent, so it keeps showing in Review & Assign).
+    sent_to_review: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     # Direct / Indirect / Not-a-Tax classification — set by the AI extractor
     # and editable by admins on the Rules page.
     tax_type: Mapped[TaxType] = mapped_column(

@@ -86,6 +86,8 @@ export function RulesPage() {
       const params = new URLSearchParams({ status: tab });
       if (jurisdictionCode) params.set("jurisdiction_code", jurisdictionCode);
       if (category) params.set("category", category);
+      // For Action only shows items a human sent here; hide discovered drafts.
+      if (tab === "staging") params.set("in_review", "true");
       return api.get<Rule[]>(`/api/rules?${params.toString()}`);
     },
   });
@@ -94,7 +96,7 @@ export function RulesPage() {
   const { data: stagingCount } = useQuery({
     queryKey: ["rules-staging-count"],
     queryFn: async () => {
-      const rs = await api.get<Rule[]>("/api/rules?status=staging");
+      const rs = await api.get<Rule[]>("/api/rules?status=staging&in_review=true");
       return rs.length;
     },
   });

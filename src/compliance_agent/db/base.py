@@ -234,6 +234,7 @@ def _add_missing_columns() -> None:
             ("triggering_activity", varchar(64)),
             ("anchor", varchar(255)),
             ("confidence", varchar(120)),
+            ("sent_to_review", "BOOLEAN"),
         ],
         # Phase 9: per-user notification prefs + Slack member id +
         # functional department (drives finance / compliance routing).

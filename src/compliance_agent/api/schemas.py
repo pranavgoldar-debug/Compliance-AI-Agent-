@@ -163,6 +163,7 @@ class RuleUpdate(BaseModel):
     owner_id: Optional[int] = None
     reviewer_id: Optional[int] = None
     approver_id: Optional[int] = None
+    sent_to_review: Optional[bool] = None
 
 
 class RuleOut(_Base):
@@ -193,6 +194,7 @@ class RuleOut(_Base):
     approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    sent_to_review: Optional[bool] = None
     # Per-entity verdict from Primary Activity gating ("applicable" /
     # "not_applicable"). Only populated when the rule is fetched with an
     # `entity_id` context; null otherwise.

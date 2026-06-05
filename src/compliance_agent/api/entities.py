@@ -580,6 +580,8 @@ def discover_entity_regulations(
             triggering_activity=getattr(cand, "triggering_activity", None),
             anchor=getattr(cand, "anchor", None),
             confidence=getattr(cand, "confidence", None),
+            # Discovered draft — NOT yet in Review & Assign until a human sends it.
+            sent_to_review=False,
             status=RuleStatus.staging,
             created_by_id=user.id,
         )
