@@ -16,7 +16,6 @@ import {
   FileText,
   LayoutList,
   Loader2,
-  RefreshCw,
   Table2,
   Search,
   Sparkles,
@@ -626,15 +625,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   </button>
                 </td>
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setChecking(r)}
-                    title="Check the regulator page for changes"
-                    disabled={!r.source_url}
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  </Button>
                   {isAdmin && r.status === "production" && (
                     <Button
                       variant="ghost"
