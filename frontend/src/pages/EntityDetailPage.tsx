@@ -923,6 +923,7 @@ function ComplianceRulesTab({
     (!catFilter || r.category === catFilter);
   const reviewShown = review.filter(matchFilter);
   const confirmedShown = confirmed.filter(matchFilter);
+  const [addManualOpen, setAddManualOpen] = useState(false);
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
@@ -1019,14 +1020,20 @@ function ComplianceRulesTab({
               </p>
             </div>
             {isAdmin && (
-              <Button onClick={() => discover.mutate()} disabled={discover.isPending}>
-                {discover.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                Refresh Regulations
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" onClick={() => setAddManualOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  Add regulation
+                </Button>
+                <Button onClick={() => discover.mutate()} disabled={discover.isPending}>
+                  {discover.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Refresh Regulations
+                </Button>
+              </div>
             )}
           </div>
           {discover.isPending && (
@@ -1044,7 +1051,7 @@ function ComplianceRulesTab({
               </span>
               <span className="text-muted-foreground">→</span>
               <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
-                {reviewShown.length} in review
+                {reviewShown.length} draft
               </span>
               <span className="text-muted-foreground">→</span>
               <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
@@ -1103,7 +1110,7 @@ function ComplianceRulesTab({
       <Card>
         <CardContent className="p-5 space-y-3">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-sm">Review (AI generated)</h3>
+            <h3 className="font-semibold text-sm">Discovered (AI generated)</h3>
             <Badge variant="alert">{reviewShown.length}</Badge>
             {(fnFilter || catFilter) && (
               <span className="text-xs text-muted-foreground">
@@ -1157,7 +1164,131 @@ function ComplianceRulesTab({
           )}
         </CardContent>
       </Card>
+
+      <AddRegulationDialog
+        entity={entity}
+        open={addManualOpen}
+        onOpenChange={setAddManualOpen}
+        onAdded={refresh}
+      />
     </div>
+  );
+}
+
+
+// Manually add a regulation the AI missed — created as a draft on the entity
+// (sent_to_review=false), so it joins the discovered list.
+function AddRegulationDialog({
+  entity,
+  open,
+  onOpenChange,
+  onAdded,
+}: {
+  entity: Entity;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onAdded: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [authority, setAuthority] = useState("");
+  const [category, setCategory] = useState("");
+  const [frequency, setFrequency] = useState("Annual");
+  const [due, setDue] = useState("");
+  const [fn, setFn] = useState("Finance");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName(""); setAuthority(""); setCategory(""); setFrequency("Annual");
+      setDue(""); setFn("Finance"); setError(null);
+    }
+  }, [open]);
+
+  const add = useMutation({
+    mutationFn: () =>
+      api.post("/api/rules", {
+        name: name.trim(),
+        jurisdiction_code: entity.jurisdiction_code,
+        category: category.trim() || "Other",
+        area: "",
+        form_name: name.trim(),
+        authority: authority.trim() || "—",
+        frequency: frequency.trim() || "Annual",
+        due_date_rule: due.trim() || "—",
+        responsible_function: fn,
+        status: "staging",
+        sent_to_review: false,
+        entity_ids: [entity.id],
+      }),
+    onSuccess: () => {
+      onAdded();
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>Add regulation</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Add a filing the AI missed. It joins this entity's discovered list as
+            a draft — send it to Review &amp; Assign with the rest.
+          </p>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Filing name *</label>
+            <Input value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Authority</label>
+              <Input value={authority} placeholder="e.g. FTA" onChange={(e) => setAuthority(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Category</label>
+              <Input value={category} placeholder="e.g. VAT" onChange={(e) => setCategory(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Frequency</label>
+              <Input value={frequency} onChange={(e) => setFrequency(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Function</label>
+              <select
+                value={fn}
+                onChange={(e) => setFn(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+              >
+                {["Finance", "Compliance", "Legal", "HR"].map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Due-date rule</label>
+              <Input value={due} placeholder="e.g. FYE + 9 months" onChange={(e) => setDue(e.target.value)} />
+            </div>
+          </div>
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => add.mutate()} disabled={add.isPending || !name.trim()}>
+            {add.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add regulation
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

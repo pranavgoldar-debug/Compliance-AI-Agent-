@@ -140,6 +140,7 @@ class RuleCreate(BaseModel):
     submission_url: Optional[str] = None
     source_text: Optional[str] = None
     entity_ids: list[int] = []
+    sent_to_review: Optional[bool] = None
 
 
 class RuleUpdate(BaseModel):
