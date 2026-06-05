@@ -1080,7 +1080,7 @@ export function AIExtractDialog({
             ) : extractMutation.isPending ? (
               <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin text-aspora-600 shrink-0" />
-                Finding finance regulations for this license… (~20–30s)
+                Finding all applicable regulations for this entity… (~20–30s)
               </div>
             ) : (
               <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
@@ -1676,7 +1676,7 @@ export function LicenseDetailBody({
                         title={
                           license.has_file
                             ? "Read the uploaded license with Claude and find the filings it triggers"
-                            : "No PDF needed — Claude finds the finance filings this license type owes, ready to review and add"
+                            : "No PDF needed — Claude finds the regulations this license type owes, ready to review and add"
                         }
                       >
                         <Sparkles className="h-3.5 w-3.5" />
