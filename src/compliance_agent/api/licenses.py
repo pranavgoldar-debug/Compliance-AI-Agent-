@@ -987,11 +987,14 @@ def ai_extract_obligations(
         f"their function/category as Finance/Tax accordingly."
     )
 
-    # Qualifying-questions answers (set on the entity via the Find Regulations
-    # questionnaire) let Claude decide applicability: drop filings that clearly
-    # don't apply, and set mandatory vs conditional for the rest.
+    # Compliance Rules discovery reads ONLY the Primary Activity answers — it
+    # produces the exhaustive list, with primary answers setting mandatory vs
+    # conditional. Secondary (threshold) answers are deliberately excluded here;
+    # they do the finer filtering later under Secondary Activity / Registrations.
+    from compliance_agent.activity_gate import primary_only
+
     profile_block = _build_profile_block(
-        getattr(lic.entity, "finance_profile", None) if lic.entity else None
+        primary_only(getattr(lic.entity, "finance_profile", None) if lic.entity else None)
     )
     if from_document:
         # Document-grounded: read the actual license text.

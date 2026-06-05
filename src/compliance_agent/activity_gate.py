@@ -79,6 +79,22 @@ ACTIVITY_MATCHERS: dict[str, tuple[str, ...]] = {
 }
 
 
+# The Primary Activity flag ids (the gate keys saved on the entity's
+# finance_profile). Used to separate primary answers from the secondary
+# follow-up answers (vat_frequency, ct_income_band, tp_threshold, …) when a
+# surface should consider primary answers only.
+PRIMARY_ACTIVITY_FLAGS: frozenset[str] = frozenset(ACTIVITY_MATCHERS)
+
+
+def primary_only(profile: Optional[dict]) -> Optional[dict]:
+    """Strip a finance_profile down to just the Primary Activity answers,
+    dropping the secondary follow-up answers. Returns None when nothing is left."""
+    if not profile:
+        return None
+    kept = {k: v for k, v in profile.items() if k in PRIMARY_ACTIVITY_FLAGS}
+    return kept or None
+
+
 def matched_activities(name: str, form_name: str, category: str, area: str) -> set[str]:
     """The Primary Activity flag ids whose filing family this rule belongs to."""
     hay = " ".join(t for t in (name, form_name, category, area) if t).lower()

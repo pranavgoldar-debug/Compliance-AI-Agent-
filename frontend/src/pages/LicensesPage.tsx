@@ -997,18 +997,6 @@ export function AIExtractDialog({
             </h3>
           </div>
           <div className="flex items-center gap-1">
-            {phase === "extract" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  reset();
-                  setPhase("questionnaire");
-                }}
-              >
-                Edit answers
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="sm"
