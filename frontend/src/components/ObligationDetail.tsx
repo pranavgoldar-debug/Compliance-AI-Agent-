@@ -502,16 +502,6 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
                 <div className="min-w-0 flex-1">
                   <div
                     className={cn(
-                      "text-[11px] font-semibold uppercase tracking-wider truncate",
-                      isDone && "text-emerald-700",
-                      isActive && "text-amber-700",
-                      !isDone && !isActive && "text-muted-foreground",
-                    )}
-                  >
-                    {s.team}
-                  </div>
-                  <div
-                    className={cn(
                       "text-xs truncate",
                       isActive ? "font-medium text-foreground" : "text-muted-foreground",
                     )}
