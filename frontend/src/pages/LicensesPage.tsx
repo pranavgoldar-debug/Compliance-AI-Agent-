@@ -985,8 +985,17 @@ export function AIExtractDialog({
     </div>
   );
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) {
+      // Bring the panel into view so the user doesn't have to scroll down to it.
+      panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [open]);
+
   if (!open) return null;
   return (
+    <div ref={panelRef}>
     <Card className="border-aspora-300 bg-aspora-50/20">
       <CardContent className="p-5 space-y-4">
         <div className="flex items-start justify-between gap-2">
@@ -1406,6 +1415,7 @@ export function AIExtractDialog({
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 

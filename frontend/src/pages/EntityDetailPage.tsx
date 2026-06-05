@@ -775,6 +775,19 @@ function ComplianceRulesTab({
         </CardContent>
       </Card>
 
+      {/* Discovery panel opens here, directly under the Refresh button, so it's
+          visible at the top without scrolling. */}
+      {license && (
+        <AIExtractDialog
+          license={license}
+          open={aiOpen}
+          onOpenChange={setAiOpen}
+          existingForms={confirmedForms}
+          autoRun={review.length + confirmed.length === 0}
+          onCreated={refresh}
+        />
+      )}
+
       {/* Review (AI Generated) */}
       <Card>
         <CardContent className="p-5 space-y-3">
@@ -824,17 +837,6 @@ function ComplianceRulesTab({
           )}
         </CardContent>
       </Card>
-
-      {license && (
-        <AIExtractDialog
-          license={license}
-          open={aiOpen}
-          onOpenChange={setAiOpen}
-          existingForms={confirmedForms}
-          autoRun={review.length + confirmed.length === 0}
-          onCreated={refresh}
-        />
-      )}
     </div>
   );
 }
