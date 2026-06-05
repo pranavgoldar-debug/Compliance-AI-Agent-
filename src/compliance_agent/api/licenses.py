@@ -583,16 +583,24 @@ def _humanize_key(key: str) -> str:
 
 
 _PROFILE_QUESTIONS: dict[str, dict] = {
-    "vat_registered": {
-        "label": "VAT / GST registered",
-        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
+    "registered_company": {
+        "label": "Registered company that files accounts + corporate tax",
+        "values": {"yes": "yes", "no": "no"},
     },
-    "vat_frequency": {
-        "label": "VAT / GST return frequency",
-        "values": {"monthly": "monthly", "quarterly": "quarterly", "annual": "annual"},
+    "ct_income_band": {
+        "label": "Taxable income vs the local corporate-tax threshold",
+        "values": {"below": "below threshold", "above": "above threshold", "unsure": "not sure"},
+    },
+    "licensed_financial_activity": {
+        "label": "Holds / operates a financial-services licence",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "holds_customer_funds": {
+        "label": "Holds or safeguards customer funds",
+        "values": {"yes": "yes", "no": "no"},
     },
     "employs_staff": {
-        "label": "Employs staff on payroll",
+        "label": "Employs staff and runs payroll directly",
         "values": {"yes": "yes", "no": "no"},
     },
     "wps": {
@@ -603,31 +611,43 @@ _PROFILE_QUESTIONS: dict[str, dict] = {
         "label": "Contributes to pension / social security",
         "values": {"yes": "yes", "no": "no"},
     },
-    "ct_registered": {
-        "label": "Registered for corporate / income tax",
-        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
+    "grants_equity": {
+        "label": "Grants equity, options or share-based awards",
+        "values": {"yes": "yes", "no": "no"},
     },
-    "ct_income_band": {
-        "label": "Taxable income vs the local corporate-tax threshold",
-        "values": {"below": "below threshold", "above": "above threshold", "unsure": "not sure"},
+    "takes_foreign_investment": {
+        "label": "Receives foreign / cross-border investment",
+        "values": {"yes": "yes", "no": "no"},
     },
-    "related_party": {
-        "label": "Related-party / intra-group transactions",
+    "intra_group_transactions": {
+        "label": "Transacts with other group companies",
         "values": {"yes": "yes", "no": "no"},
     },
     "tp_threshold": {
         "label": "Related-party transactions vs the TP documentation threshold",
         "values": {"below": "below threshold", "above": "above threshold", "unsure": "not sure"},
     },
-    "licensed_activity": {
-        "label": "Carries on a licensed / regulated financial activity",
+    "holds_personal_data": {
+        "label": "Processes personal data of individuals",
         "values": {"yes": "yes", "no": "no"},
     },
-    "client_funds": {
-        "label": "Holds client / customer funds",
+    "vat_gst_registered": {
+        "label": "VAT / GST registered",
+        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
+    },
+    "vat_frequency": {
+        "label": "VAT / GST return frequency",
+        "values": {"monthly": "monthly", "quarterly": "quarterly", "annual": "annual"},
+    },
+    "has_owners_controllers": {
+        "label": "Has shareholders / controllers (beneficial owners)",
         "values": {"yes": "yes", "no": "no"},
     },
-    "esr_activity": {
+    "sanctions_exposure": {
+        "label": "Moves money / has customers (sanctions exposure)",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "conducts_esr_relevant_activity": {
         "label": 'Conducts a "relevant activity" under ESR',
         "values": {"yes": "yes", "no": "no"},
     },

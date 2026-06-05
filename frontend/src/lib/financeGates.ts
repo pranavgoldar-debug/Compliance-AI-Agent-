@@ -57,32 +57,46 @@ const BAND: GateOption[] = [
   { value: "na", label: "Not applicable" },
 ];
 
-// Ordered list of gates. Jurisdiction filtering decides which ones show; gates
-// with no `jurisdictions` apply everywhere (the generic finance fallback).
+// Ordered list of activity gates. Each `id`/`key` is the canonical activity-flag
+// id (shared with the regulatory-obligations spec), so a discovered filing's
+// `triggering_activity` lines up 1:1 with the answer stored here. Jurisdiction
+// filtering decides which ones show; gates with no `jurisdictions` apply
+// everywhere. Follow-ups (shown on "yes") pin down mandatory-vs-conditional
+// detail (frequency, threshold, …).
 export const FINANCE_GATES: FilingGate[] = [
   {
-    id: "vat",
-    drives: "VAT / GST Return",
-    key: "vat_registered",
-    question: "Is the entity registered for VAT / GST?",
-    options: YES_NO_UNSURE,
+    id: "registered_company",
+    drives: "Corporate registry filings, direct tax return / payment",
+    key: "registered_company",
+    question: "Is this a registered company that files accounts and corporate tax?",
+    options: YES_NO,
     followups: [
       {
-        key: "vat_frequency",
-        question: "How often is the VAT/GST return filed?",
-        options: [
-          { value: "monthly", label: "Monthly" },
-          { value: "quarterly", label: "Quarterly" },
-          { value: "annual", label: "Annual" },
-        ],
+        key: "ct_income_band",
+        question: "Is taxable income above the local corporate-tax threshold?",
+        options: BAND,
       },
     ],
   },
   {
-    id: "payroll",
-    drives: "Payroll / withholding / WPS",
+    id: "licensed_financial_activity",
+    drives: "Prudential / conduct returns, financial-crime returns, fees",
+    key: "licensed_financial_activity",
+    question: "Does it hold or operate a financial-services licence?",
+    options: YES_NO,
+  },
+  {
+    id: "holds_customer_funds",
+    drives: "Safeguarding / client-asset reporting",
+    key: "holds_customer_funds",
+    question: "Does it hold or safeguard customer funds?",
+    options: YES_NO,
+  },
+  {
+    id: "employs_staff",
+    drives: "Payroll / employment-tax, social security, pensions",
     key: "employs_staff",
-    question: "Does the entity employ staff on payroll?",
+    question: "Does it employ staff and run payroll directly?",
     options: YES_NO,
     followups: [
       {
@@ -99,24 +113,24 @@ export const FINANCE_GATES: FilingGate[] = [
     ],
   },
   {
-    id: "corporate_tax",
-    drives: "Corporate Tax registration + return",
-    key: "ct_registered",
-    question: "Is the entity registered for corporate / income tax?",
-    options: YES_NO_UNSURE,
-    followups: [
-      {
-        key: "ct_income_band",
-        question: "Is taxable income above the local corporate-tax threshold?",
-        options: BAND,
-      },
-    ],
+    id: "grants_equity",
+    drives: "Equity-compensation / share-scheme reporting",
+    key: "grants_equity",
+    question: "Does it grant equity, options or share-based awards?",
+    options: YES_NO,
   },
   {
-    id: "transfer_pricing",
-    drives: "Transfer Pricing disclosure / Master & Local File",
-    key: "related_party",
-    question: "Does it have related-party or intra-group transactions?",
+    id: "takes_foreign_investment",
+    drives: "FDI / central-bank inbound-investment reporting",
+    key: "takes_foreign_investment",
+    question: "Does it receive foreign / cross-border investment?",
+    options: YES_NO,
+  },
+  {
+    id: "intra_group_transactions",
+    drives: "Transfer-pricing documentation, CbCR / notifications",
+    key: "intra_group_transactions",
+    question: "Does it transact with other group companies?",
     options: YES_NO,
     followups: [
       {
@@ -127,24 +141,50 @@ export const FINANCE_GATES: FilingGate[] = [
     ],
   },
   {
-    id: "licensed_activity",
-    drives: "Safeguarding / client-money audit",
-    key: "licensed_activity",
-    question: "Does it carry on a licensed / regulated financial activity?",
+    id: "holds_personal_data",
+    drives: "Data-protection registration / fee + breach notification",
+    key: "holds_personal_data",
+    question: "Does it process personal data of individuals?",
     options: YES_NO,
-    jurisdictions: ["uk", "uae"],
+  },
+  {
+    id: "vat_gst_registered",
+    drives: "Indirect-tax returns",
+    key: "vat_gst_registered",
+    question: "Is it registered for VAT / GST?",
+    options: YES_NO_UNSURE,
     followups: [
       {
-        key: "client_funds",
-        question: "Does it hold client / customer funds?",
-        options: YES_NO,
+        key: "vat_frequency",
+        question: "How often is the VAT/GST return filed?",
+        options: [
+          { value: "monthly", label: "Monthly" },
+          { value: "quarterly", label: "Quarterly" },
+          { value: "annual", label: "Annual" },
+        ],
       },
     ],
   },
   {
-    id: "esr",
+    id: "has_owners_controllers",
+    drives: "Beneficial-ownership / controller-change filings",
+    key: "has_owners_controllers",
+    question: "Does it have shareholders / controllers (beneficial owners)?",
+    options: YES_NO,
+  },
+  {
+    id: "sanctions_exposure",
+    drives: "Sanctions / frozen-asset returns",
+    key: "sanctions_exposure",
+    question: "Does it move money / have customers (sanctions exposure)?",
+    options: YES_NO,
+  },
+  // ESR is jurisdiction-specific (UAE) — not in the activity sheet, kept on top
+  // of it because it gates the Economic Substance filings.
+  {
+    id: "conducts_esr_relevant_activity",
     drives: "Economic Substance (ESR) Notification + Report",
-    key: "esr_activity",
+    key: "conducts_esr_relevant_activity",
     question: 'Does it conduct a "relevant activity" under ESR?',
     options: YES_NO,
     jurisdictions: ["uae"],
@@ -156,6 +196,7 @@ export const FINANCE_GATES: FilingGate[] = [
       },
     ],
   },
+  // Statutory audit — kept as an explicit question (not derived) per product call.
   {
     id: "audit",
     drives: "Audited financial statements",
