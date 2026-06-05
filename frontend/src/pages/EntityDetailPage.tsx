@@ -390,13 +390,28 @@ function RegulatoryAssessmentTab({
   licenses: License[];
   isAdmin: boolean;
 }) {
+  // Shared so the same Function/Category filter applies to the discovered list
+  // AND the applicable-regulations inventory below.
+  const [fnFilter, setFnFilter] = useState("");
+  const [catFilter, setCatFilter] = useState("");
   return (
     <div className="space-y-4">
       <ComplianceRulesTab
         entity={entity}
         licenses={licenses}
         isAdmin={isAdmin}
-        afterHeader={<ApplicabilitySection entity={entity} isAdmin={isAdmin} />}
+        fnFilter={fnFilter}
+        setFnFilter={setFnFilter}
+        catFilter={catFilter}
+        setCatFilter={setCatFilter}
+        afterHeader={
+          <ApplicabilitySection
+            entity={entity}
+            isAdmin={isAdmin}
+            fnFilter={fnFilter}
+            catFilter={catFilter}
+          />
+        }
       />
     </div>
   );
@@ -448,7 +463,17 @@ function GeneratedQuestionRow({
 // revealing its AI-generated follow-ups when set to "Yes", plus operation-
 // specific questions). On "Find applicable regulations" the AI reads the
 // answers + discovered list and returns the inventory shown below.
-function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+function ApplicabilitySection({
+  entity,
+  isAdmin,
+  fnFilter = "",
+  catFilter = "",
+}: {
+  entity: Entity;
+  isAdmin: boolean;
+  fnFilter?: string;
+  catFilter?: string;
+}) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   // Only show this section once discovery has produced items for the entity.
@@ -463,16 +488,6 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
   const hasDiscovered = [...staging, ...production].some((r) =>
     r.entity_ids.includes(entity.id),
   );
-  const { data: gaps } = useQuery<{
-    empty_domains: string[];
-    ungated_items: { form_name: string; category: string | null }[];
-    ungated_count: number;
-    partial_domains?: { domain: string; status: string; note?: string | null }[];
-  }>({
-    queryKey: ["gaps", entity.id],
-    queryFn: () => api.get(`/api/entities/${entity.id}/gaps`),
-    enabled: hasDiscovered,
-  });
   const gates = gatesForJurisdiction(entity.jurisdiction_code);
   const qual = entity.qualification ?? {};
   const questions = qual.questions ?? [];
@@ -528,7 +543,12 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
     }
   }, [assess.isError, assess.error]);
   const result = assess.data;
-  const items = result?.items ?? [];
+  // Apply the shared Function/Category filter to the inventory too.
+  const items = (result?.items ?? []).filter(
+    (i) =>
+      (!fnFilter || (i.function || "") === fnFilter) &&
+      (!catFilter || (i.category || "") === catFilter),
+  );
   const grp = (v: string) => items.filter((i) => i.verdict === v);
   const mandatory = grp("mandatory");
   const conditional = grp("conditional");
@@ -710,26 +730,6 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
         </CardContent>
       </Card>
 
-      {gaps && (gaps.partial_domains?.length ?? 0) > 0 && (
-        <Card className="border-amber-200 bg-amber-50/40">
-          <CardContent className="p-5 space-y-2">
-            <h3 className="font-semibold text-sm text-amber-800">Coverage gaps</h3>
-            <p className="text-xs text-amber-800 font-medium">
-              Domains the AI only partially researched — don't read these as
-              complete; verify against the source:
-            </p>
-            <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
-              {gaps.partial_domains!.map((d, idx) => (
-                <li key={idx}>
-                  {d.domain} — {d.status}
-                  {d.note ? ` (${d.note})` : ""}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
       {assess.isFetching && (
         <Card>
           <CardContent className="p-5 flex items-center gap-3 text-sm text-muted-foreground">
@@ -882,15 +882,21 @@ function ComplianceRulesTab({
   licenses,
   isAdmin,
   afterHeader,
+  fnFilter,
+  setFnFilter,
+  catFilter,
+  setCatFilter,
 }: {
   entity: Entity;
   licenses: License[];
   isAdmin: boolean;
   afterHeader?: ReactNode;
+  fnFilter: string;
+  setFnFilter: (v: string) => void;
+  catFilter: string;
+  setCatFilter: (v: string) => void;
 }) {
   const queryClient = useQueryClient();
-  const [fnFilter, setFnFilter] = useState("");
-  const [catFilter, setCatFilter] = useState("");
 
   const { data: staging = [], isLoading: loadingStaging } = useQuery({
     queryKey: ["rules", "staging", entity.id],
@@ -1779,6 +1785,7 @@ type AssessItem = {
   name: string;
   form_name: string;
   category: string | null;
+  function?: string | null;
   frequency: string | null;
   verdict: string;
   reason: string;

@@ -354,6 +354,7 @@ def assess_entity_obligations(
                 "name": r.name,
                 "form_name": r.form_name,
                 "category": r.category,
+                "function": r.responsible_function,
                 "frequency": r.frequency,
                 "verdict": verdict,
                 "reason": reason,
