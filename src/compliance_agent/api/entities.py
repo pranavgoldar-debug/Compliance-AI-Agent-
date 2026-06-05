@@ -71,8 +71,29 @@ def update_entity(
     entity = db.get(Entity, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found.")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+    for field, value in fields.items():
         setattr(entity, field, value)
+    # When the Primary Activity answers change, reconcile this entity's calendar:
+    # filings that are now not-applicable lose their pending obligations; ones
+    # that are applicable (re)gain them. Keeps the calendar in lock-step with
+    # the answers (deterministic gating — see activity_gate.py).
+    if "finance_profile" in fields:
+        from compliance_agent.activity_gate import NOT_APPLICABLE, entity_applicability
+        from compliance_agent.api.rules import (
+            _delete_pending_for_entity_rule,
+            ensure_obligations_for_rule,
+        )
+
+        for rule in entity.rules:
+            verdict = entity_applicability(
+                entity.finance_profile, name=rule.name, form_name=rule.form_name,
+                category=rule.category, area=rule.area,
+            )
+            if verdict == NOT_APPLICABLE:
+                _delete_pending_for_entity_rule(db, rule.id, entity.id)
+            else:
+                ensure_obligations_for_rule(db, rule)
     log_activity(
         db, actor_id=user.id, action="entity.updated", target_type="entity", target_id=entity.id
     )

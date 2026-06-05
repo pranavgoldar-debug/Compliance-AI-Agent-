@@ -188,6 +188,10 @@ class RuleOut(_Base):
     approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    # Per-entity verdict from Primary Activity gating ("applicable" /
+    # "not_applicable"). Only populated when the rule is fetched with an
+    # `entity_id` context; null otherwise.
+    entity_applicability: Optional[str] = None
 
 
 class RuleSnapshotOut(_Base):

@@ -406,12 +406,12 @@ function ComplianceRulesTab({
   const [aiOpen, setAiOpen] = useState(false);
 
   const { data: staging = [], isLoading: loadingStaging } = useQuery({
-    queryKey: ["rules", "staging"],
-    queryFn: () => api.get<Rule[]>("/api/rules?status=staging"),
+    queryKey: ["rules", "staging", entity.id],
+    queryFn: () => api.get<Rule[]>(`/api/rules?status=staging&entity_id=${entity.id}`),
   });
   const { data: production = [], isLoading: loadingProd } = useQuery({
-    queryKey: ["rules", "production"],
-    queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
+    queryKey: ["rules", "production", entity.id],
+    queryFn: () => api.get<Rule[]>(`/api/rules?status=production&entity_id=${entity.id}`),
   });
 
   const review = staging.filter((r) => r.entity_ids.includes(entity.id));
@@ -436,14 +436,25 @@ function ComplianceRulesTab({
   // already in Review or Confirmed.
   const confirmedForms = [...confirmed, ...review].map((r) => r.form_name || r.name);
 
-  const RuleRow = ({ r, mode }: { r: Rule; mode: "review" | "confirmed" }) => (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5">
+  const RuleRow = ({ r, mode }: { r: Rule; mode: "review" | "confirmed" }) => {
+    const na = r.entity_applicability === "not_applicable";
+    return (
+    <div
+      className={cn(
+        "flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5",
+        na && "opacity-60",
+      )}
+    >
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">{r.name}</span>
-          <Badge variant={r.applicability === "Mandatory" ? "alert" : "neutral"}>
-            {r.applicability}
-          </Badge>
+          {na ? (
+            <Badge variant="neutral">Not applicable</Badge>
+          ) : (
+            <Badge variant={r.applicability === "Mandatory" ? "alert" : "neutral"}>
+              {r.applicability}
+            </Badge>
+          )}
         </div>
         <div className="text-xs text-muted-foreground mt-0.5">
           {r.authority} · {r.category} · {r.frequency}
@@ -467,7 +478,8 @@ function ComplianceRulesTab({
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">

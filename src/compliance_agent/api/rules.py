@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.orm import Session
 
+from compliance_agent.activity_gate import NOT_APPLICABLE, entity_applicability
 from compliance_agent.api._helpers import log_activity, serialize_user
 from compliance_agent.classification import keep_function
 from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleSnapshotOut, RuleUpdate
@@ -45,6 +46,15 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
 
     due = _next_due_for_rule(rule, date.today())
     for ent in rule.entities:
+        # Respect Primary-Activity gating: don't put a filing on an entity's
+        # calendar if its activity answers make it not applicable.
+        if entity_applicability(
+            getattr(ent, "finance_profile", None),
+            name=rule.name, form_name=rule.form_name,
+            category=rule.category, area=rule.area,
+        ) == NOT_APPLICABLE:
+            _delete_pending_for_entity_rule(db, rule.id, ent.id)
+            continue
         exists = db.execute(
             select(Obligation).where(
                 Obligation.rule_id == rule.id,
@@ -66,6 +76,22 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
             )
         elif rule.owner_id and exists.assignee_id != rule.owner_id:
             exists.assignee_id = rule.owner_id
+
+
+def _delete_pending_for_entity_rule(db: Session, rule_id: int, entity_id: int) -> None:
+    """Remove one entity's not-yet-completed obligations for a rule (e.g. when
+    the entity's answers make the filing not applicable). Completed kept."""
+    from compliance_agent.db import ObligationStatus
+
+    db.execute(
+        sa_delete(Obligation).where(
+            Obligation.rule_id == rule_id,
+            Obligation.entity_id == entity_id,
+            Obligation.status.in_(
+                [ObligationStatus.not_started, ObligationStatus.in_progress]
+            ),
+        )
+    )
 
 
 def remove_pending_obligations_for_rule(db: Session, rule: Rule) -> None:
@@ -112,8 +138,9 @@ def ensure_calendar(
     return {"checked": len(rules), "processed": made}
 
 
-def _serialize_rule(rule: Rule) -> RuleOut:
+def _serialize_rule(rule: Rule, entity_applicability: Optional[str] = None) -> RuleOut:
     return RuleOut(
+        entity_applicability=entity_applicability,
         id=rule.id,
         name=rule.name,
         jurisdiction_code=rule.jurisdiction_code,
@@ -147,6 +174,11 @@ def list_rules(
     jurisdiction_code: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     status: Optional[RuleStatus] = Query(None),
+    entity_id: Optional[int] = Query(
+        None,
+        description="When set, annotate each rule with its Primary-Activity "
+        "verdict (applicable / not_applicable) for that entity.",
+    ),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ) -> list[RuleOut]:
@@ -161,7 +193,21 @@ def list_rules(
     rows = db.execute(stmt).scalars().all()
     # FINANCE_ONLY switch: hide non-Finance rules from the catalog.
     rows = [r for r in rows if keep_function(r.category, r.area, r.responsible_function)]
-    return [_serialize_rule(r) for r in rows]
+
+    profile = None
+    if entity_id is not None:
+        ent = db.get(Entity, entity_id)
+        profile = getattr(ent, "finance_profile", None) if ent else None
+
+    def verdict(r: Rule) -> Optional[str]:
+        if entity_id is None:
+            return None
+        return entity_applicability(
+            profile, name=r.name, form_name=r.form_name,
+            category=r.category, area=r.area,
+        )
+
+    return [_serialize_rule(r, verdict(r)) for r in rows]
 
 
 @router.get("/{rule_id}", response_model=RuleOut)
