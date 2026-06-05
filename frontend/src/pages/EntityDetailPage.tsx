@@ -710,55 +710,22 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
         </CardContent>
       </Card>
 
-      {gaps && (gaps.empty_domains.length > 0 || gaps.ungated_count > 0 || (gaps.partial_domains?.length ?? 0) > 0) && (
+      {gaps && (gaps.partial_domains?.length ?? 0) > 0 && (
         <Card className="border-amber-200 bg-amber-50/40">
           <CardContent className="p-5 space-y-2">
             <h3 className="font-semibold text-sm text-amber-800">Coverage gaps</h3>
-            {(gaps.partial_domains?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-xs text-amber-800 font-medium">
-                  Domains only partially researched (don't read these as complete):
-                </p>
-                <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
-                  {gaps.partial_domains!.map((d, idx) => (
-                    <li key={idx}>
-                      {d.domain} — {d.status}
-                      {d.note ? ` (${d.note})` : ""}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {gaps.empty_domains.length > 0 && (
-              <div>
-                <p className="text-xs text-amber-800 font-medium">
-                  Answered “Yes” but nothing was discovered for these — re-run{" "}
-                  <strong>Refresh Regulations</strong>:
-                </p>
-                <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
-                  {gaps.empty_domains.map((f) => (
-                    <li key={f}>{gates.find((g) => g.key === f)?.question ?? f}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {gaps.ungated_count > 0 && (
-              <div>
-                <p className="text-xs text-amber-800 font-medium">
-                  {gaps.ungated_count} discovered item(s) aren’t covered by any
-                  activity question — review manually:
-                </p>
-                <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
-                  {gaps.ungated_items.slice(0, 8).map((i, idx) => (
-                    <li key={idx}>
-                      {i.form_name}
-                      {i.category ? ` · ${i.category}` : ""}
-                    </li>
-                  ))}
-                  {gaps.ungated_count > 8 && <li>…and {gaps.ungated_count - 8} more</li>}
-                </ul>
-              </div>
-            )}
+            <p className="text-xs text-amber-800 font-medium">
+              Domains the AI only partially researched — don't read these as
+              complete; verify against the source:
+            </p>
+            <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
+              {gaps.partial_domains!.map((d, idx) => (
+                <li key={idx}>
+                  {d.domain} — {d.status}
+                  {d.note ? ` (${d.note})` : ""}
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}
