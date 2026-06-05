@@ -147,10 +147,7 @@ export function EntityDetailPage() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="profile">Primary Activity</TabsTrigger>
-          <TabsTrigger value="rules">Compliance Rules</TabsTrigger>
-          <TabsTrigger value="detailed">Secondary Activity</TabsTrigger>
-          <TabsTrigger value="registrations">Registrations</TabsTrigger>
+          <TabsTrigger value="compliance">Compliance</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -163,24 +160,12 @@ export function EntityDetailPage() {
           />
         </TabsContent>
 
-        <TabsContent value="profile">
-          <ActivityProfileTab entity={entity} isAdmin={isAdmin} />
-        </TabsContent>
-
-        <TabsContent value="rules">
-          <ComplianceRulesTab
+        <TabsContent value="compliance">
+          <RegulatoryAssessmentTab
             entity={entity}
             licenses={entityLicenses}
             isAdmin={isAdmin}
           />
-        </TabsContent>
-
-        <TabsContent value="detailed">
-          <DetailedQuestionsTab entity={entity} isAdmin={isAdmin} />
-        </TabsContent>
-
-        <TabsContent value="registrations">
-          <RegistrationsTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="licenses">
@@ -378,6 +363,128 @@ function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: bo
                     </div>
                     );
                   })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Regulatory assessment — the unified Compliance tab. One page, top to bottom:
+//   1. Refresh Regulations (exhaustive discovery)        — ComplianceRulesTab
+//   2. Primary activity questions (fixed 12)             — ActivityProfileTab
+//   3. Adaptive qualification questions (AI-generated)   — DynamicQuestionsCard
+//   4. Reassess → final inventory → Add to Review&Assign — RegistrationsTab
+// ---------------------------------------------------------------------------
+function RegulatoryAssessmentTab({
+  entity,
+  licenses,
+  isAdmin,
+}: {
+  entity: Entity;
+  licenses: License[];
+  isAdmin: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <ComplianceRulesTab entity={entity} licenses={licenses} isAdmin={isAdmin} />
+      <ActivityProfileTab entity={entity} isAdmin={isAdmin} />
+      <DynamicQuestionsCard entity={entity} isAdmin={isAdmin} />
+      <RegistrationsTab entity={entity} isAdmin={isAdmin} />
+    </div>
+  );
+}
+
+
+// Adaptive (secondary) qualification questions — AI-generated per entity from
+// nature of operations + licenses + jurisdiction + discovered items. Answers
+// persist on entity.qualification and feed the Reassess step below.
+function DynamicQuestionsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const qual = entity.qualification ?? {};
+  const questions = qual.questions ?? [];
+  const answers = qual.answers ?? {};
+
+  const generate = useMutation({
+    mutationFn: () => api.post(`/api/entities/${entity.id}/generate-questions`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const saveAnswers = useMutation({
+    mutationFn: (next: Record<string, string>) =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, {
+        qualification: { ...qual, answers: next },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+  });
+  const setAnswer = (key: string, value: string) =>
+    saveAnswers.mutate({ ...answers, [key]: value });
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold">Qualification questions</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Jurisdiction- and operation-specific follow-ups, generated from this
+              entity's nature of operations, licenses and the discovered list.
+              Answer them, then <strong>Reassess</strong> below.
+            </p>
+          </div>
+          {isAdmin && (
+            <Button onClick={() => generate.mutate()} disabled={generate.isPending}>
+              {generate.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {questions.length ? "Regenerate" : "Generate questions"}
+            </Button>
+          )}
+        </div>
+        {generate.isPending ? (
+          <div className="flex items-center gap-3 py-3 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
+            Generating questions… (~15–25s)
+          </div>
+        ) : questions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No questions yet. Run <strong>Refresh Regulations</strong> above, then
+            click <strong>Generate questions</strong>.
+          </p>
+        ) : (
+          <div className="space-y-2.5">
+            {questions.map((q) => (
+              <div key={q.key} className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <div className="text-sm">{q.question}</div>
+                  {q.drives && (
+                    <div className="text-[11px] text-muted-foreground">{q.drives}</div>
+                  )}
+                </div>
+                <div className="inline-flex flex-wrap gap-1">
+                  {q.options.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      disabled={!isAdmin || saveAnswers.isPending}
+                      onClick={() => setAnswer(q.key, o.value)}
+                      className={cn(
+                        "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                        answers[q.key] === o.value
+                          ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+                          : "border-input bg-background hover:bg-secondary text-muted-foreground",
+                      )}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             ))}
@@ -1202,6 +1309,10 @@ type AssessItem = {
   frequency: string | null;
   verdict: string;
   reason: string;
+  triggering_factors?: string | null;
+  due?: string | null;
+  basis?: string | null;
+  jurisdiction?: string | null;
 };
 type AssessResp = { available: boolean; items: AssessItem[]; notes?: string | null };
 
@@ -1323,6 +1434,14 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
                 {i.reason && (
                   <div className="text-[11px] text-muted-foreground">{i.reason}</div>
                 )}
+                {i.triggering_factors && (
+                  <div className="text-[11px] text-aspora-700">
+                    Triggers: {i.triggering_factors}
+                  </div>
+                )}
+                {i.due && (
+                  <div className="text-[11px] text-muted-foreground">Due: {i.due}</div>
+                )}
               </div>
             </li>
           ))}
@@ -1340,10 +1459,10 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
             <div>
               <h3 className="font-semibold">What applies to this entity</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                AI reads your Primary &amp; Secondary Activity answers and the
-                obligations discovered under Compliance Rules, then decides which
-                are mandatory, which stay conditional, and which don't apply.
-                Tick the ones to send to Review &amp; Assign.
+                AI reads your answers above and the discovered list, then decides
+                which items are mandatory, conditional, or not applicable — with
+                reasoning and triggering factors. Tick the ones to send to Review
+                &amp; Assign.
               </p>
             </div>
             <Button onClick={() => assess.refetch()} disabled={assess.isFetching}>
@@ -1352,7 +1471,7 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}
-              Find Regulations
+              Reassess
             </Button>
           </div>
 
@@ -1363,12 +1482,12 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
             </div>
           ) : !result ? (
             <p className="text-sm text-muted-foreground">
-              Click <strong>Find Regulations</strong> — AI will tell you what's
-              mandatory for this entity based on your answers.
+              Click <strong>Reassess</strong> — AI will tell you what's mandatory
+              for this entity based on your answers.
             </p>
           ) : items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {result.notes || "Nothing to assess — run Find Regulations under Compliance Rules first."}
+              {result.notes || "Nothing to assess — run Refresh Regulations above first."}
             </p>
           ) : (
             <>

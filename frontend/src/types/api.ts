@@ -32,6 +32,33 @@ export interface UserBrief {
   department?: Department | null;
 }
 
+// Adaptive qualification — AI-generated secondary questions, their answers, and
+// the cached reassessment result.
+export interface GeneratedQuestion {
+  key: string;
+  question: string;
+  options: { value: string; label: string }[];
+  drives?: string;
+}
+export interface AssessmentItem {
+  rule_id: number | null;
+  name?: string;
+  form_name: string;
+  category: string | null;
+  frequency: string | null;
+  verdict: string;
+  reason: string;
+  triggering_factors?: string | null;
+  due?: string | null;
+  basis?: string | null;
+  jurisdiction?: string | null;
+}
+export interface Qualification {
+  questions?: GeneratedQuestion[];
+  answers?: Record<string, string>;
+  assessment?: AssessmentItem[];
+}
+
 // One layer in the ownership chain, ordered ultimate-parent → … → this entity.
 export interface OwnershipStage {
   name: string;
@@ -58,6 +85,7 @@ export interface Entity {
   fiscal_year_end: string | null;
   nature_of_operation: string | null;
   finance_profile: Record<string, string> | null;
+  qualification: Qualification | null;
   ownership: OwnershipStage[] | null;
   bank_details: BankDetails | null;
   country_lead: UserBrief | null;
