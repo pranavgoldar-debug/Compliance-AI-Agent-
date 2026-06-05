@@ -506,6 +506,10 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
   });
   const setAnswer = (key: string, value: string) =>
     saveSecondary.mutate({ ...secAnswers, [key]: value });
+  // Standard primary follow-ups (VAT frequency, TP threshold, …) save onto the
+  // finance_profile, like the primary flags.
+  const setProfileAnswer = (key: string, value: string) =>
+    savePrimary.mutate({ ...profile, [key]: value });
 
   // Find applicable regulations — AI reads answers + discovered list. Cached per
   // entity so the inventory survives tab switches; only re-runs on click.
@@ -646,6 +650,38 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
     />
   );
 
+  // Standard follow-up for a primary gate (e.g. VAT → monthly/quarterly/annual),
+  // with the jurisdiction threshold shown where relevant.
+  const renderStaticFollowup = (f: ReturnType<typeof followupsForJurisdiction>[number]) => {
+    const th = thresholdForJurisdiction(f, entity.jurisdiction_code);
+    return (
+      <div key={f.key} className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-sm">{f.question}</div>
+          {th && <div className="text-[11px] text-muted-foreground">{th}</div>}
+        </div>
+        <div className="inline-flex flex-wrap gap-1">
+          {f.options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              disabled={!isAdmin || savePrimary.isPending}
+              onClick={() => setProfileAnswer(f.key, o.value)}
+              className={cn(
+                "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                profile[f.key] === o.value
+                  ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+                  : "border-input bg-background hover:bg-secondary text-muted-foreground",
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Call-to-action: open the Activities questionnaire */}
@@ -772,6 +808,10 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
                     const val = profile[g.key];
                     const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
                     const fups = current === "yes" ? followupsFor(g.key) : [];
+                    const staticFups =
+                      current === "yes"
+                        ? followupsForJurisdiction(g, entity.jurisdiction_code)
+                        : [];
                     return (
                       <div
                         key={g.id}
@@ -808,8 +848,9 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
                             ))}
                           </div>
                         </div>
-                        {fups.length > 0 && (
+                        {(staticFups.length > 0 || fups.length > 0) && (
                           <div className="mt-2.5 pl-3 border-l-2 border-aspora-100 space-y-2.5">
+                            {staticFups.map(renderStaticFollowup)}
                             {fups.map(renderQuestion)}
                           </div>
                         )}
@@ -1517,6 +1558,25 @@ function BankDetailsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean
 }
 
 
+// Turn an audit action id into a readable verb for the activity feed.
+function humaniseAction(action: string): string {
+  const map: Record<string, string> = {
+    "obligation.updated": "updated",
+    "comment.added": "commented on",
+    "document.uploaded": "uploaded a document",
+    "document.deleted": "deleted a document",
+    "entity.updated": "updated the entity",
+    "entity.created": "created the entity",
+    "entity.discovered_regulations": "ran Refresh Regulations",
+    "entity.generated_questions": "generated questions",
+    "entity.assessed_obligations": "found applicable regulations",
+    "rule.bulk_created": "added regulations",
+    "rule.updated": "updated a rule",
+    "rule.created": "created a rule",
+  };
+  return map[action] || action.replace(/[._]/g, " ");
+}
+
 function OverviewTab({
   entity,
   obligations,
@@ -1532,9 +1592,11 @@ function OverviewTab({
 }) {
   // Recent 5 obligation changes — fake "recent activity" feed sourced from
   // updated_at on this entity's obligations. Real activity feed lands in P5.
-  const recent = [...obligations]
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-    .slice(0, 5);
+  const { data: activityFeed = [] } = useQuery({
+    queryKey: ["activities", entity.id],
+    queryFn: () => api.get<ActivityOut[]>(`/api/activities?entity_id=${entity.id}&limit=8`),
+    refetchInterval: 60_000,
+  });
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1646,33 +1708,36 @@ function OverviewTab({
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Recent activity
           </h3>
-          {recent.length === 0 ? (
+          {activityFeed.length === 0 ? (
             <EmptyState
               icon={<History className="h-5 w-5" />}
               title="No activity yet"
-              description="Once obligations get updated or filed, the latest changes show up here."
+              description="Actions on this entity — discovery, edits, filings — show up here with who did them."
             />
           ) : (
             <ul className="space-y-2">
-              {recent.map((ob) => (
+              {activityFeed.map((a) => (
                 <li
-                  key={ob.id}
+                  key={a.id}
                   className="flex items-center gap-3 text-sm hover:bg-secondary/30 rounded-lg px-2 py-1.5 -mx-2"
                 >
                   <Avatar className="h-7 w-7">
                     <AvatarFallback className="text-[10px]">
-                      {userInitials(ob.assignee?.full_name || "Aspora")}
+                      {userInitials(a.actor?.full_name || "System")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
-                    <span className="font-medium">{ob.assignee?.full_name?.split(" ")[0] || "Someone"}</span>{" "}
-                    <span className="text-muted-foreground">updated</span>{" "}
-                    <span className="font-medium">{ob.rule_form_name}</span>{" "}
-                    <span className="text-muted-foreground">→ </span>
-                    <StatusPill status={ob.status} isOverdue={ob.is_overdue} />
+                    <span className="font-medium">{a.actor?.full_name || "System"}</span>{" "}
+                    <span className="text-muted-foreground">{humaniseAction(a.action)}</span>
+                    {a.target_label && (
+                      <>
+                        {" "}
+                        <span className="font-medium">{a.target_label}</span>
+                      </>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {fmtRelative(ob.updated_at)}
+                    {fmtRelative(a.created_at)}
                   </span>
                 </li>
               ))}
