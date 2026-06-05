@@ -44,7 +44,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
 import { gatesForJurisdiction, followupsForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, BankDetails, Entity, License, Obligation, Rule } from "@/types/api";
+import type { ActivityOut, BankDetails, Entity, License, Obligation, OwnershipStage, Rule } from "@/types/api";
 
 
 function StatTile({
@@ -700,6 +700,7 @@ function EditEntityDialog({
   const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
   const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
   const [shortCode, setShortCode] = useState(entity.short_code ?? "");
+  const [ownership, setOwnership] = useState<OwnershipStage[]>(entity.ownership ?? []);
   const [error, setError] = useState<string | null>(null);
 
   // Re-sync the form when the entity object changes (e.g. polling refresh).
@@ -711,20 +712,32 @@ function EditEntityDialog({
       setFye(entity.fiscal_year_end ?? "");
       setIncDate(entity.incorporation_date ?? "");
       setShortCode(entity.short_code ?? "");
+      setOwnership(entity.ownership ?? []);
       setError(null);
     }
   }, [open, entity]);
 
+  const setStage = (i: number, patch: Partial<OwnershipStage>) =>
+    setOwnership((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addStage = () => setOwnership((rows) => [...rows, { name: "", role: "" }]);
+  const removeStage = (i: number) =>
+    setOwnership((rows) => rows.filter((_, idx) => idx !== i));
+
   const mutation = useMutation({
-    mutationFn: () =>
-      api.patch<Entity>(`/api/entities/${entity.id}`, {
+    mutationFn: () => {
+      const cleaned = ownership
+        .map((o) => ({ name: o.name.trim(), role: o.role.trim() }))
+        .filter((o) => o.name);
+      return api.patch<Entity>(`/api/entities/${entity.id}`, {
         name: name.trim(),
         legal_type: legalType.trim(),
         registration_number: regNumber.trim() || null,
         fiscal_year_end: fye.trim() || null,
         incorporation_date: incDate || null,
         short_code: shortCode.trim() || null,
-      }),
+        ownership: cleaned.length ? cleaned : null,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entity", entity.id] });
       queryClient.invalidateQueries({ queryKey: ["entities"] });
@@ -786,6 +799,47 @@ function EditEntityDialog({
                 onChange={(e) => setFye(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium">Ownership</label>
+              <span className="text-[11px] text-muted-foreground">
+                Ultimate parent → … → this entity
+              </span>
+            </div>
+            {ownership.length > 0 && (
+              <div className="space-y-2">
+                {ownership.map((stage, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={stage.name}
+                      placeholder="Owner / parent name"
+                      className="flex-1"
+                      onChange={(e) => setStage(i, { name: e.target.value })}
+                    />
+                    <Input
+                      value={stage.role}
+                      placeholder="Role / stake (e.g. 100% parent)"
+                      className="flex-1"
+                      onChange={(e) => setStage(i, { role: e.target.value })}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeStage(i)}
+                      aria-label="Remove owner"
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button variant="outline" size="sm" onClick={addStage}>
+              <Plus className="h-4 w-4" />
+              Add owner
+            </Button>
           </div>
 
           {error && (
