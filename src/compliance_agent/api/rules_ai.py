@@ -151,7 +151,11 @@ def bulk_create_rules(
             applicability_note=cand.applicability_note,
             tax_type=cand.tax_type,
             plain_description=cand.plain_description,
-            responsible_function=derive_function(cand.category, cand.area),
+            responsible_function=(
+                cand.owner_team
+                if getattr(cand, "owner_team", None) in ("Finance", "Compliance", "Legal", "HR")
+                else derive_function(cand.category, cand.area)
+            ),
             status=payload.status,
             created_by_id=user.id,
         )

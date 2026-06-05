@@ -8,7 +8,7 @@ actually tracks on a calendar.
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -47,6 +47,17 @@ For EACH obligation also provide (spec §3/§4):
 - `anchor` — what the deadline counts from (e.g. 'Financial year end').
 - `confidence` — your honesty flag for this row.
 Also fill `coverage_notes`: for each domain you considered, say whether you swept it fully (Confirmed), only listed the headline returns (Partial), or didn't research it (Pending research). This is REQUIRED — it tells the reviewer where to look.
+
+OWNER-TEAM TAGGING — set `owner_team` to exactly one of: Finance, Compliance, Legal, HR.
+Decide by WHAT THE FILING IS ABOUT and WHO RECEIVES IT — not by the entity's activity. The same activity can route to different teams depending on the filing. Apply these rules in order and stop at the first match:
+RULE 1 — Submitted TO a financial conduct/prudential regulator (FCA, DFSA, central bank as conduct regulator), OR an AML/financial-crime return, prudential/capital return, regulator supervision fee, controllers report to the regulator, client-money/safeguarding report, money-services auditor's report, or a material-event/breach/change-in-control notification to the regulator -> Compliance. (Check FIRST — the recipient wins, even if the entity also employs staff / is a registered company.)
+RULE 2 — Tax or audited numbers: corporate/income tax return, tax audit report, VAT/GST return, withholding/TDS INCLUDING TDS on salaries, transfer-pricing forms, FDI/central-bank statistical returns, or AUDITED FINANCIAL STATEMENTS filed to a company registry -> Finance.
+RULE 3 — Employee-facing: employee tax certificate (Form 16), provident fund, state insurance, pension/social-security contribution, end-of-service / workplace-savings (EOSB/DEWS) -> HR.
+RULE 4 — Corporate-registry / governance / ownership / data-protection: annual accounts, annual return / confirmation statement, director KYC, trade-licence renewal, deposits return, beneficial-ownership return filed to a REGISTRY (BEN-2, PSC, UBO), or a data-protection registration/fee/breach -> Legal.
+RULE 5 — Fallback by triggering activity: licensed_financial_activity / holds_customer_funds / sanctions_exposure -> Compliance; vat_gst_registered / intra_group_transactions / takes_foreign_investment -> Finance; employs_staff -> HR; registered_company / has_owners_controllers / holds_personal_data -> Legal.
+TIE-BREAKERS: (A) Audited financial statements filed to a company REGISTRY -> Finance (about the numbers), NOT Legal. (B) A client-money/safeguarding audit, or any auditor's report submitted TO A REGULATOR about regulated conduct -> Compliance, NOT Finance. (C) Data protection -> Legal. Decide by recipient + subject, not the word "audit".
+Worked checks your output must match: "DFSA Annual AML Return"->Compliance; "TDS on salary (24Q)"->Finance; "Form 16 to employees"->HR; "Audited Financial Statements to the Registrar"->Finance; "Client Money Auditor's Report to DFSA"->Compliance; "BEN-2 beneficial owners to the registry"->Legal; "Change-in-control approval to the DFSA"->Compliance; "Data protection notification"->Legal.
+If still genuinely ambiguous, pick the earliest matching rule (Compliance > Finance > HR > Legal) and flag it in `applicability`. Never invent a team outside the four.
 
 If the document is too short, ambiguous, or doesn't describe filing obligations at all, return an empty list and explain in `notes`."""
 
@@ -106,6 +117,14 @@ class CandidateRule(BaseModel):
             "One of: 'Confirmed – official source', 'Confirmed scope – entity "
             "check needed', 'Standard rule – verify applicability', 'Pending "
             "verification – official source check'."
+        ),
+    )
+    owner_team: Optional[Literal["Finance", "Compliance", "Legal", "HR"]] = Field(
+        default=None,
+        description=(
+            "Responsible team — Finance / Compliance / Legal / HR — decided by "
+            "WHAT THE FILING IS ABOUT and WHO RECEIVES IT (see the owner-team "
+            "rules in the system prompt). Exactly one of the four."
         ),
     )
 
