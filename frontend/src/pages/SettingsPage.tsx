@@ -1617,7 +1617,14 @@ function ComingSoonGrid() {
 // ---------------------------------------------------------------------------
 // Jurisdictions
 // ---------------------------------------------------------------------------
+type CustomJurisdiction = { code: string; name: string; flag: string; iso2: string };
+
 function JurisdictionsTab() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
     queryFn: () => api.get<Entity[]>("/api/entities"),
@@ -1626,6 +1633,18 @@ function JurisdictionsTab() {
     queryKey: ["rules", "production"],
     queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
   });
+  const { data: custom = [] } = useQuery({
+    queryKey: ["jurisdictions"],
+    queryFn: () => api.get<CustomJurisdiction[]>("/api/jurisdictions"),
+  });
+
+  // Built-in set + any admin-added jurisdictions (custom wins on code clash).
+  const merged: Record<string, { name: string; flag: string; iso2: string }> = {
+    ...JURISDICTIONS,
+  };
+  for (const j of custom) {
+    merged[j.code] = { name: j.name, flag: j.flag || "🏳️", iso2: j.iso2 };
+  }
 
   return (
     <Card>
@@ -1638,7 +1657,7 @@ function JurisdictionsTab() {
           </div>
         </div>
         <ul className="divide-y divide-border">
-          {Object.entries(JURISDICTIONS).map(([code, j]) => {
+          {Object.entries(merged).map(([code, j]) => {
             const entCount = entities.filter((e) => e.jurisdiction_code === code).length;
             const ruleCount = rules.filter((r) => r.jurisdiction_code === code).length;
             const lastUpdate = rules
@@ -1662,13 +1681,122 @@ function JurisdictionsTab() {
             );
           })}
         </ul>
-        <div className="px-5 py-3 border-t border-border text-right">
-          <button className="text-xs text-aspora-700 hover:underline" disabled>
-            Request a new jurisdiction →
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="px-5 py-3 border-t border-border text-right">
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add jurisdiction
+            </Button>
+          </div>
+        )}
       </CardContent>
+      <AddJurisdictionDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        existingCodes={Object.keys(merged)}
+        onAdded={() => queryClient.invalidateQueries({ queryKey: ["jurisdictions"] })}
+      />
     </Card>
+  );
+}
+
+
+function AddJurisdictionDialog({
+  open,
+  onOpenChange,
+  existingCodes,
+  onAdded,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  existingCodes: string[];
+  onAdded: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [flag, setFlag] = useState("");
+  const [iso2, setIso2] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setCode("");
+      setFlag("");
+      setIso2("");
+      setError(null);
+    }
+  }, [open]);
+
+  const add = useMutation({
+    mutationFn: () =>
+      api.post("/api/jurisdictions", {
+        code: code.trim().toLowerCase(),
+        name: name.trim(),
+        flag: flag.trim(),
+        iso2: iso2.trim().toLowerCase(),
+      }),
+    onSuccess: () => {
+      onAdded();
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  const dupCode = code.trim() && existingCodes.includes(code.trim().toLowerCase());
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Add jurisdiction</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Name</label>
+            <Input value={name} placeholder="e.g. Saudi Arabia" autoFocus onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1 col-span-1">
+              <label className="text-xs font-medium">Code</label>
+              <Input value={code} placeholder="ksa" onChange={(e) => setCode(e.target.value)} />
+            </div>
+            <div className="space-y-1 col-span-1">
+              <label className="text-xs font-medium">ISO-2</label>
+              <Input value={iso2} placeholder="sa" maxLength={2} onChange={(e) => setIso2(e.target.value)} />
+            </div>
+            <div className="space-y-1 col-span-1">
+              <label className="text-xs font-medium">Flag</label>
+              <Input value={flag} placeholder="🇸🇦" onChange={(e) => setFlag(e.target.value)} />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Code is the short id stored on entities/rules (lowercase, e.g.{" "}
+            <code className="font-mono">uae</code>).
+          </p>
+          {dupCode && (
+            <div className="text-xs text-amber-700">That code already exists.</div>
+          )}
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => add.mutate()}
+            disabled={add.isPending || !name.trim() || !code.trim() || !!dupCode}
+          >
+            {add.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add jurisdiction
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
