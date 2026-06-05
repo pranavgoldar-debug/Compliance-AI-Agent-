@@ -1,7 +1,7 @@
 // Entity Detail — one specific legal entity with tabs: Overview, Registrations,
 // Compliance Items, Documents, Key Persons, Activity / Audit Log. Most tabs
 // are filled with realistic demo content; real CRUD lands in Phase 5+.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -392,8 +392,12 @@ function RegulatoryAssessmentTab({
 }) {
   return (
     <div className="space-y-4">
-      <ComplianceRulesTab entity={entity} licenses={licenses} isAdmin={isAdmin} />
-      <ApplicabilitySection entity={entity} isAdmin={isAdmin} />
+      <ComplianceRulesTab
+        entity={entity}
+        licenses={licenses}
+        isAdmin={isAdmin}
+        afterHeader={<ApplicabilitySection entity={entity} isAdmin={isAdmin} />}
+      />
     </div>
   );
 }
@@ -447,6 +451,18 @@ function GeneratedQuestionRow({
 function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  // Only show this section once discovery has produced items for the entity.
+  const { data: staging = [] } = useQuery({
+    queryKey: ["rules", "staging", entity.id],
+    queryFn: () => api.get<Rule[]>(`/api/rules?status=staging&entity_id=${entity.id}`),
+  });
+  const { data: production = [] } = useQuery({
+    queryKey: ["rules", "production", entity.id],
+    queryFn: () => api.get<Rule[]>(`/api/rules?status=production&entity_id=${entity.id}`),
+  });
+  const hasDiscovered = [...staging, ...production].some((r) =>
+    r.entity_ids.includes(entity.id),
+  );
   const gates = gatesForJurisdiction(entity.jurisdiction_code);
   const qual = entity.qualification ?? {};
   const questions = qual.questions ?? [];
@@ -536,6 +552,9 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
+
+  // Hidden until "Refresh Regulations" has produced discovered items.
+  if (!hasDiscovered) return null;
 
   const gateKeys = new Set(gates.map((g) => g.key));
   const followupsFor = (primaryKey: string) =>
@@ -782,10 +801,12 @@ function ComplianceRulesTab({
   entity,
   licenses,
   isAdmin,
+  afterHeader,
 }: {
   entity: Entity;
   licenses: License[];
   isAdmin: boolean;
+  afterHeader?: ReactNode;
 }) {
   const queryClient = useQueryClient();
   const [fnFilter, setFnFilter] = useState("");
@@ -904,7 +925,6 @@ function ComplianceRulesTab({
               <p className="text-xs text-muted-foreground mt-0.5">
                 AI discovers the regulations this entity could owe — from its
                 Nature of Operations, jurisdiction and any uploaded licenses.
-                Answer the questions below to narrow it to what applies.
               </p>
             </div>
             {isAdmin && (
@@ -983,6 +1003,9 @@ function ComplianceRulesTab({
           )}
         </CardContent>
       </Card>
+
+      {/* Activities / applicability flow — sits right under the header. */}
+      {afterHeader}
 
       {/* Review (AI Generated) */}
       <Card>
