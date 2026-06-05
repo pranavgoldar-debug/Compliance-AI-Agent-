@@ -323,10 +323,12 @@ function DetailedQuestionsTab({ entity, isAdmin }: { entity: Entity; isAdmin: bo
         <div>
           <h3 className="font-semibold">Secondary activity</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Specific scoping questions for this entity's jurisdiction and
-            activities. Answer these after running Find Regulations — they narrow
-            the discovered filings down to what's actually mandatory. See the
-            outcome under Registrations.
+            Jurisdiction- and threshold-specific questions used to{" "}
+            <strong>filter out</strong> what doesn't apply. Once you've run{" "}
+            <strong>Refresh Regulations</strong> under Compliance Rules, your
+            answers here decide which of the discovered filings stay mandatory,
+            which become conditional, and which are dropped. See the outcome
+            under Registrations.
           </p>
         </div>
         {detailGates.length === 0 ? (
@@ -677,11 +679,6 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
           <StatTile value={entity.active_obligations_count} label="Total active" />
           <StatTile value={entity.overdue_obligations_count} label="Overdue" tone="overdue" />
           <StatTile value={entity.in_alert_window_count} label="In alert window" tone="alert" />
-          <StatTile
-            value={entity.last_filed_at ? fmtShortDate(entity.last_filed_at) : "—"}
-            label="Last filed"
-            tone="completed"
-          />
         </div>
       </CardContent>
     </Card>

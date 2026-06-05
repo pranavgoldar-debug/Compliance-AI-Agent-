@@ -390,9 +390,9 @@ function GlobalSearch() {
         onClick={() => setOpen(true)}
         className="relative flex-1 max-w-md inline-flex items-center gap-2 rounded-lg border border-input bg-secondary/60 px-3 h-9 text-sm text-muted-foreground hover:bg-secondary transition-colors"
       >
-        <Search className="h-4 w-4" />
-        <span className="flex-1 text-left">Search obligations, entities…</span>
-        <kbd className="hidden md:inline-flex items-center rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono">
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="flex-1 text-left truncate min-w-0">Search obligations, entities…</span>
+        <kbd className="hidden md:inline-flex shrink-0 items-center rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono">
           ⌘K
         </kbd>
       </button>
