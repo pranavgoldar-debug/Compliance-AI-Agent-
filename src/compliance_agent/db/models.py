@@ -181,6 +181,13 @@ class Entity(Base):
     ownership: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     # Bank details: {account_name, bank_name, account_number, iban, swift, currency}.
     bank_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Adaptive qualification: AI-generated secondary questions + their answers +
+    # the last reassessment result. Shape:
+    #   {"questions": [{key, question, options:[{value,label}], drives}],
+    #    "answers": {key: value},
+    #    "assessment": [{form_name, verdict, reasoning, triggering_factors,
+    #                    frequency, due, basis}]}
+    qualification: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     country_lead_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     country_lead: Mapped[Optional[User]] = relationship(

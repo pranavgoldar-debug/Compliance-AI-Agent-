@@ -138,24 +138,101 @@ def extract_rules_from_text(
 # Obligation assessment — given a company's profile answers + the discovered
 # obligation list, decide which are mandatory / conditional / not-applicable.
 # ---------------------------------------------------------------------------
-ASSESS_PROMPT = """You are a compliance specialist. Given a SPECIFIC company's profile answers and a list of obligations that were discovered for it, decide for EACH obligation whether it is:
+ASSESS_PROMPT = """You are a compliance specialist. Given a SPECIFIC company's profile answers (primary + adaptive secondary) and a list of regulatory items that were discovered for it, decide for EACH item whether it is:
 - "mandatory" — the company's answers make this clearly required.
 - "conditional" — it may apply but a trigger/threshold is uncertain from the answers.
 - "not_applicable" — the company's answers show this does NOT apply to it.
 
-Decide ONLY from the provided answers and obligation details — do not invent facts.
-For every obligation, copy its `form_name` EXACTLY as given, give a `verdict`, and a one-line `reason` that references the company's answers (e.g. "Not VAT-registered, so VAT return doesn't apply", "Employs staff and pays via WPS, so WPS report is required")."""
+Decide ONLY from the provided answers and item details — do not invent facts.
+For every item, copy its `form_name` EXACTLY as given, then provide:
+- `verdict` — mandatory / conditional / not_applicable.
+- `reason` — one line referencing the company's answers (e.g. "Not VAT-registered, so VAT return doesn't apply").
+- `triggering_factors` — the specific answer(s)/fact(s) that drive this verdict (e.g. "Employs staff in UAE; pays via WPS"). Keep it short and concrete."""
 
 
 class ObligationVerdict(BaseModel):
     form_name: str = Field(description="The obligation's form_name, copied EXACTLY.")
     verdict: str = Field(description="One of: mandatory, conditional, not_applicable")
     reason: str = Field(description="One-line reason referencing the company's answers.")
+    triggering_factors: Optional[str] = Field(
+        default=None,
+        description="The specific answer(s)/fact(s) that drive this verdict.",
+    )
 
 
 class AssessmentResult(BaseModel):
     verdicts: list[ObligationVerdict]
     notes: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Adaptive secondary questions — generate jurisdiction/industry-specific
+# follow-up questions for an entity from its nature of operations, licenses,
+# jurisdiction, and the items already discovered.
+# ---------------------------------------------------------------------------
+QUESTION_GEN_PROMPT = """You build an ADAPTIVE qualification questionnaire for ONE specific entity.
+
+You are given the entity's jurisdiction, nature of operations, the licenses it holds, and the list of regulatory items (filings / licenses / permits / registrations) already discovered for it (discovery assumed every activity is present, so the list is deliberately broad).
+
+Generate FOLLOW-UP qualification questions whose answers let us decide which discovered items are actually Mandatory, Conditional, or Not applicable for THIS entity.
+
+Rules:
+- Tailor questions to THIS entity — its jurisdiction, industry, nature of operations, licenses, and the discovered items. Do NOT produce generic boilerplate.
+- Every question must change the applicability of at least one discovered item.
+- Prefer closed answers (yes/no, threshold bands, frequencies) over free text.
+- Produce 4-10 questions. Do NOT re-ask obvious primary questions (VAT-registered? employs staff? holds customer funds? etc.) — those are asked separately.
+- For each question give: a stable snake_case `key`, the `question` text, 2-4 `options` (each {value, label}), and `drives` (the item/family it gates).
+Return ONLY JSON matching the schema — no prose."""
+
+
+class GenOption(BaseModel):
+    value: str
+    label: str
+
+
+class GeneratedQuestion(BaseModel):
+    key: str = Field(description="Stable snake_case id for the question.")
+    question: str
+    options: list[GenOption]
+    drives: str = Field(default="", description="The item/family this question gates.")
+
+
+class GeneratedQuestions(BaseModel):
+    questions: list[GeneratedQuestion]
+    notes: Optional[str] = None
+
+
+def generate_secondary_questions(
+    context_block: str,
+    *,
+    model: str = "claude-opus-4-7",
+) -> GeneratedQuestions:
+    """Generate adaptive secondary qualification questions for an entity."""
+    if not is_live():
+        raise RuleExtractorUnavailable(
+            "AI question generation requires COMPLIANCE_AGENT_LIVE=1 and an API key."
+        )
+    client = make_client()
+    response = client.messages.parse(
+        model=model,
+        max_tokens=6000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "high"},
+        system=[
+            {
+                "type": "text",
+                "text": QUESTION_GEN_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": context_block}],
+        output_format=GeneratedQuestions,
+    )
+    if response.parsed_output is None:
+        raise RuntimeError(
+            f"Question generation failed — stop_reason={response.stop_reason}."
+        )
+    return response.parsed_output
 
 
 def assess_obligations(

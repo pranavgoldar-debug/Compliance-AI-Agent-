@@ -301,6 +301,7 @@ def serialize_entity(entity: Entity, db: Session) -> EntityOut:
         finance_profile=entity.finance_profile,
         ownership=entity.ownership,
         bank_details=entity.bank_details,
+        qualification=entity.qualification,
         country_lead=serialize_user(entity.country_lead),
         archived_at=entity.archived_at,
         created_at=entity.created_at,

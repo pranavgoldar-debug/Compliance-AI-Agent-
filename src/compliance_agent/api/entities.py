@@ -314,8 +314,9 @@ def assess_entity_obligations(
             "notes": "Nothing discovered yet — run Find Regulations first.",
         }
 
-    profile_block = _build_profile_block(entity.finance_profile) or (
-        "\n\nCOMPANY PROFILE: (no activity answers provided)"
+    profile_block = (
+        (_build_profile_block(entity.finance_profile) or "\n\nCOMPANY PROFILE: (no primary answers)")
+        + _secondary_answers_block(entity.qualification)
     )
     obligations_block = "\n".join(
         f"- {r.form_name} | {r.category} | {r.frequency} | "
@@ -355,8 +356,16 @@ def assess_entity_obligations(
                 "frequency": r.frequency if r else None,
                 "verdict": v.verdict,
                 "reason": v.reason,
+                "triggering_factors": v.triggering_factors,
+                "frequency": r.frequency if r else None,
+                "due": r.due_date_rule if r else None,
+                "basis": (r.source_url or r.authority) if r else None,
+                "jurisdiction": r.jurisdiction_code if r else entity.jurisdiction_code,
             }
         )
+    # Cache the result on the entity so the inventory survives reloads without
+    # re-running the AI (the Reassess button re-runs it on demand).
+    entity.qualification = {**(entity.qualification or {}), "assessment": items}
     log_activity(
         db,
         actor_id=user.id,
@@ -367,3 +376,96 @@ def assess_entity_obligations(
     )
     db.commit()
     return {"available": True, "items": items, "notes": result.notes}
+
+
+def _secondary_answers_block(qualification: Optional[dict]) -> str:
+    """Render the entity's adaptive (secondary) question answers for the prompt."""
+    if not qualification:
+        return ""
+    questions = qualification.get("questions") or []
+    answers = qualification.get("answers") or {}
+    lines: list[str] = []
+    for q in questions:
+        key = q.get("key")
+        ans = answers.get(key)
+        if not ans:
+            continue
+        label_for = {o.get("value"): o.get("label") for o in (q.get("options") or [])}
+        lines.append(f"- {q.get('question')}: {label_for.get(ans, ans)}")
+    if not lines:
+        return ""
+    return "\n\nADAPTIVE QUALIFICATION ANSWERS:\n" + "\n".join(lines)
+
+
+@router.post("/{entity_id}/generate-questions")
+def generate_entity_questions(
+    entity_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """Generate adaptive secondary qualification questions for this entity from
+    its nature of operations, licenses, jurisdiction and discovered items.
+    Merges into entity.qualification, preserving answers to questions that
+    survive."""
+    from compliance_agent.db import License, RuleStatus
+    from compliance_agent.rule_extractor import (
+        generate_secondary_questions,
+        is_live,
+        RuleExtractorUnavailable,
+    )
+
+    entity = db.get(Entity, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found.")
+    if not is_live():
+        return {"available": False, "questions": [], "notes": "AI is off."}
+
+    discovered = [
+        r for r in entity.rules
+        if r.status in (RuleStatus.staging, RuleStatus.production)
+    ]
+    licenses = db.execute(select(License).where(License.entity_id == entity_id)).scalars().all()
+    lic_block = "\n".join(
+        f"- {l.name} | {l.authority} | {l.license_type or 'n/a'} | {l.license_number or 'n/a'}"
+        for l in licenses
+    ) or "(none uploaded)"
+    items_block = "\n".join(f"- {r.form_name} ({r.category})" for r in discovered) or "(none yet)"
+    context = (
+        f"ENTITY: {entity.name}\n"
+        f"Jurisdiction: {entity.jurisdiction_code}\n"
+        f"Legal type: {entity.legal_type or '(unknown)'}\n"
+        f"Nature of operations: {entity.nature_of_operation or '(not provided)'}\n\n"
+        f"LICENSES HELD:\n{lic_block}\n\n"
+        f"REGULATORY ITEMS ALREADY DISCOVERED:\n{items_block}\n"
+    )
+
+    try:
+        result = generate_secondary_questions(context, )
+    except RuleExtractorUnavailable as exc:
+        return {"available": False, "questions": [], "notes": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
+
+    questions = [
+        {
+            "key": q.key,
+            "question": q.question,
+            "options": [{"value": o.value, "label": o.label} for o in q.options],
+            "drives": q.drives,
+        }
+        for q in result.questions
+    ]
+    prev_answers = (entity.qualification or {}).get("answers") or {}
+    keys = {q["key"] for q in questions}
+    merged_answers = {k: v for k, v in prev_answers.items() if k in keys}
+    entity.qualification = {
+        **(entity.qualification or {}),
+        "questions": questions,
+        "answers": merged_answers,
+    }
+    log_activity(
+        db, actor_id=user.id, action="entity.generated_questions",
+        target_type="entity", target_id=entity_id, payload={"count": len(questions)},
+    )
+    db.commit()
+    return {"available": True, "questions": questions, "notes": result.notes}
