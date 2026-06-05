@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from compliance_agent.activity_gate import NOT_APPLICABLE, entity_applicability
 from compliance_agent.api._helpers import log_activity, serialize_user
-from compliance_agent.classification import derive_tax_type, keep_function
+from compliance_agent.classification import derive_function, derive_tax_type, keep_function
 from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleSnapshotOut, RuleUpdate
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
@@ -153,6 +153,9 @@ def _serialize_rule(rule: Rule, entity_applicability: Optional[str] = None) -> R
         payment_rule=rule.payment_rule,
         applicability=rule.applicability,
         applicability_note=rule.applicability_note,
+        responsible_function=(
+            rule.responsible_function or derive_function(rule.category, rule.area)
+        ),
         tax_type=(
             derive_tax_type(rule.name, rule.form_name, rule.category, rule.area)
             or rule.tax_type
