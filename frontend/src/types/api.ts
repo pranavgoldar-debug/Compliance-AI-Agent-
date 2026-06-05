@@ -87,6 +87,7 @@ export interface Entity {
   nature_of_operation: string | null;
   finance_profile: Record<string, string> | null;
   qualification: Qualification | null;
+  document_folders: string[] | null;
   ownership: OwnershipStage[] | null;
   bank_details: BankDetails | null;
   country_lead: UserBrief | null;
@@ -243,6 +244,7 @@ export interface DocumentOut {
   content_type: string | null;
   size_bytes: number;
   category: DocumentCategory;
+  folder?: string | null;
   tags: string | null;
   url: string | null;
   uploaded_by: UserBrief | null;

@@ -10,6 +10,7 @@ import {
   ChevronRight,
   FolderClosed,
   FolderOpen,
+  FolderPlus,
   LayoutGrid,
   List,
   Search,
@@ -37,26 +38,28 @@ import type {
 type Selection =
   | { kind: "all" }
   | { kind: "entity"; entityId: number }
-  | { kind: "entity-category"; entityId: number; category: DocumentCategory };
+  | { kind: "entity-folder"; entityId: number; folder: string };
 
 
-// Buckets shown as top-of-page chips. Maps to the DocumentCategory enum
-// for the filter; "all" is the unfiltered passthrough. Trimmed to the
-// two categories actually surfaced in the entity upload cards.
-const CATEGORY_CHIPS: { key: "all" | DocumentCategory; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "Filings", label: "Filings" },
-  { key: "Templates", label: "Templates" },
-];
+// Default folders every entity starts with (mirrors the backend).
+const DEFAULT_FOLDERS = ["Filings", "Templates", "Incorporation Documents"];
+
+// The folders to show for an entity: its saved folders (or defaults) plus any
+// folder that already has documents.
+function foldersFor(entity: Entity | undefined, counts: Map<string, number>): string[] {
+  const base = entity?.document_folders?.length ? entity.document_folders : DEFAULT_FOLDERS;
+  const set = new Set<string>([...base, ...counts.keys()]);
+  return Array.from(set);
+}
 
 export function DocumentsPage() {
   const [selection, setSelection] = useState<Selection>({ kind: "all" });
   const [layout, setLayout] = useState<"rows" | "grid">("rows");
   const [q, setQ] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | DocumentCategory>("all");
 
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
 
   // Eager-loaded entity list — fuels the left tree.
   const { data: entities = [] } = useQuery({
@@ -71,14 +74,31 @@ export function DocumentsPage() {
   });
 
   const countsByEntity = useMemo(() => {
-    const m = new Map<number, Map<DocumentCategory, number>>();
+    const m = new Map<number, Map<string, number>>();
     for (const d of allDocs) {
       if (!m.has(d.entity_id)) m.set(d.entity_id, new Map());
       const cm = m.get(d.entity_id)!;
-      cm.set(d.category, (cm.get(d.category) ?? 0) + 1);
+      const f = d.folder || d.category;
+      cm.set(f, (cm.get(f) ?? 0) + 1);
     }
     return m;
   }, [allDocs]);
+
+  // Create a new folder on an entity (admin).
+  const createFolder = useMutation({
+    mutationFn: ({ entity, name }: { entity: Entity; name: string }) =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, {
+        document_folders: Array.from(
+          new Set([...(entity.document_folders?.length ? entity.document_folders : DEFAULT_FOLDERS), name]),
+        ),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entities"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const promptNewFolder = (entity: Entity) => {
+    const name = window.prompt("New folder name")?.trim();
+    if (name) createFolder.mutate({ entity, name });
+  };
 
   // Apply optional name filter to whatever the right pane is showing.
   // The pane uses its own React Query under the hood; we just pass the q
@@ -87,15 +107,12 @@ export function DocumentsPage() {
   const filteredAll = useMemo(() => {
     if (selection.kind !== "all") return allDocs;
     let arr = allDocs;
-    if (categoryFilter !== "all") {
-      arr = arr.filter((d) => d.category === categoryFilter);
-    }
     if (q.trim()) {
       const n = q.trim().toLowerCase();
       arr = arr.filter((d) => d.filename.toLowerCase().includes(n));
     }
     return arr;
-  }, [allDocs, q, selection, categoryFilter]);
+  }, [allDocs, q, selection]);
 
   return (
     <div className="space-y-5">
@@ -185,62 +202,35 @@ export function DocumentsPage() {
           </div>
 
           {selection.kind === "all" ? (
-            // Custom rendering for "all" — uses cached docs + client-side q filter
-            // so it doesn't refetch on every keystroke.
-            <>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {CATEGORY_CHIPS.map((c) => (
-                  <button
-                    key={c.key}
-                    type="button"
-                    onClick={() => setCategoryFilter(c.key)}
-                    className={
-                      categoryFilter === c.key
-                        ? "rounded-full border border-aspora-500 bg-aspora-50 px-3 py-1 text-xs text-aspora-700 font-medium"
-                        : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
-                    }
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-              <AllDocsView
-                documents={filteredAll}
-                layout={layout}
-                entities={entities}
-                isAdmin={isAdmin}
-                onPickEntity={(id) =>
-                  setSelection({ kind: "entity", entityId: id })
-                }
-              />
-            </>
+            <AllDocsView
+              documents={filteredAll}
+              layout={layout}
+              entities={entities}
+              isAdmin={isAdmin}
+              onPickEntity={(id) =>
+                setSelection({ kind: "entity", entityId: id })
+              }
+            />
           ) : selection.kind === "entity" ? (
-            <>
-              <CategoryCards
-                entityName={
-                  entities.find((e) => e.id === selection.entityId)?.name ?? "Entity"
-                }
-                counts={countsByEntity.get(selection.entityId) ?? new Map()}
-                onPick={(cat) =>
-                  setSelection({
-                    kind: "entity-category",
-                    entityId: selection.entityId,
-                    category: cat,
-                  })
-                }
-              />
-              <DocumentList
-                key={`e-${selection.entityId}`}
-                scope={{ kind: "entity", entityId: selection.entityId }}
-                layout={layout}
-                showEntityColumn={false}
-                title={undefined}
-                hint="Drag files here to upload. Set the category after upload, or pick a category card above for a category-targeted upload."
-              />
-            </>
+            <FolderCards
+              entity={entities.find((e) => e.id === selection.entityId)}
+              counts={countsByEntity.get(selection.entityId) ?? new Map()}
+              isAdmin={isAdmin}
+              onPick={(folder) =>
+                setSelection({
+                  kind: "entity-folder",
+                  entityId: selection.entityId,
+                  folder,
+                })
+              }
+              onNewFolder={() => {
+                const e = entities.find((x) => x.id === selection.entityId);
+                if (e) promptNewFolder(e);
+              }}
+            />
           ) : (
             <>
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center justify-between gap-2 text-sm">
                 <button
                   type="button"
                   onClick={() =>
@@ -248,17 +238,17 @@ export function DocumentsPage() {
                   }
                   className="text-aspora-700 hover:underline"
                 >
-                  ← All categories for this entity
+                  ← All folders for this entity
                 </button>
               </div>
               <DocumentList
-                key={`ec-${selection.entityId}-${selection.category}`}
+                key={`ef-${selection.entityId}-${selection.folder}`}
                 scope={{ kind: "entity", entityId: selection.entityId }}
                 layout={layout}
                 showEntityColumn={false}
-                defaultCategory={selection.category}
-                title={selection.category}
-                hint={`New uploads here will be tagged as ${selection.category}.`}
+                folder={selection.folder}
+                title={selection.folder}
+                hint={`New uploads here go to the “${selection.folder}” folder.`}
               />
             </>
           )}
@@ -279,15 +269,16 @@ function EntityNode({
   onSelect,
 }: {
   entity: Entity;
-  counts: Map<DocumentCategory, number>;
+  counts: Map<string, number>;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }) {
   const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
   const selectedHere =
     (selection.kind === "entity" && selection.entityId === entity.id) ||
-    (selection.kind === "entity-category" && selection.entityId === entity.id);
+    (selection.kind === "entity-folder" && selection.entityId === entity.id);
   const [open, setOpen] = useState(selectedHere);
+  const folders = foldersFor(entity, counts);
 
   return (
     <div>
@@ -322,17 +313,17 @@ function EntityNode({
       </div>
       {open && (
         <div className="pl-7 pr-2 pb-1 space-y-0.5">
-          {DOCUMENT_CATEGORIES.map((cat) => {
-            const n = counts.get(cat) ?? 0;
+          {folders.map((folder) => {
+            const n = counts.get(folder) ?? 0;
             const isSelected =
-              selection.kind === "entity-category" &&
+              selection.kind === "entity-folder" &&
               selection.entityId === entity.id &&
-              selection.category === cat;
+              selection.folder === folder;
             return (
               <button
-                key={cat}
+                key={folder}
                 onClick={() =>
-                  onSelect({ kind: "entity-category", entityId: entity.id, category: cat })
+                  onSelect({ kind: "entity-folder", entityId: entity.id, folder })
                 }
                 className={cn(
                   "w-full text-left px-2 py-1 rounded-md text-[12px] flex items-center gap-1.5",
@@ -342,7 +333,7 @@ function EntityNode({
                 )}
               >
                 <FolderClosed className="h-3 w-3" />
-                <span className="truncate">{cat}</span>
+                <span className="truncate">{folder}</span>
                 {n > 0 && (
                   <span className="ml-auto text-[10px] tabular-nums">{n}</span>
                 )}
@@ -376,11 +367,11 @@ function SelectionCrumbs({
     <>
       <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
       <span className="font-medium truncate">{entity?.name || "Entity"}</span>
-      {selection.kind === "entity-category" && (
+      {selection.kind === "entity-folder" && (
         <>
           <ChevronRight className="h-3 w-3 text-muted-foreground" />
           <FolderClosed className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="truncate">{selection.category}</span>
+          <span className="truncate">{selection.folder}</span>
         </>
       )}
     </>
@@ -396,43 +387,46 @@ function SelectionCrumbs({
 // entity's documents filtered to a category. Lets the user upload as a
 // specific category in one click instead of uploading and renaming after.
 // ---------------------------------------------------------------------------
-function CategoryCards({
-  entityName,
+function FolderCards({
+  entity,
   counts,
+  isAdmin,
   onPick,
+  onNewFolder,
 }: {
-  entityName: string;
-  counts: Map<DocumentCategory, number>;
-  onPick: (cat: DocumentCategory) => void;
+  entity: Entity | undefined;
+  counts: Map<string, number>;
+  isAdmin: boolean;
+  onPick: (folder: string) => void;
+  onNewFolder: () => void;
 }) {
-  const CATEGORY_HINTS: Partial<Record<DocumentCategory, string>> = {
-    "Filings": "Filed returns, ACK receipts, regulator portal printouts.",
-    "Templates": "Blank forms, MIS templates, reusable drafts.",
-  };
+  const folders = foldersFor(entity, counts);
   return (
     <div className="space-y-2">
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">
-        Upload to {entityName} — pick a category
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">
+          {entity?.name ?? "Entity"} — open a folder to view / upload
+        </div>
+        {isAdmin && (
+          <Button size="sm" variant="outline" onClick={onNewFolder}>
+            <FolderPlus className="h-4 w-4" />
+            New folder
+          </Button>
+        )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {DOCUMENT_CATEGORIES.map((cat) => {
-          const n = counts.get(cat) ?? 0;
+        {folders.map((folder) => {
+          const n = counts.get(folder) ?? 0;
           return (
             <button
-              key={cat}
+              key={folder}
               type="button"
-              onClick={() => onPick(cat)}
-              className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-4 py-3 text-left transition-colors"
+              onClick={() => onPick(folder)}
+              className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-4 py-3 text-left transition-colors flex items-center gap-3"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">{cat}</span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {n}
-                </span>
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                {CATEGORY_HINTS[cat]}
-              </div>
+              <FolderClosed className="h-5 w-5 text-aspora-600 shrink-0" />
+              <span className="text-sm font-semibold flex-1 truncate">{folder}</span>
+              <span className="text-xs tabular-nums text-muted-foreground">{n}</span>
             </button>
           );
         })}
@@ -554,7 +548,7 @@ function AllDocsView({
               <th className="px-3 py-2.5 text-left font-medium">Name</th>
               <th className="px-3 py-2.5 text-left font-medium">Entity</th>
               <th className="px-3 py-2.5 text-left font-medium">Linked to</th>
-              <th className="px-3 py-2.5 text-left font-medium">Category</th>
+              <th className="px-3 py-2.5 text-left font-medium">Folder</th>
               <th className="px-3 py-2.5 text-left font-medium">Uploaded</th>
               <th className="px-3 py-2.5 text-right font-medium">Size</th>
             </tr>
@@ -586,7 +580,7 @@ function AllDocsView({
                 <td className="px-3 py-2.5 text-muted-foreground text-xs">
                   {d.obligation_form_name || "Entity-level"}
                 </td>
-                <td className="px-3 py-2.5 text-xs">{d.category}</td>
+                <td className="px-3 py-2.5 text-xs">{d.folder || d.category}</td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
                   {new Date(d.created_at).toLocaleDateString()}
                 </td>
@@ -612,7 +606,7 @@ function AllDocsView({
           </div>
           <div className="font-medium text-sm truncate">{d.filename}</div>
           <div className="text-[11px] text-muted-foreground truncate mt-0.5">
-            {d.entity_name} · {d.category}
+            {d.entity_name} · {d.folder || d.category}
           </div>
         </a>
       ))}
