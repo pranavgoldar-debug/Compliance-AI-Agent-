@@ -140,10 +140,6 @@ export function EntityDetailPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="profile">Primary Activity</TabsTrigger>
-          <TabsTrigger value="rules">Compliance Rules</TabsTrigger>
-          <TabsTrigger value="detailed">Secondary Activity</TabsTrigger>
-          <TabsTrigger value="registrations">Registrations</TabsTrigger>
           <TabsTrigger value="licenses">
             Licenses
             {entityLicenses.length > 0 && (
@@ -152,6 +148,10 @@ export function EntityDetailPage() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="profile">Primary Activity</TabsTrigger>
+          <TabsTrigger value="rules">Compliance Rules</TabsTrigger>
+          <TabsTrigger value="detailed">Secondary Activity</TabsTrigger>
+          <TabsTrigger value="registrations">Registrations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
