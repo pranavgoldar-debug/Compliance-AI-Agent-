@@ -914,14 +914,14 @@ function ListView({
               {isLoading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
-                    <td colSpan={9} className="p-2">
+                    <td colSpan={8} className="p-2">
                       <Skeleton className="h-8" />
                     </td>
                   </tr>
                 ))
               ) : sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-10">
+                  <td colSpan={8} className="p-10">
                     <EmptyState
                       title="No filings in selected range"
                       description="Try widening the date range or clearing some filters."
@@ -976,8 +976,6 @@ function ListView({
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5">
-                          </td>
                     <td className="px-3 py-2.5">
                       <InlineStatusMenu
                         obligationId={ob.id}

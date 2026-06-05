@@ -1044,8 +1044,6 @@ function OverviewTab({
             <dd>
               <JurisdictionBadge code={entity.jurisdiction_code} />
             </dd>
-            <dt className="text-muted-foreground">Created</dt>
-            <dd className="text-xs text-muted-foreground">{fmtRelative(entity.created_at)}</dd>
           </dl>
         </CardContent>
       </Card>

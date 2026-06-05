@@ -69,6 +69,9 @@ _INDIRECT_TAX = (
 # Things that look tax-ish by keyword but are NOT a tax — checked before Direct
 # so e.g. an "Employer Payment Summary" or "Pension contribution" isn't swept in.
 _NOT_A_TAX = (
+    # Payroll filings are employment/withholding submissions, not a tax type we
+    # badge — keep the whole Payroll family uniform (no Direct/Indirect badge).
+    "payroll",
     "employer payment summary", " eps ", "wage protection", " wps ",
     "pension", "social security", "gpssa", "gratuity", "provident",
     "audit", "annual accounts", "statutory account", "financial statement",
