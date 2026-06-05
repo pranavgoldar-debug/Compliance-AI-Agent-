@@ -48,7 +48,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
-import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -817,7 +816,6 @@ function DayDetailPanel({ date, items }: { date: Date; items: CalendarObligation
                       ? "Due today"
                       : `${ob.days_remaining}d`}
                 </Badge>
-                <EffortBandBadge band={ob.effort_band} />
                 <AssigneeChip user={ob.assignee} size="xs" />
               </div>
             </button>
@@ -907,7 +905,6 @@ function ListView({
                 <SortHeader label="Entity" k="entity" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <SortHeader label="Obligation" k="rule" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <th className="px-3 py-2.5 text-left font-medium">Category</th>
-                <th className="px-3 py-2.5 text-left font-medium">Effort</th>
                 <SortHeader label="Status" k="status" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
                 <SortHeader label="Days" k="days" current={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -980,8 +977,7 @@ function ListView({
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <EffortBandBadge band={ob.effort_band} />
-                    </td>
+                          </td>
                     <td className="px-3 py-2.5">
                       <InlineStatusMenu
                         obligationId={ob.id}

@@ -18,7 +18,6 @@ import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
-import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
@@ -334,7 +333,7 @@ function AlertRow({ ob }: { ob: Obligation }) {
     <button
       type="button"
       onClick={() => openObligation(ob.id)}
-      className="w-full text-left grid grid-cols-[1fr_1.6fr_110px_110px_110px_60px] gap-3 items-center px-4 py-2.5 hover:bg-secondary/50 transition-colors text-sm"
+      className="w-full text-left grid grid-cols-[1fr_1.6fr_110px_110px_60px] gap-3 items-center px-4 py-2.5 hover:bg-secondary/50 transition-colors text-sm"
     >
       <div className="flex items-center gap-2 min-w-0">
         <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
@@ -348,7 +347,6 @@ function AlertRow({ ob }: { ob: Obligation }) {
         daysRemaining={ob.days_remaining}
         showDays
       />
-      <EffortBandBadge band={ob.effort_band} />
       <AssigneeChip user={ob.assignee} size="sm" />
     </button>
   );
@@ -506,12 +504,11 @@ export function DashboardPage() {
             </div>
           ) : data && data.items_in_alert_window.length > 0 ? (
             <div className="divide-y divide-border">
-              <div className="grid grid-cols-[1fr_1.6fr_110px_110px_110px_60px] gap-3 px-4 py-2.5 bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+              <div className="grid grid-cols-[1fr_1.6fr_110px_110px_60px] gap-3 px-4 py-2.5 bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
                 <div>Entity</div>
                 <div>Obligation</div>
                 <div>Due date</div>
                 <div>Days remaining</div>
-                <div>Effort</div>
                 <div>Assignee</div>
               </div>
               {data.items_in_alert_window.slice(0, 10).map((ob) => (

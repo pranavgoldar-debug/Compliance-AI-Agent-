@@ -1645,6 +1645,13 @@ function JurisdictionsTab() {
   for (const j of custom) {
     merged[j.code] = { name: j.name, flag: j.flag || "🏳️", iso2: j.iso2 };
   }
+  const customCodes = new Set(custom.map((j) => j.code));
+
+  const del = useMutation({
+    mutationFn: (code: string) => api.delete(`/api/jurisdictions/${code}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["jurisdictions"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
   return (
     <Card>
@@ -1677,6 +1684,27 @@ function JurisdictionsTab() {
                   {lastUpdate ? "Updated " + new Date(lastUpdate).toLocaleDateString() : "—"}
                 </div>
                 <Badge variant={active ? "completed" : "neutral"}>{active ? "Active" : "Inactive"}</Badge>
+                {isAdmin && customCodes.has(code) && (
+                  <button
+                    type="button"
+                    title="Delete this jurisdiction"
+                    disabled={del.isPending}
+                    onClick={() => {
+                      if (
+                        entCount > 0 || ruleCount > 0
+                          ? window.confirm(
+                              `"${j.name}" still has ${entCount} entit${entCount === 1 ? "y" : "ies"} and ${ruleCount} rule(s). Delete it anyway? (They keep their jurisdiction code; it just won't show a name/flag.)`,
+                            )
+                          : window.confirm(`Delete "${j.name}"?`)
+                      ) {
+                        del.mutate(code);
+                      }
+                    }}
+                    className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </li>
             );
           })}

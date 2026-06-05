@@ -35,7 +35,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
-import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { EmptyState } from "@/components/EmptyState";
 import { DocumentList } from "@/components/DocumentList";
@@ -1440,7 +1439,6 @@ function ObligationsTab({
               <th className="px-3 py-2.5 text-left font-medium">Period</th>
               <th className="px-3 py-2.5 text-left font-medium">Due date</th>
               <th className="px-3 py-2.5 text-left font-medium">Status</th>
-              <th className="px-3 py-2.5 text-left font-medium">Effort</th>
               <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
             </tr>
           </thead>
@@ -1473,9 +1471,6 @@ function ObligationsTab({
                       showDays
                     />
                   </div>
-                </td>
-                <td className="px-3 py-2.5">
-                  <EffortBandBadge band={ob.effort_band} />
                 </td>
                 <td className="px-3 py-2.5">
                   <AssigneeChip user={ob.assignee} size="sm" showName />

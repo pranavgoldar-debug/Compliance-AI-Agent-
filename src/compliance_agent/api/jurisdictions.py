@@ -67,12 +67,33 @@ def add_jurisdiction(
             "iso2": payload.iso2.strip().lower(),
         }
     )
+    _save(db, items, user.id)
+    return items
+
+
+@router.delete("/{code}", response_model=list[JurisdictionOut])
+def delete_jurisdiction(
+    code: str,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+) -> list[dict]:
+    """Delete a custom jurisdiction by code (admin only). Built-in jurisdictions
+    live client-side and aren't deletable here. Returns the remaining list."""
+    code = code.strip().lower()
+    items = _load(db)
+    remaining = [j for j in items if j.get("code") != code]
+    if len(remaining) == len(items):
+        raise HTTPException(status_code=404, detail="No custom jurisdiction with that code.")
+    _save(db, remaining, user.id)
+    return remaining
+
+
+def _save(db: Session, items: list[dict], user_id: int) -> None:
     row = db.get(WorkspaceSetting, _SETTING_KEY)
     if row is None:
-        db.add(WorkspaceSetting(key=_SETTING_KEY, value={"items": items}, updated_by_id=user.id))
+        db.add(WorkspaceSetting(key=_SETTING_KEY, value={"items": items}, updated_by_id=user_id))
     else:
         # Reassign (not in-place mutate) so SQLAlchemy persists the JSON change.
         row.value = {"items": items}
-        row.updated_by_id = user.id
+        row.updated_by_id = user_id
     db.commit()
-    return items
