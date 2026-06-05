@@ -537,9 +537,7 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
           </div>
         ) : active ? (
           <div className="text-sm">
-            <span className="font-medium text-amber-900">
-              Now: {active.team} — {active.title}.
-            </span>{" "}
+            <span className="font-medium text-amber-900">{active.title}.</span>{" "}
             <span className="text-foreground/70">{active.action}</span>
           </div>
         ) : null}

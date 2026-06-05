@@ -1059,24 +1059,25 @@ function ComplianceRulesTab({
               Finding all applicable regulations for this entity… (~20–30s)
             </p>
           )}
-          {/* Discovery funnel: discovered → in review → confirmed (→ mandatory) */}
+          {/* Discovery funnel: discovered → in review → confirmed. Reflects the
+              active filter. */}
           {(review.length > 0 || confirmed.length > 0) && (
             <div className="flex items-center gap-2 pt-2 text-xs flex-wrap">
               <span className="rounded-full bg-secondary px-2.5 py-1 font-medium">
-                {review.length + confirmed.length} discovered
+                {reviewShown.length + confirmedShown.length} discovered
               </span>
               <span className="text-muted-foreground">→</span>
               <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
-                {review.length} in review
+                {reviewShown.length} in review
               </span>
               <span className="text-muted-foreground">→</span>
               <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
-                {confirmed.length} confirmed
+                {confirmedShown.length} confirmed
               </span>
-              {confirmed.length > 0 && (
+              {confirmedShown.length > 0 && (
                 <span className="text-muted-foreground">
-                  ({confirmed.filter((r) => r.applicability === "Mandatory").length} mandatory ·{" "}
-                  {confirmed.filter((r) => r.applicability !== "Mandatory").length} conditional)
+                  ({confirmedShown.filter((r) => r.applicability === "Mandatory").length} mandatory ·{" "}
+                  {confirmedShown.filter((r) => r.applicability !== "Mandatory").length} conditional)
                 </span>
               )}
             </div>
@@ -1127,7 +1128,12 @@ function ComplianceRulesTab({
         <CardContent className="p-5 space-y-3">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-sm">Review (AI generated)</h3>
-            <Badge variant="alert">{review.length}</Badge>
+            <Badge variant="alert">{reviewShown.length}</Badge>
+            {(fnFilter || catFilter) && (
+              <span className="text-xs text-muted-foreground">
+                · {[fnFilter, catFilter].filter(Boolean).join(" · ")} (of {review.length})
+              </span>
+            )}
           </div>
           {loadingStaging ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
@@ -1154,7 +1160,7 @@ function ComplianceRulesTab({
         <CardContent className="p-5 space-y-3">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-sm">Confirmed</h3>
-            <Badge variant="completed">{confirmed.length}</Badge>
+            <Badge variant="completed">{confirmedShown.length}</Badge>
           </div>
           {loadingProd ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
