@@ -467,6 +467,7 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
     empty_domains: string[];
     ungated_items: { form_name: string; category: string | null }[];
     ungated_count: number;
+    partial_domains?: { domain: string; status: string; note?: string | null }[];
   }>({
     queryKey: ["gaps", entity.id],
     queryFn: () => api.get(`/api/entities/${entity.id}/gaps`),
@@ -632,6 +633,9 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
                 </div>
                 {i.reason && <div className="text-[11px] text-muted-foreground">{i.reason}</div>}
                 {i.due && <div className="text-[11px] text-muted-foreground">Due: {i.due}</div>}
+                {i.confidence && (
+                  <div className="text-[10px] text-slate-500 italic">{i.confidence}</div>
+                )}
               </div>
             </li>
           ))}
@@ -703,10 +707,25 @@ function ApplicabilitySection({ entity, isAdmin }: { entity: Entity; isAdmin: bo
         </CardContent>
       </Card>
 
-      {gaps && (gaps.empty_domains.length > 0 || gaps.ungated_count > 0) && (
+      {gaps && (gaps.empty_domains.length > 0 || gaps.ungated_count > 0 || (gaps.partial_domains?.length ?? 0) > 0) && (
         <Card className="border-amber-200 bg-amber-50/40">
           <CardContent className="p-5 space-y-2">
             <h3 className="font-semibold text-sm text-amber-800">Coverage gaps</h3>
+            {(gaps.partial_domains?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs text-amber-800 font-medium">
+                  Domains only partially researched (don't read these as complete):
+                </p>
+                <ul className="text-xs text-muted-foreground list-disc ml-4 mt-0.5">
+                  {gaps.partial_domains!.map((d, idx) => (
+                    <li key={idx}>
+                      {d.domain} — {d.status}
+                      {d.note ? ` (${d.note})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {gaps.empty_domains.length > 0 && (
               <div>
                 <p className="text-xs text-amber-800 font-medium">
@@ -1787,6 +1806,7 @@ type AssessItem = {
   due?: string | null;
   basis?: string | null;
   jurisdiction?: string | null;
+  confidence?: string | null;
 };
 type AssessResp = { available: boolean; items: AssessItem[]; notes?: string | null };
 

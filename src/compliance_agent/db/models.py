@@ -234,6 +234,13 @@ class Rule(Base):
         SAEnum(Applicability), nullable=False, default=Applicability.mandatory
     )
     applicability_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Spec §3/§4 discovery fields. `condition` is the machine boolean-tree
+    # (condition_engine) evaluated deterministically against the entity's
+    # answers; the rest are provenance/scope metadata from Round-1 discovery.
+    condition: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    triggering_activity: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    anchor: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    confidence: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     # Direct / Indirect / Not-a-Tax classification — set by the AI extractor
     # and editable by admins on the Rules page.
     tax_type: Mapped[TaxType] = mapped_column(

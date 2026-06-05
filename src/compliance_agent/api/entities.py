@@ -287,16 +287,14 @@ def assess_entity_obligations(
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),
 ):
-    """AI step: read the entity's Primary + Secondary Activity answers and the
-    obligations discovered for it, and classify each as mandatory / conditional
-    / not_applicable for THIS entity. Returns per-obligation verdicts."""
-    from compliance_agent.db import Rule, RuleStatus
+    """Find applicable regulations (HYBRID): the deterministic condition engine
+    decides each item's verdict (mandatory / conditional / not_applicable) from
+    the entity's answers; the AI fills the one-line reason. Items without a
+    machine condition fall back to the AI verdict."""
+    from compliance_agent.db import RuleStatus
     from compliance_agent.api.licenses import _build_profile_block
-    from compliance_agent.rule_extractor import (
-        assess_obligations,
-        is_live,
-        RuleExtractorUnavailable,
-    )
+    from compliance_agent.condition_engine import classify
+    from compliance_agent.rule_extractor import assess_obligations, is_live
 
     entity = db.get(Entity, entity_id)
     if entity is None:
@@ -311,71 +309,102 @@ def assess_entity_obligations(
         return {
             "available": True,
             "items": [],
-            "notes": "Nothing discovered yet — run Find Regulations first.",
+            "notes": "Nothing discovered yet — run Refresh Regulations first.",
         }
 
-    profile_block = (
-        (_build_profile_block(entity.finance_profile) or "\n\nCOMPANY PROFILE: (no primary answers)")
-        + _secondary_answers_block(entity.qualification)
-    )
-    obligations_block = "\n".join(
-        f"- {r.form_name} | {r.category} | {r.frequency} | "
-        f"currently {getattr(r.applicability, 'value', r.applicability)}"
-        + (f" | note: {r.applicability_note}" if r.applicability_note else "")
-        for r in discovered
-    )
+    attrs = _build_condition_attrs(entity)
 
-    if not is_live():
-        return {
-            "available": False,
-            "items": [],
-            "notes": "AI is off — set COMPLIANCE_AGENT_LIVE=1 plus an API key.",
-        }
-
-    try:
-        result = assess_obligations(
-            profile_block,
-            obligations_block,
-            jurisdiction_hint=entity.jurisdiction_code,
+    # AI is used ONLY for the reason text now (verdict comes from conditions).
+    ai_by_form: dict[str, object] = {}
+    ai_notes = None
+    if is_live():
+        profile_block = (
+            (_build_profile_block(entity.finance_profile) or "\n\nCOMPANY PROFILE: (no primary answers)")
+            + _secondary_answers_block(entity.qualification)
         )
-    except RuleExtractorUnavailable as exc:
-        return {"available": False, "items": [], "notes": str(exc)}
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
+        obligations_block = "\n".join(
+            f"- {r.form_name} | {r.category} | {r.frequency}"
+            + (f" | note: {r.applicability_note}" if r.applicability_note else "")
+            for r in discovered
+        )
+        try:
+            result = assess_obligations(
+                profile_block, obligations_block,
+                jurisdiction_hint=entity.jurisdiction_code,
+            )
+            ai_by_form = {v.form_name: v for v in result.verdicts}
+            ai_notes = result.notes
+        except Exception:  # noqa: BLE001 — reasons are best-effort; verdicts are deterministic
+            ai_by_form = {}
 
-    by_form = {r.form_name: r for r in discovered}
     items = []
-    for v in result.verdicts:
-        r = by_form.get(v.form_name)
+    for r in discovered:
+        aiv = ai_by_form.get(r.form_name)
+        # Verdict: deterministic when a condition exists, else AI, else conditional.
+        det = classify(r.condition, attrs) if r.condition else None
+        verdict = det or (getattr(aiv, "verdict", None) if aiv else None) or "conditional"
+        reason = (
+            (getattr(aiv, "reason", None) if aiv else None)
+            or r.applicability_note
+            or "Kept pending verification."
+        )
         items.append(
             {
-                "rule_id": r.id if r else None,
-                "name": r.name if r else v.form_name,
-                "form_name": v.form_name,
-                "category": r.category if r else None,
-                "frequency": r.frequency if r else None,
-                "verdict": v.verdict,
-                "reason": v.reason,
-                "triggering_factors": v.triggering_factors,
-                "frequency": r.frequency if r else None,
-                "due": r.due_date_rule if r else None,
-                "basis": (r.source_url or r.authority) if r else None,
-                "jurisdiction": r.jurisdiction_code if r else entity.jurisdiction_code,
+                "rule_id": r.id,
+                "name": r.name,
+                "form_name": r.form_name,
+                "category": r.category,
+                "frequency": r.frequency,
+                "verdict": verdict,
+                "reason": reason,
+                "triggering_factors": (getattr(aiv, "triggering_factors", None) if aiv else None)
+                or r.triggering_activity,
+                "due": r.due_date_rule,
+                "basis": r.source_url or r.authority,
+                "jurisdiction": r.jurisdiction_code,
+                "confidence": r.confidence,
             }
         )
-    # Cache the result on the entity so the inventory survives reloads without
-    # re-running the AI (the Reassess button re-runs it on demand).
+    # Cache so the inventory survives reloads (re-runs on the button).
     entity.qualification = {**(entity.qualification or {}), "assessment": items}
     log_activity(
-        db,
-        actor_id=user.id,
-        action="entity.assessed_obligations",
-        target_type="entity",
-        target_id=entity_id,
-        payload={"count": len(items)},
+        db, actor_id=user.id, action="entity.assessed_obligations",
+        target_type="entity", target_id=entity_id, payload={"count": len(items)},
     )
     db.commit()
-    return {"available": True, "items": items, "notes": result.notes}
+    return {"available": True, "items": items, "notes": ai_notes}
+
+
+def _build_condition_attrs(entity: Entity) -> dict:
+    """Build the canonical attribute dict the condition engine evaluates against:
+    primary flags (yes/no/tbc → true/false/absent) + mapped secondary params."""
+    from compliance_agent.activity_gate import PRIMARY_ACTIVITY_FLAGS
+
+    profile = entity.finance_profile or {}
+    attrs: dict = {}
+    for flag in PRIMARY_ACTIVITY_FLAGS:
+        v = str(profile.get(flag, "")).strip().lower()
+        if v == "yes":
+            attrs[flag] = True
+        elif v in ("no", "na"):
+            attrs[flag] = False
+        # tbc / missing → leave absent (unknown → safe-include)
+    band = lambda key: str(profile.get(key, "")).strip().lower()  # noqa: E731
+    if band("ct_income_band") in ("above", "below"):
+        attrs["corporate_tax_threshold_met"] = band("ct_income_band") == "above"
+    if band("tp_threshold") in ("above", "below"):
+        attrs["group_consolidated_revenue_threshold_met"] = band("tp_threshold") == "above"
+    if band("vat_frequency"):
+        attrs["vat_return_frequency"] = band("vat_frequency")
+    if band("esr_income") in ("yes", "no", "na"):
+        attrs["esr_earns_income"] = band("esr_income") == "yes"
+    # Fold in any qualification answers whose key already matches a canonical attr.
+    for k, val in ((entity.qualification or {}).get("answers") or {}).items():
+        if k in attrs:
+            continue
+        lv = str(val).strip().lower()
+        attrs[k] = True if lv == "yes" else False if lv in ("no", "na") else val
+    return attrs
 
 
 def _secondary_answers_block(qualification: Optional[dict]) -> str:
@@ -439,10 +468,18 @@ def entity_gaps(
         and flag in PRIMARY_ACTIVITY_FLAGS
         and flag_hits.get(flag, 0) == 0
     ]
+    # Check #2 — domains the model only skimmed (coverage_notes != Confirmed).
+    cov = (entity.qualification or {}).get("coverage_notes") or []
+    partial_domains = [
+        {"domain": c.get("domain"), "status": c.get("status"), "note": c.get("note")}
+        for c in cov
+        if "confirm" not in str(c.get("status", "")).lower()
+    ]
     return {
         "empty_domains": empty_domains,
         "ungated_items": ungated[:50],
         "ungated_count": len(ungated),
+        "partial_domains": partial_domains,
     }
 
 
@@ -535,6 +572,10 @@ def discover_entity_regulations(
             tax_type=cand.tax_type,
             plain_description=cand.plain_description,
             responsible_function=derive_function(cand.category, cand.area),
+            condition=getattr(cand, "condition", None),
+            triggering_activity=getattr(cand, "triggering_activity", None),
+            anchor=getattr(cand, "anchor", None),
+            confidence=getattr(cand, "confidence", None),
             status=RuleStatus.staging,
             created_by_id=user.id,
         )
@@ -547,6 +588,13 @@ def discover_entity_regulations(
             ensure_obligations_for_rule(db, r)
         except Exception:  # noqa: BLE001
             pass
+    # Persist coverage notes on the entity for the gap-detection 'Partial' check.
+    cov = [
+        {"domain": c.domain, "status": c.status, "note": c.note}
+        for c in getattr(result, "coverage_notes", []) or []
+    ]
+    if cov:
+        entity.qualification = {**(entity.qualification or {}), "coverage_notes": cov}
     log_activity(
         db, actor_id=user.id, action="entity.discovered_regulations",
         target_type="entity", target_id=entity_id, payload={"created": len(created)},

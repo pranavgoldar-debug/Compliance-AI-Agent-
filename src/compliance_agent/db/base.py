@@ -229,6 +229,11 @@ def _add_missing_columns() -> None:
             ("reviewer_id", "INTEGER"),
             ("approver_id", "INTEGER"),
             ("approved_at", datetime_type),
+            # Spec §3/§4 discovery fields.
+            ("condition", "JSON" if is_pg else text_type),
+            ("triggering_activity", varchar(64)),
+            ("anchor", varchar(255)),
+            ("confidence", varchar(120)),
         ],
         # Phase 9: per-user notification prefs + Slack member id +
         # functional department (drives finance / compliance routing).

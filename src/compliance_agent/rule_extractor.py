@@ -41,6 +41,13 @@ Rules:
 - Choose `category` from this list when possible: Regulatory, AML / CFT, Corporate Tax, Information Returns, VAT, GST/HST, Sales/Use Tax, Excise Tax, Forex / Cross-Border, Corporate & Statutory, Payroll, Pensions, Social Security, Workers Compensation, Data Protection & Privacy, Cybersecurity, Consumer Protection, CIS, Statistics, EU Reporting, Accounting Control, Unclaimed Property.
 - `area` is a short sub-area within the category (e.g. "Suspicious transaction reporting" within "AML / CFT").
 
+For EACH obligation also provide (spec §3/§4):
+- `condition` — a machine boolean-tree (see the field's allowed attribute names) that decides applicability. Use all_of/any_of/none_of and leaf clauses over ONLY those attribute names. Statutory audit is DERIVED — gate it on company_size_band/audit_exemption_ineligible, never invent an "is audit required?" attribute.
+- `triggering_activity` — the single activity flag id that gates it (or 'NEEDS_NEW_FLAG' if none fit; explain the gating characteristic in applicability_note).
+- `anchor` — what the deadline counts from (e.g. 'Financial year end').
+- `confidence` — your honesty flag for this row.
+Also fill `coverage_notes`: for each domain you considered, say whether you swept it fully (Confirmed), only listed the headline returns (Partial), or didn't research it (Pending research). This is REQUIRED — it tells the reviewer where to look.
+
 If the document is too short, ambiguous, or doesn't describe filing obligations at all, return an empty list and explain in `notes`."""
 
 
@@ -67,6 +74,46 @@ class CandidateRule(BaseModel):
         default=TaxType.not_tax,
         description="Direct Tax / Indirect Tax / Not a Tax classification.",
     )
+    # Spec §3/§4 fields — used by the deterministic verdict engine + provenance.
+    condition: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Machine boolean-tree over the entity's attributes (spec §4). "
+            "Leaf {\"attr\":name,\"<op>\":value} with ops eq/neq/gte/lte/gt/lt/in; "
+            "combinators all_of/any_of/none_of/always. Use ONLY these attribute "
+            "names: registered_company, licensed_financial_activity, "
+            "holds_customer_funds, employs_staff, grants_equity, "
+            "takes_foreign_investment, intra_group_transactions, "
+            "holds_personal_data, vat_gst_registered, has_owners_controllers, "
+            "sanctions_exposure, conducts_esr_relevant_activity, audit_required, "
+            "corporate_tax_threshold_met, group_consolidated_revenue_threshold_met, "
+            "vat_return_frequency, company_size_band, audit_exemption_ineligible, "
+            "esr_earns_income. Booleans true/false; vat_return_frequency in "
+            "monthly/quarterly/annual; company_size_band in micro/small/medium/large."
+        ),
+    )
+    triggering_activity: Optional[str] = Field(
+        default=None,
+        description="The single activity flag id that gates this, or 'NEEDS_NEW_FLAG'.",
+    )
+    anchor: Optional[str] = Field(
+        default=None,
+        description="What the deadline rule counts from, e.g. 'Financial year end'.",
+    )
+    confidence: Optional[str] = Field(
+        default=None,
+        description=(
+            "One of: 'Confirmed – official source', 'Confirmed scope – entity "
+            "check needed', 'Standard rule – verify applicability', 'Pending "
+            "verification – official source check'."
+        ),
+    )
+
+
+class CoverageNote(BaseModel):
+    domain: str = Field(description="e.g. 'DFSA conduct returns'")
+    status: str = Field(description="Confirmed | Partial — headline returns only | Pending research")
+    note: Optional[str] = None
 
 
 class RuleExtractionResult(BaseModel):
@@ -75,6 +122,14 @@ class RuleExtractionResult(BaseModel):
         description="If you can infer the country/jurisdiction from the source, name it here.",
     )
     rules: list[CandidateRule]
+    coverage_notes: list[CoverageNote] = Field(
+        default_factory=list,
+        description=(
+            "Which domains were swept fully vs only skimmed (Confirmed / "
+            "Partial / Pending research). NOT optional — a domain with a few "
+            "rows is not proof of completeness."
+        ),
+    )
     notes: Optional[str] = Field(
         default=None,
         description="Caveats, ambiguities, or sections you skipped.",
