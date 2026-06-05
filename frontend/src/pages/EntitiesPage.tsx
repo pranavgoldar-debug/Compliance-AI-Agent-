@@ -233,6 +233,7 @@ function AddEntityDialog({
   const [shortCode, setShortCode] = useState("");
   const [regNumber, setRegNumber] = useState("");
   const [fye, setFye] = useState("");
+  const [nature, setNature] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -243,6 +244,7 @@ function AddEntityDialog({
       setShortCode("");
       setRegNumber("");
       setFye("");
+      setNature("");
       setError(null);
     }
   }, [open]);
@@ -256,6 +258,7 @@ function AddEntityDialog({
         short_code: shortCode.trim() || null,
         registration_number: regNumber.trim() || null,
         fiscal_year_end: fye.trim() || null,
+        nature_of_operation: nature.trim() || null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entities"] });
@@ -317,6 +320,16 @@ function AddEntityDialog({
           <div className="space-y-1">
             <label className="text-xs font-medium">Registration number</label>
             <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Nature of operation</label>
+            <textarea
+              value={nature}
+              placeholder="What the entity does — e.g. cross-border remittance & payments."
+              onChange={(e) => setNature(e.target.value)}
+              rows={2}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
+            />
           </div>
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">

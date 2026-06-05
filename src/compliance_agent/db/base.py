@@ -250,6 +250,8 @@ def _add_missing_columns() -> None:
             ("ownership", "JSON" if is_pg else text_type),
             # Bank details JSON.
             ("bank_details", "JSON" if is_pg else text_type),
+            # Free-text description of what the entity does.
+            ("nature_of_operation", text_type),
         ],
     }
 

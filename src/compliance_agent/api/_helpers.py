@@ -297,6 +297,7 @@ def serialize_entity(entity: Entity, db: Session) -> EntityOut:
         registration_number=entity.registration_number,
         incorporation_date=entity.incorporation_date,
         fiscal_year_end=entity.fiscal_year_end,
+        nature_of_operation=entity.nature_of_operation,
         finance_profile=entity.finance_profile,
         ownership=entity.ownership,
         bank_details=entity.bank_details,

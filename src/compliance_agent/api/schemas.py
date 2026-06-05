@@ -72,6 +72,7 @@ class EntityCreate(BaseModel):
     registration_number: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    nature_of_operation: Optional[str] = None
     country_lead_id: Optional[int] = None
 
 
@@ -83,6 +84,7 @@ class EntityUpdate(BaseModel):
     registration_number: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    nature_of_operation: Optional[str] = None
     country_lead_id: Optional[int] = None
     finance_profile: Optional[dict] = None
     ownership: Optional[list] = None
@@ -98,6 +100,7 @@ class EntityOut(_Base):
     registration_number: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    nature_of_operation: Optional[str] = None
     finance_profile: Optional[dict] = None
     ownership: Optional[list] = None
     bank_details: Optional[dict] = None

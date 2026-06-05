@@ -170,6 +170,8 @@ class Entity(Base):
     registration_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     incorporation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     fiscal_year_end: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "31-Mar", "31-Dec"
+    # What the entity actually does — free-text business description, admin-set.
+    nature_of_operation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Admin-answered profile (VAT-registered? payroll? revenue band? related-
     # party txns? relevant activity?) used by "Find Regulations" to decide

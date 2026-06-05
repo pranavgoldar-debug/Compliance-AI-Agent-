@@ -56,6 +56,7 @@ export interface Entity {
   registration_number: string | null;
   incorporation_date: string | null;
   fiscal_year_end: string | null;
+  nature_of_operation: string | null;
   finance_profile: Record<string, string> | null;
   ownership: OwnershipStage[] | null;
   bank_details: BankDetails | null;
