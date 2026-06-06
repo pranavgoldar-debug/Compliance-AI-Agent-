@@ -603,6 +603,39 @@ function ApplicabilitySection({
     (q) => !q.primary_key || !gateKeys.has(q.primary_key),
   );
 
+  // Dedupe follow-ups: the AI often regenerates a question that already exists
+  // as a static follow-up (e.g. pension/social security), so the same question
+  // can show twice. Normalize the text (drop parenthetical examples + casing)
+  // and keep the first occurrence only, sweeping static → AI → general in the
+  // same order they render so the static/canonical copy wins.
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/\([^)]*\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const seen = new Set<string>();
+  const take = (text: string) => {
+    const k = norm(text);
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  };
+  const gateFollowups: Record<
+    string,
+    {
+      staticFups: ReturnType<typeof followupsForJurisdiction>;
+      aiFups: GeneratedQuestion[];
+    }
+  > = {};
+  for (const g of gates) {
+    const isYes = profile[g.key] === "yes";
+    const staticFups = (
+      isYes ? followupsForJurisdiction(g, entity.jurisdiction_code) : []
+    ).filter((f) => take(f.question));
+    const aiFups = (isYes ? followupsFor(g.key) : []).filter((q) =>
+      take(q.question),
+    );
+    gateFollowups[g.key] = { staticFups, aiFups };
+  }
+  const generalToShow = generalQuestions.filter((q) => take(q.question));
+
   const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
     { value: "yes", label: "Yes" },
     { value: "no", label: "No" },
@@ -751,7 +784,9 @@ function ApplicabilitySection({
                 <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 font-medium">
                   {mandatory.length} mandatory
                 </span>
-                <span className="text-muted-foreground">→</span>
+                <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
+                  {conditional.length} conditional
+                </span>
                 <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-1 font-medium">
                   {notApplicable.length} not applicable
                 </span>
@@ -763,6 +798,13 @@ function ApplicabilitySection({
                 </Button>
               )}
             </div>
+            <p className="text-[11px] text-muted-foreground">
+              <strong>Mandatory</strong> — required for this entity now.{" "}
+              <strong>Conditional</strong> — applies only if a threshold or
+              trigger is met; confirm via the follow-up questions.{" "}
+              <strong>Not applicable</strong> — ruled out by this entity's
+              activity answers, so it won't be filed.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Col title="Mandatory" list={mandatory} tone="alert" />
               <Col title="Conditional" list={conditional} tone="neutral" />
@@ -796,11 +838,7 @@ function ApplicabilitySection({
                   {gates.map((g) => {
                     const val = profile[g.key];
                     const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
-                    const fups = current === "yes" ? followupsFor(g.key) : [];
-                    const staticFups =
-                      current === "yes"
-                        ? followupsForJurisdiction(g, entity.jurisdiction_code)
-                        : [];
+                    const { staticFups, aiFups: fups } = gateFollowups[g.key];
                     return (
                       <div
                         key={g.id}
@@ -847,12 +885,12 @@ function ApplicabilitySection({
                     );
                   })}
                 </div>
-                {generalQuestions.length > 0 && (
+                {generalToShow.length > 0 && (
                   <div className="space-y-2.5 pt-1">
                     <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       Operation-specific
                     </div>
-                    {generalQuestions.map(renderQuestion)}
+                    {generalToShow.map(renderQuestion)}
                   </div>
                 )}
               </>

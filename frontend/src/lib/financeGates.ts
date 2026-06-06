@@ -123,7 +123,7 @@ export const FINANCE_GATES: FilingGate[] = [
       },
       {
         key: "social_security",
-        question: "Does it contribute to pension / social security (e.g. GPSSA)?",
+        question: "Does it contribute to pension / social security?",
         options: YES_NO,
       },
     ],
