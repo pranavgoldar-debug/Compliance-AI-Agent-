@@ -1009,9 +1009,14 @@ function ComplianceRulesTab({
   const confirmedForms = [...confirmed, ...review].map((r) => r.form_name || r.name);
 
   const RuleRow = ({ r, mode }: { r: Rule; mode: "review" | "confirmed" }) => {
-    const na = r.entity_applicability === "not_applicable";
+    // Applicability is only signalled on the CONFIRMED list (dimmed = ruled out
+    // by this entity's activity answers). The discovered/draft list is the raw
+    // candidate set — every row renders identically; applicability is decided by
+    // "Find applicable regulations", not pre-judged here with the keyword gate.
+    const na = mode === "confirmed" && r.entity_applicability === "not_applicable";
     return (
     <div
+      title={na ? "Not applicable to this entity based on its activity answers." : undefined}
       className={cn(
         "flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5",
         na && "opacity-60",
