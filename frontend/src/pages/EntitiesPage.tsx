@@ -36,7 +36,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { fmtRelative, userInitials, JURISDICTIONS, jurisdiction } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import type { Entity } from "@/types/api";
+import type { Entity, OwnershipStage } from "@/types/api";
 
 
 type ViewMode = "table" | "grid";
@@ -233,7 +233,9 @@ function AddEntityDialog({
   const [shortCode, setShortCode] = useState("");
   const [regNumber, setRegNumber] = useState("");
   const [fye, setFye] = useState("");
+  const [incDate, setIncDate] = useState("");
   const [nature, setNature] = useState("");
+  const [ownership, setOwnership] = useState<OwnershipStage[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -244,22 +246,36 @@ function AddEntityDialog({
       setShortCode("");
       setRegNumber("");
       setFye("");
+      setIncDate("");
       setNature("");
+      setOwnership([]);
       setError(null);
     }
   }, [open]);
 
+  const setStage = (i: number, patch: Partial<OwnershipStage>) =>
+    setOwnership((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addStage = () => setOwnership((rows) => [...rows, { name: "", role: "" }]);
+  const removeStage = (i: number) =>
+    setOwnership((rows) => rows.filter((_, idx) => idx !== i));
+
   const mutation = useMutation({
-    mutationFn: () =>
-      api.post("/api/entities", {
+    mutationFn: () => {
+      const cleaned = ownership
+        .map((o) => ({ name: o.name.trim(), role: o.role.trim() }))
+        .filter((o) => o.name);
+      return api.post("/api/entities", {
         name: name.trim(),
         legal_type: legalType.trim(),
         jurisdiction_code: jurisdictionCode,
         short_code: shortCode.trim() || null,
         registration_number: regNumber.trim() || null,
+        incorporation_date: incDate || null,
         fiscal_year_end: fye.trim() || null,
         nature_of_operation: nature.trim() || null,
-      }),
+        ownership: cleaned.length ? cleaned : null,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entities"] });
       onOpenChange(false);
@@ -313,13 +329,9 @@ function AddEntityDialog({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Fiscal year end</label>
-              <Input value={fye} placeholder="31-Dec" onChange={(e) => setFye(e.target.value)} />
+              <label className="text-xs font-medium">Registration number</label>
+              <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
             </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Registration number</label>
-            <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Nature of operation</label>
@@ -330,6 +342,61 @@ function AddEntityDialog({
               rows={2}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Incorporation date</label>
+              <Input
+                type="date"
+                value={incDate}
+                onChange={(e) => setIncDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Fiscal year end</label>
+              <Input value={fye} placeholder="31-Dec" onChange={(e) => setFye(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium">Ownership</label>
+              <span className="text-[11px] text-muted-foreground">
+                Ultimate parent → … → this entity
+              </span>
+            </div>
+            {ownership.length > 0 && (
+              <div className="space-y-2">
+                {ownership.map((stage, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={stage.name}
+                      placeholder="Owner / parent name"
+                      className="flex-1"
+                      onChange={(e) => setStage(i, { name: e.target.value })}
+                    />
+                    <Input
+                      value={stage.role}
+                      placeholder="Stake % (e.g. 100)"
+                      className="w-28 shrink-0"
+                      onChange={(e) => setStage(i, { role: e.target.value })}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeStage(i)}
+                      aria-label="Remove owner"
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button variant="outline" size="sm" onClick={addStage}>
+              <Plus className="h-4 w-4" />
+              Add owner
+            </Button>
           </div>
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">

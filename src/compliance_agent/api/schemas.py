@@ -73,6 +73,7 @@ class EntityCreate(BaseModel):
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
     nature_of_operation: Optional[str] = None
+    ownership: Optional[list] = None
     country_lead_id: Optional[int] = None
 
 
