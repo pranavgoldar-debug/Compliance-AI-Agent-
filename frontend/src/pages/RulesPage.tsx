@@ -42,7 +42,7 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, JURISDICTIONS } from "@/lib/format";
+import { fmtRelative, JURISDICTIONS, deriveFunction } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Rule, RuleStatus, UserBrief, Obligation } from "@/types/api";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
@@ -76,6 +76,8 @@ export function RulesPage() {
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [category, setCategory] = useState<string>("");
+  const [fn, setFn] = useState<string>("");
+  const [applic, setApplic] = useState<string>("");
   const [dateOrder, setDateOrder] = useState<"latest" | "oldest">("latest");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const navigate = useNavigate();
@@ -121,6 +123,8 @@ export function RulesPage() {
     ? changedRules.filter((r) => r.jurisdiction_code === jurisdictionCode)
     : changedRules;
 
+  const fnOf = (r: Rule) => r.responsible_function || deriveFunction(r.category, r.area);
+
   const filtered = useMemo(() => {
     if (!rules) return [];
     let arr = rules;
@@ -134,16 +138,23 @@ export function RulesPage() {
           r.area.toLowerCase().includes(needle),
       );
     }
+    if (fn) arr = arr.filter((r) => fnOf(r) === fn);
+    if (applic) arr = arr.filter((r) => r.applicability === applic);
     // Sort by when the item was added (created_at) — latest or oldest first.
     return [...arr].sort((a, b) => {
       const cmp = a.created_at.localeCompare(b.created_at);
       return dateOrder === "latest" ? -cmp : cmp;
     });
-  }, [rules, q, dateOrder]);
+  }, [rules, q, fn, applic, dateOrder]);
 
   const categories = useMemo(() => {
     if (!rules) return [];
     return Array.from(new Set(rules.map((r) => r.category))).sort();
+  }, [rules]);
+
+  const functions = useMemo(() => {
+    if (!rules) return [];
+    return Array.from(new Set(rules.map(fnOf))).filter(Boolean).sort();
   }, [rules]);
 
   return (
@@ -229,6 +240,28 @@ export function RulesPage() {
               {c}
             </option>
           ))}
+        </select>
+        <select
+          value={fn}
+          onChange={(e) => setFn(e.target.value)}
+          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All functions</option>
+          {functions.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+        <select
+          value={applic}
+          onChange={(e) => setApplic(e.target.value)}
+          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All applicability</option>
+          <option value="Mandatory">Mandatory</option>
+          <option value="Conditional">Conditional</option>
+          <option value="Sector-specific">Sector-specific</option>
         </select>
         <select
           value={dateOrder}
