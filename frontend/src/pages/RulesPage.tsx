@@ -31,6 +31,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +48,88 @@ import { fmtRelative, JURISDICTIONS, deriveFunction } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Rule, RuleStatus, UserBrief, Obligation } from "@/types/api";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
+
+// Higher-level category groups for the filter. Each rule's free-text `category`
+// is bucketed into one of these (case-insensitive exact-or-contains match);
+// anything that fits none lands in "Other" so nothing is hidden.
+const CATEGORY_GROUPS: { label: string; cats: string[] }[] = [
+  { label: "AML/CFT (financial crime)", cats: ["aml / cft", "aml/cft", "aml", "cft"] },
+  { label: "Corporate filings", cats: ["corporate & statutory", "corporate and statutory", "statutory", "corporate filing"] },
+  { label: "Direct tax", cats: ["corporate tax", "corporation tax", "income tax", "direct tax"] },
+  { label: "Indirect tax", cats: ["vat", "gst", "sales/use tax", "sales tax", "excise", "indirect tax", "customs"] },
+  { label: "Payroll / employment tax", cats: ["payroll", "pension", "social security", "workers compensation", "employment tax"] },
+  { label: "Prudential/conduct returns", cats: ["regulatory", "prudential", "conduct"] },
+  { label: "Transfer pricing / information return", cats: ["information return", "forex", "cross-border", "transfer pricing", "cbcr"] },
+];
+const OTHER_GROUP = "Other";
+const CATEGORY_GROUP_LABELS = [...CATEGORY_GROUPS.map((g) => g.label), OTHER_GROUP];
+
+function categoryGroup(category: string | null | undefined): string {
+  const c = (category || "").toLowerCase().trim();
+  for (const g of CATEGORY_GROUPS) {
+    if (g.cats.some((k) => c === k || c.includes(k))) return g.label;
+  }
+  return OTHER_GROUP;
+}
+
+// Checkbox multi-select used for the category-group filter (Select All + ticks).
+function GroupMultiSelect({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const allSelected = selected.length === 0 || selected.length === options.length;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className={cn(
+            "h-10 rounded-lg font-normal",
+            selected.length > 0 && "bg-aspora-50 border-aspora-200 text-aspora-800",
+          )}
+        >
+          {selected.length > 0 ? `${label} · ${selected.length}` : label}
+          <ChevronDown className="h-3.5 w-3.5 ml-1" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <div className="max-h-72 overflow-auto scrollbar-thin py-1">
+          <button
+            onClick={() => onChange([])}
+            className="w-full text-left px-2 py-1.5 hover:bg-secondary flex items-center gap-2 text-sm font-medium"
+          >
+            <Checkbox checked={allSelected} readOnly />
+            <span>(Select all)</span>
+          </button>
+          {options.map((o) => {
+            const checked = selected.includes(o);
+            return (
+              <button
+                key={o}
+                onClick={() =>
+                  onChange(
+                    checked ? selected.filter((v) => v !== o) : [...selected, o],
+                  )
+                }
+                className="w-full text-left px-2 py-1.5 hover:bg-secondary flex items-center gap-2 text-sm"
+              >
+                <Checkbox checked={checked} readOnly />
+                <span className="truncate">{o}</span>
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // Open the obligation (filing) generated from a rule — looks it up by the
 // rule's first entity and opens the same detail drawer used on Filings.
@@ -75,7 +159,7 @@ export function RulesPage() {
   const [stagingView, setStagingView] = useState<"card" | "table">("card");
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
-  const [category, setCategory] = useState<string>("");
+  const [groupSel, setGroupSel] = useState<string[]>([]);
   const [fn, setFn] = useState<string>("");
   const [applic, setApplic] = useState<string>("");
   const [dateOrder, setDateOrder] = useState<"latest" | "oldest">("latest");
@@ -141,19 +225,15 @@ export function RulesPage() {
       );
     }
     if (fn) arr = arr.filter((r) => fnOf(r) === fn);
-    if (category) arr = arr.filter((r) => r.category === category);
+    if (groupSel.length)
+      arr = arr.filter((r) => groupSel.includes(categoryGroup(r.category)));
     if (applic) arr = arr.filter((r) => r.applicability === applic);
     // Sort by when the item was added (created_at) — latest or oldest first.
     return [...arr].sort((a, b) => {
       const cmp = a.created_at.localeCompare(b.created_at);
       return dateOrder === "latest" ? -cmp : cmp;
     });
-  }, [rules, q, fn, category, applic, dateOrder]);
-
-  const categories = useMemo(() => {
-    if (!rules) return [];
-    return Array.from(new Set(rules.map((r) => r.category))).sort();
-  }, [rules]);
+  }, [rules, q, fn, groupSel, applic, dateOrder]);
 
   const functions = useMemo(() => {
     if (!rules) return [];
@@ -232,18 +312,12 @@ export function RulesPage() {
             </option>
           ))}
         </select>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
-        >
-          <option value="">All categories</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+        <GroupMultiSelect
+          label="All categories"
+          options={CATEGORY_GROUP_LABELS}
+          selected={groupSel}
+          onChange={setGroupSel}
+        />
         <select
           value={fn}
           onChange={(e) => setFn(e.target.value)}
