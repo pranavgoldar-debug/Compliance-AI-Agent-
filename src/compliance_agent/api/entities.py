@@ -346,9 +346,13 @@ def assess_entity_obligations(
     items = []
     for r in discovered:
         aiv = ai_by_form.get(r.form_name)
-        # Verdict: deterministic when a condition exists, else AI, else conditional.
-        det = classify(r.condition, attrs) if r.condition else None
-        verdict = det or (getattr(aiv, "verdict", None) if aiv else None) or "conditional"
+        # Verdict is DETERMINISTIC so repeated runs with unchanged answers give
+        # the same columns: the condition engine when the rule has a condition,
+        # else the keyword activity-gate + the rule's own applicability flag. The
+        # AI fills only the reason text below — never the verdict.
+        verdict = (
+            classify(r.condition, attrs) if r.condition else _fallback_verdict(r, entity)
+        )
         reason = (
             (getattr(aiv, "reason", None) if aiv else None)
             or r.applicability_note
@@ -416,6 +420,26 @@ def _build_condition_attrs(entity: Entity) -> dict:
         lv = str(val).strip().lower()
         attrs[k] = True if lv == "yes" else False if lv in ("no", "na") else val
     return attrs
+
+
+def _fallback_verdict(rule, entity) -> str:
+    """Deterministic verdict for a rule that carries no machine `condition`, so
+    repeated 'Find applicable regulations' runs with the same answers are stable
+    (the AI is used only for the reason text, never the verdict). The keyword
+    activity-gate can rule it out; otherwise the rule's own Mandatory/Conditional
+    flag decides."""
+    from compliance_agent.activity_gate import entity_applicability, NOT_APPLICABLE
+    from compliance_agent.db import Applicability
+
+    if entity_applicability(
+        entity.finance_profile,
+        name=rule.name or "",
+        form_name=rule.form_name or "",
+        category=rule.category or "",
+        area=rule.area or "",
+    ) == NOT_APPLICABLE:
+        return "not_applicable"
+    return "mandatory" if rule.applicability == Applicability.mandatory else "conditional"
 
 
 def _dedupe_key(text: Optional[str]) -> str:
