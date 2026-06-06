@@ -578,7 +578,14 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                 </td>
                 <td className="px-3 py-2.5 text-muted-foreground">{r.authority}</td>
                 <td className="px-3 py-2.5">
-                  <Badge variant="neutral">{r.category}</Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="neutral">{r.category}</Badge>
+                    {r.applicability && (
+                      <Badge variant={r.applicability === "Mandatory" ? "alert" : "neutral"}>
+                        {r.applicability}
+                      </Badge>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.frequency}</td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[240px] truncate">
@@ -819,6 +826,11 @@ function StagingCard({ rule }: { rule: Rule }) {
           <span>Submitted</span>
           <span className="font-medium">{fmtRelative(rule.created_at)}</span>
         </div>
+        {rule.applicability && (
+          <Badge variant={rule.applicability === "Mandatory" ? "alert" : "neutral"}>
+            {rule.applicability}
+          </Badge>
+        )}
         <Badge variant="alert">Awaiting review</Badge>
       </button>
 
