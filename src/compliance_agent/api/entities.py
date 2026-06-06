@@ -501,7 +501,6 @@ def discover_entity_regulations(
         is_live,
         RuleExtractorUnavailable,
     )
-    from compliance_agent.api.rules import ensure_obligations_for_rule
     from compliance_agent.api.licenses import _read_license_text, _MAX_PROMPT_CHARS
 
     entity = db.get(Entity, entity_id)
@@ -526,14 +525,23 @@ def discover_entity_regulations(
             lic_texts.append(f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:8000]}")
 
     context = (
-        "Discover the MAXIMAL set of regulatory obligations for the entity below.\n"
-        "ASSUME EVERY ACTIVITY IS PRESENT — return the broadest plausible list "
-        "across ALL functions (Finance/Tax, Legal/Corporate, Compliance/AML, "
-        "HR/Payroll) and ALL item types: filings, returns, licenses, permits, "
-        "registrations, ongoing compliance obligations and reporting "
-        "requirements. Use the NATURE OF OPERATIONS and the licenses to surface "
-        "industry-specific regulations. When unsure, INCLUDE it — narrowing "
-        "happens later via qualification questions. One entry per distinct item.\n\n"
+        "Discover the regulatory obligations that GENUINELY APPLY to the entity "
+        "below, grounded in its ACTUAL nature of operations, the licenses it "
+        "holds, its legal type and its jurisdiction. Do NOT assume activities "
+        "the entity has not stated, and do NOT pad the list with obligations "
+        "that only apply to other business models. Return only items a "
+        "compliance officer for THIS entity would reasonably expect to file.\n"
+        "Cover all four functions WHERE RELEVANT — Finance/Tax, Legal/Corporate, "
+        "Compliance/AML, HR/Payroll — and the item types that actually apply: "
+        "filings, returns, licenses, permits, registrations and ongoing "
+        "reporting obligations. Always include the baseline statutory "
+        "obligations that any company of this legal type in this jurisdiction "
+        "must meet (e.g. annual accounts/return, corporate tax, payroll/social "
+        "security if it employs staff). Add activity-specific obligations ONLY "
+        "when the nature of operations or a license clearly triggers them. If an "
+        "activity is genuinely uncertain, leave it out — it is surfaced later "
+        "via the qualification questions, not guessed here. One entry per "
+        "distinct item.\n\n"
         f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
@@ -590,11 +598,9 @@ def discover_entity_regulations(
         db.add(rule)
         created.append(rule)
     db.flush()
-    for r in created:
-        try:
-            ensure_obligations_for_rule(db, r)
-        except Exception:  # noqa: BLE001
-            pass
+    # Discovered rules are drafts (sent_to_review=False): they do NOT get a
+    # calendar obligation here. That happens only when a human sends them to
+    # Review & Assign (PATCH sets sent_to_review=True → ensure_obligations).
     # Persist coverage notes on the entity for the gap-detection 'Partial' check.
     cov = [
         {"domain": c.domain, "status": c.status, "note": c.note}

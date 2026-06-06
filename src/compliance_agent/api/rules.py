@@ -34,9 +34,14 @@ router = APIRouter(prefix="/api/rules", tags=["rules"])
 def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
     """Create a calendar obligation for each attached entity on the computed
     due date (idempotent), and keep the assignee in sync with the rule's owner.
-    Runs for rules that are in review (staging) OR approved (production), so an
-    obligation shows on the calendar as soon as it enters the review flow."""
+    Runs for production rules and for staging rules a human has sent to Review &
+    Assign (sent_to_review=True) — so a freshly-discovered draft does NOT hit
+    the calendar until it's been picked, but lands there the moment it is."""
     if rule.status not in (RuleStatus.staging, RuleStatus.production):
+        return
+    # Staging drafts that haven't been sent to Review & Assign stay off the
+    # calendar. Production rules are already approved, so they always qualify.
+    if rule.status == RuleStatus.staging and rule.sent_to_review is not True:
         return
     if not rule.entities:
         return
@@ -188,8 +193,8 @@ def list_rules(
     ),
     in_review: Optional[bool] = Query(
         None,
-        description="When true, only rules a human has sent to Review & Assign "
-        "(sent_to_review is True or NULL); hides freshly-discovered drafts.",
+        description="When true, only rules a human has explicitly sent to "
+        "Review & Assign (sent_to_review is True); hides discovered drafts.",
     ),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
@@ -202,7 +207,7 @@ def list_rules(
     if status:
         stmt = stmt.where(Rule.status == status)
     if in_review:
-        stmt = stmt.where(Rule.sent_to_review.isnot(False))
+        stmt = stmt.where(Rule.sent_to_review.is_(True))
     stmt = stmt.order_by(Rule.jurisdiction_code, Rule.category, Rule.name)
     rows = db.execute(stmt).scalars().all()
     # FINANCE_ONLY switch: hide non-Finance rules from the catalog.
