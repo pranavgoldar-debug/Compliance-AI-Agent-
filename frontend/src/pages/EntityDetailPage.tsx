@@ -689,7 +689,12 @@ function ApplicabilitySection({
                   )}
                 </div>
                 {i.reason && <div className="text-[11px] text-muted-foreground">{i.reason}</div>}
-                {i.due && <div className="text-[11px] text-muted-foreground">Due: {i.due}</div>}
+                {i.next_due && (
+                  <div className="text-[11px] font-medium text-foreground">
+                    Next due: {fmtDate(i.next_due)}
+                  </div>
+                )}
+                {i.due && <div className="text-[11px] text-muted-foreground">{i.due}</div>}
                 {i.source_url && /^https?:\/\//i.test(i.source_url) && (
                   <a
                     href={i.source_url}
@@ -1974,6 +1979,7 @@ type AssessItem = {
   reason: string;
   triggering_factors?: string | null;
   due?: string | null;
+  next_due?: string | null;
   basis?: string | null;
   source_url?: string | null;
   jurisdiction?: string | null;

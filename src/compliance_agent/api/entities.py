@@ -290,10 +290,11 @@ def assess_entity_obligations(
 ):
     """Find applicable regulations (HYBRID): the deterministic condition engine
     decides each item's verdict (mandatory / conditional / not_applicable) from
-    the entity's answers; the AI fills the one-line reason. Items without a
-    machine condition fall back to the AI verdict."""
+    the entity's answers; the AI fills only the one-line reason. Items without a
+    machine condition use the deterministic activity-gate fallback."""
+    from datetime import date
     from compliance_agent.db import RuleStatus
-    from compliance_agent.api.licenses import _build_profile_block
+    from compliance_agent.api.licenses import _build_profile_block, _next_due_for_rule
     from compliance_agent.condition_engine import classify
     from compliance_agent.rule_extractor import assess_obligations, is_live
 
@@ -362,6 +363,12 @@ def assess_entity_obligations(
         if vat_override and _is_vat_return(r):
             frequency, due = vat_override
             r.frequency, r.due_date_rule = frequency, due
+        # Concrete next deadline — the same calculation the calendar uses — so
+        # the inventory shows the actual date, not just the textual rule.
+        try:
+            next_due = _next_due_for_rule(r, date.today()).isoformat()
+        except Exception:  # noqa: BLE001 — best-effort; fall back to the text rule
+            next_due = None
         items.append(
             {
                 "rule_id": r.id,
@@ -375,6 +382,7 @@ def assess_entity_obligations(
                 "triggering_factors": (getattr(aiv, "triggering_factors", None) if aiv else None)
                 or r.triggering_activity,
                 "due": due,
+                "next_due": next_due,
                 "basis": r.source_url or r.authority,
                 "source_url": r.source_url,
                 "jurisdiction": r.jurisdiction_code,
@@ -425,20 +433,28 @@ def _build_condition_attrs(entity: Entity) -> dict:
 def _fallback_verdict(rule, entity) -> str:
     """Deterministic verdict for a rule that carries no machine `condition`, so
     repeated 'Find applicable regulations' runs with the same answers are stable
-    (the AI is used only for the reason text, never the verdict). The keyword
-    activity-gate can rule it out; otherwise the rule's own Mandatory/Conditional
-    flag decides."""
-    from compliance_agent.activity_gate import entity_applicability, NOT_APPLICABLE
+    (the AI is used only for the reason text, never the verdict).
+
+    Decided from the filing's triggering activity answers:
+      - a matched activity answered No/NA (and none Yes) -> not_applicable
+      - a matched activity answered Yes (the trigger is confirmed) -> mandatory
+      - matched but every answer is TBC/unanswered -> conditional (kept, unsure)
+      - the filing maps to no activity -> the rule's own Mandatory/Conditional flag
+    """
+    from compliance_agent.activity_gate import matched_activities
     from compliance_agent.db import Applicability
 
-    if entity_applicability(
-        entity.finance_profile,
-        name=rule.name or "",
-        form_name=rule.form_name or "",
-        category=rule.category or "",
-        area=rule.area or "",
-    ) == NOT_APPLICABLE:
-        return "not_applicable"
+    profile = entity.finance_profile or {}
+    hits = matched_activities(
+        rule.name or "", rule.form_name or "", rule.category or "", rule.area or ""
+    )
+    if hits:
+        answers = {str(profile.get(a, "")).strip().lower() for a in hits}
+        if "yes" in answers:
+            return "mandatory"
+        if answers & {"no", "na"}:
+            return "not_applicable"
+        return "conditional"
     return "mandatory" if rule.applicability == Applicability.mandatory else "conditional"
 
 
