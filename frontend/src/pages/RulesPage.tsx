@@ -83,11 +83,13 @@ export function RulesPage() {
   const navigate = useNavigate();
 
   const { data: rules, isLoading } = useQuery({
-    queryKey: ["rules", tab, jurisdictionCode, category],
+    queryKey: ["rules", tab, jurisdictionCode],
     queryFn: () => {
       const params = new URLSearchParams({ status: tab });
       if (jurisdictionCode) params.set("jurisdiction_code", jurisdictionCode);
-      if (category) params.set("category", category);
+      // Category is filtered client-side (below) so its dropdown always shows
+      // the full set of categories present, instead of collapsing to the one
+      // that's selected.
       // For Action only shows items a human sent here; hide discovered drafts.
       if (tab === "staging") params.set("in_review", "true");
       return api.get<Rule[]>(`/api/rules?${params.toString()}`);
@@ -139,13 +141,14 @@ export function RulesPage() {
       );
     }
     if (fn) arr = arr.filter((r) => fnOf(r) === fn);
+    if (category) arr = arr.filter((r) => r.category === category);
     if (applic) arr = arr.filter((r) => r.applicability === applic);
     // Sort by when the item was added (created_at) — latest or oldest first.
     return [...arr].sort((a, b) => {
       const cmp = a.created_at.localeCompare(b.created_at);
       return dateOrder === "latest" ? -cmp : cmp;
     });
-  }, [rules, q, fn, applic, dateOrder]);
+  }, [rules, q, fn, category, applic, dateOrder]);
 
   const categories = useMemo(() => {
     if (!rules) return [];
