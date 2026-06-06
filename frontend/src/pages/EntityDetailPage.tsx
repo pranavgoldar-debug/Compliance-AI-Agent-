@@ -1068,8 +1068,8 @@ function ComplianceRulesTab({
     <div className="space-y-4">
       <Card>
         <CardContent className="p-5 space-y-1">
-          <div className="flex items-center justify-between gap-2">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
               <h3 className="font-semibold">Compliance rules</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
                 AI discovers the regulations this entity could owe — from its
@@ -1077,7 +1077,7 @@ function ComplianceRulesTab({
               </p>
             </div>
             {isAdmin && (
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <Button variant="outline" onClick={() => setAddManualOpen(true)}>
                   <Plus className="h-4 w-4" />
                   Add regulation
