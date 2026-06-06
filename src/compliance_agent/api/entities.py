@@ -1,6 +1,7 @@
 """Entity CRUD endpoints."""
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -417,6 +418,18 @@ def _build_condition_attrs(entity: Entity) -> dict:
     return attrs
 
 
+def _dedupe_key(text: Optional[str]) -> str:
+    """Normalize a filing name/form for duplicate detection: lowercase, drop
+    parenthetical asides, strip punctuation and collapse whitespace, and remove
+    generic filler words so 'Annual Accounts' and 'Annual Accounts (filing)'
+    or 'Annual Accounts Return' collapse to the same key."""
+    s = re.sub(r"\([^)]*\)", " ", (text or "").lower())
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    # Drop noise words that don't distinguish one filing from another.
+    drop = {"the", "a", "an", "of", "for", "to", "and", "filing", "form"}
+    return " ".join(w for w in s.split() if w not in drop).strip()
+
+
 def _vat_return_overrides(profile: Optional[dict]) -> Optional[tuple[str, str]]:
     """If the entity answered the VAT/GST return cadence, return the
     (frequency, due_date_rule) the VAT return should actually carry — so a return
@@ -599,16 +612,19 @@ def discover_entity_regulations(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
 
-    existing = {
-        (r.form_name or r.name or "").strip().lower()
-        for r in entity.rules
-    }
+    # Dedupe on the normalized name AND form_name, so near-duplicates the model
+    # phrases slightly differently (e.g. two 'Annual Accounts' with different
+    # due wording, or 'Annual Accounts' vs 'Annual Accounts (filing)') collapse
+    # to a single rule instead of both landing on the discovered list.
+    existing: set[str] = set()
+    for r in entity.rules:
+        existing.update(k for k in (_dedupe_key(r.name), _dedupe_key(r.form_name)) if k)
     created: list = []
     for cand in result.rules:
-        key = (cand.form_name or cand.name or "").strip().lower()
-        if not key or key in existing:
+        keys = {k for k in (_dedupe_key(cand.name), _dedupe_key(cand.form_name)) if k}
+        if not keys or keys & existing:
             continue
-        existing.add(key)
+        existing |= keys
         rule = Rule(
             name=cand.name,
             jurisdiction_code=(juris or "xx")[:16],
