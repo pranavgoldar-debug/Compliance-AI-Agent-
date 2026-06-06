@@ -337,6 +337,11 @@ def assess_entity_obligations(
         except Exception:  # noqa: BLE001 — reasons are best-effort; verdicts are deterministic
             ai_by_form = {}
 
+    # The entity's answered VAT/GST cadence overrides the cadence a VAT return
+    # was discovered with, so the return doesn't show e.g. 'Quarterly' after the
+    # user answered 'monthly'. Persisted on the rule so the calendar matches too.
+    vat_override = _vat_return_overrides(entity.finance_profile)
+
     items = []
     for r in discovered:
         aiv = ai_by_form.get(r.form_name)
@@ -348,6 +353,10 @@ def assess_entity_obligations(
             or r.applicability_note
             or "Kept pending verification."
         )
+        frequency, due = r.frequency, r.due_date_rule
+        if vat_override and _is_vat_return(r):
+            frequency, due = vat_override
+            r.frequency, r.due_date_rule = frequency, due
         items.append(
             {
                 "rule_id": r.id,
@@ -355,12 +364,12 @@ def assess_entity_obligations(
                 "form_name": r.form_name,
                 "category": r.category,
                 "function": r.responsible_function,
-                "frequency": r.frequency,
+                "frequency": frequency,
                 "verdict": verdict,
                 "reason": reason,
                 "triggering_factors": (getattr(aiv, "triggering_factors", None) if aiv else None)
                 or r.triggering_activity,
-                "due": r.due_date_rule,
+                "due": due,
                 "basis": r.source_url or r.authority,
                 "jurisdiction": r.jurisdiction_code,
                 "confidence": r.confidence,
@@ -406,6 +415,40 @@ def _build_condition_attrs(entity: Entity) -> dict:
         lv = str(val).strip().lower()
         attrs[k] = True if lv == "yes" else False if lv in ("no", "na") else val
     return attrs
+
+
+def _vat_return_overrides(profile: Optional[dict]) -> Optional[tuple[str, str]]:
+    """If the entity answered the VAT/GST return cadence, return the
+    (frequency, due_date_rule) the VAT return should actually carry — so a return
+    discovered as 'Quarterly' is corrected to the answered cadence instead of
+    contradicting it. Returns None when the cadence wasn't answered."""
+    freq = str((profile or {}).get("vat_frequency", "")).strip().lower()
+    return {
+        "monthly": (
+            "Monthly",
+            "Filed monthly — due the month after each month-end, per the tax "
+            "authority's deadline.",
+        ),
+        "quarterly": (
+            "Quarterly",
+            "Filed quarterly — due the month after each quarter-end, per the tax "
+            "authority's deadline.",
+        ),
+        "annual": (
+            "Annual",
+            "Filed annually — due after the VAT/GST year-end, per the tax "
+            "authority's deadline.",
+        ),
+    }.get(freq)
+
+
+def _is_vat_return(rule) -> bool:
+    """True for a recurring VAT/GST *return* (not a one-off registration), so the
+    answered cadence is applied to the right rule."""
+    blob = (str(rule.name or "") + " " + str(rule.form_name or "")).lower()
+    cat = str(rule.category or "").lower()
+    is_vat = "vat" in blob or "gst" in blob or cat in ("vat", "gst/hst", "gst")
+    return is_vat and "return" in blob
 
 
 def _secondary_answers_block(qualification: Optional[dict]) -> str:
