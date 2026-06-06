@@ -66,6 +66,7 @@ AUTHORITY_URLS: list[tuple[str, str]] = [
     ("National Crime Agency", "https://www.nationalcrimeagency.gov.uk/"),
     ("NCA", "https://www.nationalcrimeagency.gov.uk/"),
     ("Companies House", "https://www.gov.uk/government/organisations/companies-house"),
+    ("Information Commissioner", "https://ico.org.uk/"),
     ("ICO", "https://ico.org.uk/"),
     ("Pensions Regulator", "https://www.thepensionsregulator.gov.uk/"),
     # --- US -----------------------------------------------------------

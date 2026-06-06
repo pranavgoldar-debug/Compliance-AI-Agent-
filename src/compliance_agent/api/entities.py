@@ -301,6 +301,7 @@ def assess_entity_obligations(
     )
     from compliance_agent.condition_engine import classify
     from compliance_agent.rule_extractor import assess_obligations, is_live
+    from compliance_agent.data.authority_urls import lookup as authority_url_lookup
 
     entity = db.get(Entity, entity_id)
     if entity is None:
@@ -389,7 +390,9 @@ def assess_entity_obligations(
                 "due": due,
                 "next_due": next_due,
                 "basis": r.source_url or r.authority,
-                "source_url": r.source_url,
+                # Verification link: the rule's own URL, else the official
+                # authority website from the curated map.
+                "source_url": r.source_url or authority_url_lookup(r.authority),
                 "jurisdiction": r.jurisdiction_code,
             }
         )
@@ -603,6 +606,7 @@ def discover_entity_regulations(
         RuleExtractorUnavailable,
     )
     from compliance_agent.api.licenses import _read_license_text, _MAX_PROMPT_CHARS
+    from compliance_agent.data.authority_urls import lookup as authority_url_lookup
 
     entity = db.get(Entity, entity_id)
     if entity is None:
@@ -677,6 +681,9 @@ def discover_entity_regulations(
             area=cand.area,
             form_name=cand.form_name,
             authority=cand.authority,
+            # Official authority website (curated, real URLs) so a reviewer can
+            # verify the filing. Authority-level, not the exact form page.
+            source_url=authority_url_lookup(cand.authority),
             frequency=cand.frequency,
             due_date_rule=cand.due_date_rule,
             payment_rule=cand.payment_rule,

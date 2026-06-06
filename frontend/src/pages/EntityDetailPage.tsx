@@ -706,10 +706,11 @@ function ApplicabilitySection({
                     href={i.source_url}
                     target="_blank"
                     rel="noreferrer"
+                    title="Official authority website — verify the filing here."
                     className="text-[11px] text-aspora-600 hover:underline inline-flex items-center gap-1"
                   >
                     <ExternalLink className="h-3 w-3" />
-                    Source
+                    Verify at source
                   </a>
                 )}
               </div>
