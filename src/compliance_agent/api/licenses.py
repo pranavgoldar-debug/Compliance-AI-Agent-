@@ -1218,6 +1218,7 @@ def applicable_rules(
     # obligation against THIS license's entity. One query, then bucket by
     # rule_id.
     today_d = date.today()
+    _fy = _parse_fy_end(getattr(entity, "fiscal_year_end", None))
     next_by_rule: dict[int, Obligation] = {}
     if entity is not None:
         rows = (
@@ -1280,7 +1281,7 @@ def applicable_rules(
             match_reason=match_reason,
             next_obligation_id=ob.id if ob else None,
             next_due_date=ob.due_date if ob else None,
-            projected_due_date=_next_due_for_rule(rule, today_d),
+            projected_due_date=_next_due_for_rule(rule, today_d, _fy),
             next_status=ob.status.value if ob and ob.status else None,
             next_assignee=assignee,
             days_to_next=((ob.due_date - today_d).days if ob else None),
@@ -1385,16 +1386,45 @@ def _next_on_day_of_month(base: date, day: int) -> date:
     return _clamp_day(ny, nm, day)
 
 
-def _next_due_for_rule(rule: Rule, base: date) -> date:
+def _parse_fy_end(text: Optional[str]) -> Optional[tuple[int, int]]:
+    """Parse an entity's fiscal_year_end string into (month, day). Handles
+    '31-Dec', '31 Mar', 'Dec 31', 'March 31', '31/12'. None when unparseable."""
+    if not text:
+        return None
+    low = text.strip().lower()
+    m = re.match(r"^\s*(\d{1,2})\s*[/-]\s*(\d{1,2})\s*$", low)  # 31/12 or 31-12
+    if m:
+        day, mon = int(m.group(1)), int(m.group(2))
+        if 1 <= mon <= 12 and 1 <= day <= 31:
+            return (mon, day)
+    mon = next((idx for tok, idx in _MONTH_LOOKUP.items() if tok in low), None)
+    dm = re.search(r"(\d{1,2})", low)
+    if mon and dm and 1 <= int(dm.group(1)) <= 31:
+        return (mon, int(dm.group(1)))
+    return None
+
+
+def _add_months(d: date, n: int) -> date:
+    """d shifted by n calendar months, clamping the day to the target month."""
+    total = d.year * 12 + (d.month - 1) + n
+    y, m = divmod(total, 12)
+    return _clamp_day(y, m + 1, d.day)
+
+
+def _next_due_for_rule(
+    rule: Rule, base: date, fy_end: Optional[tuple[int, int]] = None
+) -> date:
     """Best-effort REAL statutory deadline, parsed from the rule's
     `due_date_rule` text, instead of a naive "today + interval". Handles the
     common shapes: "by the 25th of the following month", explicit calendar
-    dates ("by 30 Jun", "31 Dec"), and "Nth day of the Mth month after the
-    period end". Fiscal-relative rules assume a calendar (Dec-31) year-end,
-    since we don't track each entity's financial year here. Falls back to an
-    interval only when nothing parseable is found."""
+    dates ("by 30 Jun", "31 Dec"), "Nth day of the Mth month after the period
+    end", and "N months after the (financial) year end". Fiscal-relative rules
+    anchor on the entity's fiscal year-end when known (`fy_end` = (month, day)),
+    falling back to a calendar (Dec-31) year-end. Falls back to an interval only
+    when nothing parseable is found."""
     low = (rule.due_date_rule or "").lower()
     freq = (rule.frequency or "").lower()
+    fy_month, fy_day = fy_end or (12, 31)
 
     # Monthly: anchor on the day-of-month it's due ("by the 25th of the
     # following month"), NOT today + 30 days.
@@ -1433,30 +1463,38 @@ def _next_due_for_rule(rule: Rule, base: date) -> date:
         if future:
             return min(future)
 
-    # "15th day of the 6th month after the end of the tax period" — assume a
-    # calendar year-end, so month N maps directly.
+    # "15th day of the 6th month after the end of the tax period" — the Mth
+    # month after the fiscal year-end, on day N.
     m = re.search(
         r"(\d{1,2})\s*(?:st|nd|rd|th)?\s+day\s+of\s+the\s+(\d{1,2})\s*(?:st|nd|rd|th)?\s+month",
         low,
     )
     if m and 1 <= int(m.group(2)) <= 12:
-        day, mon = int(m.group(1)), int(m.group(2))
-        for yr in (base.year, base.year + 1):
-            c = _clamp_day(yr, mon, day)
-            if c >= base:
-                return c
+        day, months_after = int(m.group(1)), int(m.group(2))
+        cands = []
+        for fy_year in (base.year - 1, base.year, base.year + 1):
+            t = _add_months(_clamp_day(fy_year, fy_month, fy_day), months_after)
+            cands.append(_clamp_day(t.year, t.month, day))
+        future = [c for c in cands if c >= base]
+        if future:
+            return min(future)
 
-    # "within N months of ... close / period end" — assume Dec-31 year-end.
-    m = re.search(r"within\s+(\d{1,2})\s+months?", low)
-    if m:
+    # "N months after the financial year end / accounting-period end / close"
+    # (also covers "within N months of period end") — anchor on the FY end.
+    m = re.search(r"(\d{1,2})\s+months?\b", low)
+    if m and re.search(
+        r"year[\s-]*end|fiscal|financial|accounting period|tax period|"
+        r"period[\s-]*end|reporting period|after the end|of the year|close",
+        low,
+    ):
         n = int(m.group(1))
-        for end_year in (base.year - 1, base.year):
-            total = 12 + n  # months from Jan of end_year to (Dec + n)
-            yr = end_year + (total - 1) // 12
-            mon = (total - 1) % 12 + 1
-            c = _clamp_day(yr, mon, calendar.monthrange(yr, mon)[1])
-            if c >= base:
-                return c
+        cands = [
+            _add_months(_clamp_day(fy_year, fy_month, fy_day), n)
+            for fy_year in (base.year - 1, base.year, base.year + 1)
+        ]
+        future = [c for c in cands if c >= base]
+        if future:
+            return min(future)
 
     # Nothing parseable — fall back to a sensible interval.
     if "quarter" in freq:
@@ -1490,7 +1528,9 @@ def schedule_rule_for_license(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found.")
 
-    due = payload.due_date or _next_due_for_rule(rule, date.today())
+    due = payload.due_date or _next_due_for_rule(
+        rule, date.today(), _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None))
+    )
 
     # Refuse a duplicate scheduling (rule + entity + due + department).
     existing = db.execute(
@@ -1595,7 +1635,9 @@ def schedule_rules_for_license(
         rule = db.get(Rule, rid)
         if rule is None:
             continue
-        due = _next_due_for_rule(rule, today_d)
+        due = _next_due_for_rule(
+            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None))
+        )
         existing = db.execute(
             select(Obligation).where(
                 Obligation.rule_id == rule.id,
@@ -1661,7 +1703,9 @@ def _schedule_filings_for_license(
         if mandatory_only and rule.applicability != Applicability.mandatory:
             continue
         applicable += 1
-        due = _next_due_for_rule(rule, today_d)
+        due = _next_due_for_rule(
+            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None))
+        )
         existing = db.execute(
             select(Obligation).where(
                 Obligation.rule_id == rule.id,

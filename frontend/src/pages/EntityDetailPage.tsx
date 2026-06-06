@@ -692,6 +692,12 @@ function ApplicabilitySection({
                 {i.next_due && (
                   <div className="text-[11px] font-medium text-foreground">
                     Next due: {fmtDate(i.next_due)}
+                    <span
+                      className="ml-1.5 font-normal text-amber-700"
+                      title="Estimated by AI from the filing rule and this entity's fiscal year-end — confirm against the official source before relying on it."
+                    >
+                      · AI estimate, verify
+                    </span>
                   </div>
                 )}
                 {i.due && <div className="text-[11px] text-muted-foreground">{i.due}</div>}

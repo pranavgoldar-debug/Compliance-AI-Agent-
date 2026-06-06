@@ -46,10 +46,10 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
     if not rule.entities:
         return
     from datetime import date
-    from compliance_agent.api.licenses import _next_due_for_rule
+    from compliance_agent.api.licenses import _next_due_for_rule, _parse_fy_end
     from compliance_agent.db import ObligationStatus, Department
 
-    due = _next_due_for_rule(rule, date.today())
+    today = date.today()
     for ent in rule.entities:
         # Respect Primary-Activity gating: don't put a filing on an entity's
         # calendar if its activity answers make it not applicable.
@@ -60,6 +60,8 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
         ) == NOT_APPLICABLE:
             _delete_pending_for_entity_rule(db, rule.id, ent.id)
             continue
+        # Deadline anchored on THIS entity's fiscal year-end (per-entity).
+        due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end))
         exists = db.execute(
             select(Obligation).where(
                 Obligation.rule_id == rule.id,

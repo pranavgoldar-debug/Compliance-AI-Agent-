@@ -294,7 +294,11 @@ def assess_entity_obligations(
     machine condition use the deterministic activity-gate fallback."""
     from datetime import date
     from compliance_agent.db import RuleStatus
-    from compliance_agent.api.licenses import _build_profile_block, _next_due_for_rule
+    from compliance_agent.api.licenses import (
+        _build_profile_block,
+        _next_due_for_rule,
+        _parse_fy_end,
+    )
     from compliance_agent.condition_engine import classify
     from compliance_agent.rule_extractor import assess_obligations, is_live
 
@@ -315,6 +319,7 @@ def assess_entity_obligations(
         }
 
     attrs = _build_condition_attrs(entity)
+    fy_end = _parse_fy_end(entity.fiscal_year_end)
 
     # AI is used ONLY for the reason text now (verdict comes from conditions).
     ai_by_form: dict[str, object] = {}
@@ -366,7 +371,7 @@ def assess_entity_obligations(
         # Concrete next deadline — the same calculation the calendar uses — so
         # the inventory shows the actual date, not just the textual rule.
         try:
-            next_due = _next_due_for_rule(r, date.today()).isoformat()
+            next_due = _next_due_for_rule(r, date.today(), fy_end).isoformat()
         except Exception:  # noqa: BLE001 — best-effort; fall back to the text rule
             next_due = None
         items.append(
