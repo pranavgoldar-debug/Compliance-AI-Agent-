@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   Sparkles,
+  ExternalLink,
 } from "lucide-react";
 import { AIExtractDialog, UploadDialog } from "@/pages/LicensesPage";
 import { api } from "@/lib/api";
@@ -689,8 +690,16 @@ function ApplicabilitySection({
                 </div>
                 {i.reason && <div className="text-[11px] text-muted-foreground">{i.reason}</div>}
                 {i.due && <div className="text-[11px] text-muted-foreground">Due: {i.due}</div>}
-                {i.confidence && (
-                  <div className="text-[10px] text-slate-500 italic">{i.confidence}</div>
+                {i.source_url && /^https?:\/\//i.test(i.source_url) && (
+                  <a
+                    href={i.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-aspora-600 hover:underline inline-flex items-center gap-1"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Source
+                  </a>
                 )}
               </div>
             </li>
@@ -1961,8 +1970,8 @@ type AssessItem = {
   triggering_factors?: string | null;
   due?: string | null;
   basis?: string | null;
+  source_url?: string | null;
   jurisdiction?: string | null;
-  confidence?: string | null;
 };
 type AssessResp = { available: boolean; items: AssessItem[]; notes?: string | null };
 

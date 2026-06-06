@@ -371,8 +371,8 @@ def assess_entity_obligations(
                 or r.triggering_activity,
                 "due": due,
                 "basis": r.source_url or r.authority,
+                "source_url": r.source_url,
                 "jurisdiction": r.jurisdiction_code,
-                "confidence": r.confidence,
             }
         )
     # Cache so the inventory survives reloads (re-runs on the button).
