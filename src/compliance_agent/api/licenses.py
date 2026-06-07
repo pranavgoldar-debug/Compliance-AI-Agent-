@@ -982,11 +982,39 @@ def ai_extract_obligations(
         "qualification questions. Do not pre-judge applicability here."
     )
 
+    # Candidate universe is built REGULATOR-FIRST: an uploaded licence /
+    # registration is the strongest evidence, so anchor on it before adding
+    # generic company filings. Mirrors the discovery contract — assume
+    # everything applies; the qualification questions narrow it later, never
+    # here. (E.g. a FINTRAC MSB registration must pull in the full FINTRAC MSB
+    # universe even if some items are later marked Conditional / Not Applicable.)
+    universe_rule = (
+        "\n\nBUILD THE CANDIDATE UNIVERSE IN THIS ORDER:\n"
+        "1. Treat any uploaded licence / registration as the STRONGEST evidence. "
+        "From it, identify the REGULATOR, the LICENSE TYPE, the REGISTRATION "
+        "STATUS, and the AUTHORIZED ACTIVITIES, and use them to anchor the "
+        "universe.\n"
+        "2. FIRST generate the COMPLETE obligation universe tied to that "
+        "regulator and license type — every reporting, renewal, AML/CFT and "
+        "program-/independent-review obligation that regime imposes — before "
+        "adding anything generic. Example: a FINTRAC MSB registration pulls in "
+        "ALL FINTRAC MSB reporting, renewal, AML/CFT and program-review "
+        "obligations.\n"
+        "3. THEN expand with the generic industry / company obligations. Nature "
+        "of operations EXPANDS this universe — it never replaces or trims the "
+        "regulator-specific obligations.\n"
+        "4. Assume every primary qualification question is answered YES and do "
+        "NOT filter here: include an obligation even if a later qualification "
+        "question may mark it Conditional or Not Applicable."
+    )
+
     finance_addendum = (
-        f"\n\nAlso include the standard ongoing obligations any operating company "
+        f"\n\nAs a SECONDARY layer — AFTER the regulator-specific universe above "
+        f"— also include the standard ongoing obligations any operating company "
         f"in {lic.jurisdiction_code.upper()} owes across every function, even "
         f"where they sit with a different authority than this licence's "
-        f"regulator. Label each item's function/category accordingly "
+        f"regulator. These ADD TO, and never replace, the regulator-specific "
+        f"obligations. Label each item's function/category accordingly "
         f"(Finance / Legal / Compliance / HR)."
     )
 
@@ -995,10 +1023,13 @@ def ai_extract_obligations(
     # the entity's answers into the discovery prompt.
     profile_block = ""
     # Nature of operations is a primary discovery input — what the entity does
-    # drives which regulations could apply.
+    # drives which regulations could apply. It EXPANDS the regulator-specific
+    # universe; it must never shrink it.
     _nature = getattr(lic.entity, "nature_of_operation", None) if lic.entity else None
     nature_block = (
-        f"\n\nNATURE OF OPERATIONS (what this entity does): {_nature}" if _nature else ""
+        f"\n\nNATURE OF OPERATIONS (what this entity does): {_nature}. Use this "
+        f"to ADD further obligations on top of the regulator-specific universe, "
+        f"never to remove any." if _nature else ""
     )
     if from_document:
         # Document-grounded: read the actual license text.
@@ -1011,6 +1042,7 @@ def ai_extract_obligations(
             f"reporting, periodic confirmations, change notifications, AML "
             f"obligations. Ignore one-off pre-licensing steps that have "
             f"already happened."
+            f"{universe_rule}"
             f"{exhaustive_rule}"
             f"{finance_addendum}"
             f"{nature_block}"
@@ -1036,6 +1068,7 @@ def ai_extract_obligations(
             f"fees, reports, periodic confirmations, change notifications, AML/"
             f"CFT obligations, renewals. For each, note whether it is mandatory "
             f"or conditional, and its usual frequency."
+            f"{universe_rule}"
             f"{exhaustive_rule}"
             f"{finance_addendum}"
             f"{nature_block}"
