@@ -44,13 +44,14 @@ Rules:
 - Keep `name` short and human-readable (under 100 chars). The full form name goes in `form_name`.
 - Choose `category` from this list when possible: Regulatory, AML / CFT, Corporate Tax, Information Returns, VAT, GST/HST, Sales/Use Tax, Excise Tax, Forex / Cross-Border, Corporate & Statutory, Payroll, Pensions, Social Security, Workers Compensation, Data Protection & Privacy, Cybersecurity, Consumer Protection, CIS, Statistics, EU Reporting, Accounting Control, Unclaimed Property.
 - `area` is a short sub-area within the category (e.g. "Suspicious transaction reporting" within "AML / CFT").
+- COVER ALL OBLIGATION TYPES, not just periodic returns. For each regime also include, where it imposes them: renewals & regulatory/supervision fees; periodic confirmations / attestations; change-in-control & material-change notifications; breach / incident reports; beneficial-ownership UPDATE filings (not just the initial register); and outsourcing / cloud notifications. These non-periodic, event-driven duties are the ones most often missed — include them as their own Rules (use frequency "Event-based" where appropriate).
 
 For EACH obligation also provide (spec §3/§4):
 - `condition` — a machine boolean-tree (see the field's allowed attribute names) that decides applicability. Use all_of/any_of/none_of and leaf clauses over ONLY those attribute names. Statutory audit is DERIVED — gate it on company_size_band/audit_exemption_ineligible, never invent an "is audit required?" attribute.
 - `triggering_activity` — the single activity flag id that gates it (or 'NEEDS_NEW_FLAG' if none fit; explain the gating characteristic in applicability_note).
 - `anchor` — what the deadline counts from (e.g. 'Financial year end').
 - `confidence` — your honesty flag for this row.
-Also fill `coverage_notes`: for each domain you considered, say whether you swept it fully (Confirmed), only listed the headline returns (Partial), or didn't research it (Pending research). This is REQUIRED — it tells the reviewer where to look.
+Also fill `coverage_notes`: for each domain you considered, say whether you swept it fully (Confirmed), only listed the headline returns (Partial), or didn't research it (Pending research). This is REQUIRED — it tells the reviewer where to look. COMPLETENESS SWEEP: do not settle for the headline returns. Before you would mark any domain "Partial", first ADD the obligations that would make it "Confirmed" — the non-headline, less-prominent items (sub-forms, periodic confirmations/attestations, fees, renewals, event-driven notifications) as their own Rules — rather than stopping. Reserve "Partial" for a domain you genuinely cannot complete, and name exactly what is missing in the note.
 
 OWNER-TEAM TAGGING — set `owner_team` to exactly one of: Finance, Compliance, Legal, HR.
 Decide by WHAT THE FILING IS ABOUT and WHO RECEIVES IT — not by the entity's activity. The same activity can route to different teams depending on the filing. Apply these rules in order and stop at the first match:
