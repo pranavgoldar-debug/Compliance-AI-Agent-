@@ -1036,6 +1036,16 @@ def ai_extract_obligations(
         f"to ADD further obligations on top of the regulator-specific universe, "
         f"never to remove any." if _nature else ""
     )
+    # Structured facts that anchor the baseline (corporate tax / audit / registry)
+    # families: the licence type and the licensee's legal entity type. Stated as
+    # plain facts — they only sharpen anchoring, they do not change discovery
+    # breadth or posture.
+    _legal_type = getattr(lic.entity, "legal_type", None) if lic.entity else None
+    _lic_type = lic.license_type or None
+    lic_type_line = f"\n\nLicense type: {_lic_type}." if _lic_type else ""
+    legal_type_line = (
+        f"\nLicensee's legal entity type: {_legal_type}." if _legal_type else ""
+    )
     if from_document:
         # Document-grounded: read the actual license text.
         primer = (
@@ -1047,6 +1057,7 @@ def ai_extract_obligations(
             f"reporting, periodic confirmations, change notifications, AML "
             f"obligations. Ignore one-off pre-licensing steps that have "
             f"already happened."
+            f"{lic_type_line}{legal_type_line}"
             f"{universe_rule}"
             f"{exhaustive_rule}"
             f"{finance_addendum}"
@@ -1067,7 +1078,8 @@ def ai_extract_obligations(
             f"Jurisdiction: {lic.jurisdiction_code.upper()}\n"
             f"Issuing authority / regulator: {lic.authority}\n"
             f"License name: {lic.name}\n"
-            f"License type: {lic.license_type or '(not specified)'}\n\n"
+            f"License type: {lic.license_type or '(not specified)'}\n"
+            f"Licensee's legal entity type: {_legal_type or '(unknown)'}\n\n"
             f"List every ONGOING compliance obligation a holder of this kind of "
             f"license typically owes the regulator: periodic returns, filings, "
             f"fees, reports, periodic confirmations, change notifications, AML/"

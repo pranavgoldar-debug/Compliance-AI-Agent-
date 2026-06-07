@@ -627,7 +627,14 @@ def discover_entity_regulations(
         except Exception:  # noqa: BLE001
             t = ""
         if t and len(t.strip()) >= 200:
-            lic_texts.append(f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:8000]}")
+            # Match the license-path budget: the whole context is clamped to
+            # _MAX_PROMPT_CHARS below (which protects the front-matter facts), so
+            # cap per-document at the same budget rather than an arbitrary 8k —
+            # otherwise authorised activities deep in a licence never reach the
+            # model on this path.
+            lic_texts.append(
+                f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:_MAX_PROMPT_CHARS]}"
+            )
 
     context = (
         "Discover the regulatory obligations that GENUINELY APPLY to the entity "
