@@ -492,6 +492,67 @@ def _dedupe_key(text: Optional[str]) -> str:
     return " ".join(sorted(toks)).strip()
 
 
+def _norm_freq(freq: Optional[str]) -> str:
+    """Normalize a frequency for duplicate signatures, so two rules count as the
+    same filing only when their cadence also matches — this keeps genuinely
+    distinct same-name filings (e.g. a Quarterly vs an Annual return) apart."""
+    return re.sub(r"[^a-z0-9]+", "", (freq or "").lower())
+
+
+def _dup_signatures(name, form_name, frequency) -> set:
+    """Duplicate signatures for a filing: the normalized name key and form key,
+    each paired with the normalized cadence. Two filings are duplicates only
+    when they share a signature (same normalized name/form AND same frequency)."""
+    f = _norm_freq(frequency)
+    return {(k, f) for k in (_dedupe_key(name), _dedupe_key(form_name)) if k}
+
+
+def _collapse_duplicate_rules(db, entity) -> int:
+    """Remove duplicate discovered rules that accumulated across earlier
+    refreshes. Group the entity's rules by duplicate signature (normalized
+    name/form + cadence); within each group keep the most-progressed rule
+    (production > sent-to-review staging > plain staging, then oldest) and
+    delete only the redundant UNREVIEWED staging drafts that belong solely to
+    this entity. Those drafts carry no calendar obligations, so removal is safe;
+    production rules and ones a human has sent to Review & Assign are never
+    touched. Returns the number removed."""
+    from collections import defaultdict
+    from compliance_agent.db import RuleStatus
+    from compliance_agent.api.rules import _delete_rule_cascade
+
+    groups: dict = defaultdict(list)
+    for r in list(entity.rules):
+        key = _dedupe_key(r.name) or _dedupe_key(r.form_name)
+        if key:
+            groups[(key, _norm_freq(r.frequency))].append(r)
+
+    removed = 0
+    for rules in groups.values():
+        if len(rules) < 2:
+            continue
+        # Keep the most-progressed (then oldest) — safest to retain.
+        keep, *rest = sorted(
+            rules,
+            key=lambda r: (
+                1 if r.status == RuleStatus.production else 0,
+                1 if getattr(r, "sent_to_review", False) else 0,
+                -(r.id or 0),
+            ),
+            reverse=True,
+        )
+        for r in rest:
+            # Only remove unreviewed staging drafts not shared with another
+            # entity — regenerable and obligation-free, so deletion is safe.
+            if (
+                r.status == RuleStatus.staging
+                and not getattr(r, "sent_to_review", False)
+                and not [e for e in r.entities if e.id != entity.id]
+            ):
+                _delete_rule_cascade(db, r)
+                removed += 1
+    return removed
+
+
 def _vat_return_overrides(profile: Optional[dict]) -> Optional[tuple[str, str]]:
     """If the entity answered the VAT/GST return cadence, return the
     (frequency, due_date_rule) the VAT return should actually carry — so a return
@@ -682,19 +743,20 @@ def discover_entity_regulations(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
 
-    # Dedupe on the normalized name AND form_name, so near-duplicates the model
-    # phrases slightly differently (e.g. two 'Annual Accounts' with different
-    # due wording, or 'Annual Accounts' vs 'Annual Accounts (filing)') collapse
-    # to a single rule instead of both landing on the discovered list.
-    existing: set[str] = set()
+    # First collapse duplicates that earlier refreshes persisted, so the
+    # discovered list stops showing repeats of the same filing. Then dedupe new
+    # candidates on (normalized name/form + cadence): an exact repeat is
+    # skipped, but a genuinely different-cadence filing of the same name is kept.
+    deduped = _collapse_duplicate_rules(db, entity)
+    existing: set = set()
     for r in entity.rules:
-        existing.update(k for k in (_dedupe_key(r.name), _dedupe_key(r.form_name)) if k)
+        existing |= _dup_signatures(r.name, r.form_name, r.frequency)
     created: list = []
     for cand in result.rules:
-        keys = {k for k in (_dedupe_key(cand.name), _dedupe_key(cand.form_name)) if k}
-        if not keys or keys & existing:
+        sigs = _dup_signatures(cand.name, cand.form_name, cand.frequency)
+        if not sigs or sigs & existing:
             continue
-        existing |= keys
+        existing |= sigs
         rule = Rule(
             name=cand.name,
             jurisdiction_code=(juris or "xx")[:16],
@@ -742,10 +804,16 @@ def discover_entity_regulations(
         entity.qualification = {**(entity.qualification or {}), "coverage_notes": cov}
     log_activity(
         db, actor_id=user.id, action="entity.discovered_regulations",
-        target_type="entity", target_id=entity_id, payload={"created": len(created)},
+        target_type="entity", target_id=entity_id,
+        payload={"created": len(created), "duplicates_removed": deduped},
     )
     db.commit()
-    return {"available": True, "created": len(created), "notes": result.notes}
+    return {
+        "available": True,
+        "created": len(created),
+        "duplicates_removed": deduped,
+        "notes": result.notes,
+    }
 
 
 @router.post("/{entity_id}/generate-questions")
