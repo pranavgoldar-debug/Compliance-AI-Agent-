@@ -467,15 +467,29 @@ def _fallback_verdict(rule, entity) -> str:
 
 
 def _dedupe_key(text: Optional[str]) -> str:
-    """Normalize a filing name/form for duplicate detection: lowercase, drop
-    parenthetical asides, strip punctuation and collapse whitespace, and remove
-    generic filler words so 'Annual Accounts' and 'Annual Accounts (filing)'
-    or 'Annual Accounts Return' collapse to the same key."""
+    """Normalize a filing name/form for duplicate detection so near-duplicates
+    collapse to one key: lowercase, drop parenthetical asides, strip
+    punctuation, remove generic filler words, SINGULARISE tokens (so
+    'Asset'/'Assets' and 'Event'/'Events' match) and SORT them (so word-order
+    variants like 'Notification of Significant Events' and 'Significant Events
+    Notification' match). E.g. 'Client Money and Asset Return' and 'Client Money
+    and Assets Return' collapse to the same key."""
     s = re.sub(r"\([^)]*\)", " ", (text or "").lower())
     s = re.sub(r"[^a-z0-9]+", " ", s)
     # Drop noise words that don't distinguish one filing from another.
     drop = {"the", "a", "an", "of", "for", "to", "and", "filing", "form"}
-    return " ".join(w for w in s.split() if w not in drop).strip()
+    toks = []
+    for w in s.split():
+        if w in drop:
+            continue
+        # Crude singularisation so plural/singular phrasings share a key. Only
+        # for longer tokens, so short words aren't mangled. Applied to both
+        # sides of the comparison, so it stays internally consistent.
+        if len(w) >= 4 and w.endswith("s"):
+            w = w[:-1]
+        toks.append(w)
+    # Sort so word order doesn't create a false distinction.
+    return " ".join(sorted(toks)).strip()
 
 
 def _vat_return_overrides(profile: Optional[dict]) -> Optional[tuple[str, str]]:
