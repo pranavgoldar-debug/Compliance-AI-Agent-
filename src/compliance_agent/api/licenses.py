@@ -553,6 +553,9 @@ class LicenseAIExtractResponse(BaseModel):
     from_document: bool = True
     candidates: list = []  # list[CandidateRule] — typed late to avoid cycle
     notes: Optional[str] = None
+    # Debug-only discovery audit (extracted facts + obligation counts by source).
+    # Populated only when COMPLIANCE_AGENT_DISCOVERY_DEBUG=1; production UI ignores it.
+    debug_audit: Optional[dict] = None
 
 
 _MAX_EXTRACT_BYTES = 4_000_000   # ~4 MB of source text — enough for any single licence
@@ -887,9 +890,11 @@ def ai_extract_obligations(
       - the PDF has no extractable text → notes explain
     """
     from compliance_agent.rule_extractor import (
+        discovery_debug_enabled,
         extract_rules_from_text,
         is_live,
         RuleExtractorUnavailable,
+        summarize_discovery,
     )
 
     lic = db.get(License, license_id)
@@ -1203,6 +1208,7 @@ def ai_extract_obligations(
         extracted_chars=len(text),
         candidates=candidates,
         notes=combined_notes,
+        debug_audit=summarize_discovery(result) if discovery_debug_enabled() else None,
     )
 
 

@@ -7,6 +7,8 @@ actually tracks on a calendar.
 """
 from __future__ import annotations
 
+import json
+import logging
 import os
 from typing import Literal, Optional
 
@@ -14,6 +16,8 @@ from pydantic import BaseModel, Field
 
 from compliance_agent.ai.llm_client import ai_available, make_client
 from compliance_agent.db import Applicability, TaxType
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """You convert raw regulatory text into a list of recurring or event-based filing obligations.
@@ -60,6 +64,70 @@ Worked checks your output must match: "DFSA Annual AML Return"->Compliance; "TDS
 If still genuinely ambiguous, pick the earliest matching rule (Compliance > Finance > HR > Legal) and flag it in `applicability`. Never invent a team outside the four.
 
 If the document is too short, ambiguous, or doesn't describe filing obligations at all, return an empty list and explain in `notes`."""
+
+
+# ---------------------------------------------------------------------------
+# Discovery debug (TEMPORARY) — used to validate WHY obligations do/don't
+# appear. Populated only when COMPLIANCE_AGENT_DISCOVERY_DEBUG=1 (the debug
+# addendum is appended to the prompt then). Off by default; not shown in the
+# production UI — the fields simply stay null on normal runs.
+# ---------------------------------------------------------------------------
+def discovery_debug_enabled() -> bool:
+    """True when the temporary discovery-debug switch is on."""
+    return os.environ.get("COMPLIANCE_AGENT_DISCOVERY_DEBUG") == "1"
+
+
+DiscoverySource = Literal[
+    "License / Registration",
+    "Regulator",
+    "Nature of Operations",
+    "Jurisdiction",
+    "Generic Compliance Knowledge",
+]
+
+
+class ObligationDebug(BaseModel):
+    why_discovered: str = Field(
+        default="", description="One line: why this obligation was discovered."
+    )
+    discovery_sources: list[DiscoverySource] = Field(
+        default_factory=list,
+        description="Which discovery source(s) produced this obligation.",
+    )
+    confidence_score: Optional[float] = Field(
+        default=None,
+        description="0.0–1.0 confidence that this obligation truly applies.",
+    )
+    trigger_facts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The concrete extracted facts that triggered it, e.g. "
+            "'Regulator: FINTRAC', 'License Type: MSB', 'Activity: Money "
+            "Transmission', 'Jurisdiction: Canada'."
+        ),
+    )
+
+
+class DiscoveryAudit(BaseModel):
+    """The facts the model keyed off when building the candidate universe."""
+
+    regulator: Optional[str] = None
+    license_type: Optional[str] = None
+    registration_status: Optional[str] = None
+    authorized_activities: list[str] = Field(default_factory=list)
+    jurisdiction: Optional[str] = None
+    legal_entity_type: Optional[str] = None
+
+
+DISCOVERY_DEBUG_ADDENDUM = """
+
+DISCOVERY DEBUG MODE (diagnostics only — do NOT change WHICH obligations you output, only annotate them):
+For EVERY obligation, also fill `debug`:
+- `why_discovered`: one line explaining why it surfaced.
+- `discovery_sources`: one or more of EXACTLY these labels — "License / Registration", "Regulator", "Nature of Operations", "Jurisdiction", "Generic Compliance Knowledge".
+- `confidence_score`: 0.0–1.0 that it truly applies.
+- `trigger_facts`: the concrete facts you keyed off (e.g. "Regulator: FINTRAC", "License Type: MSB", "Activity: Money Transmission", "Jurisdiction: Canada").
+Also fill the top-level `audit` with the facts you extracted: `regulator`, `license_type`, `registration_status`, `authorized_activities`, `jurisdiction`, `legal_entity_type`. Leave a field null if the source doesn't state it — never guess."""
 
 
 class CandidateRule(BaseModel):
@@ -127,6 +195,15 @@ class CandidateRule(BaseModel):
             "rules in the system prompt). Exactly one of the four."
         ),
     )
+    # Temporary discovery-debug annotation — populated only when the debug
+    # addendum is active (COMPLIANCE_AGENT_DISCOVERY_DEBUG=1); null otherwise.
+    debug: Optional[ObligationDebug] = Field(
+        default=None,
+        description=(
+            "Diagnostics: why this obligation was discovered, its source(s), a "
+            "confidence score, and the trigger facts. Debug mode only."
+        ),
+    )
 
 
 class CoverageNote(BaseModel):
@@ -153,6 +230,39 @@ class RuleExtractionResult(BaseModel):
         default=None,
         description="Caveats, ambiguities, or sections you skipped.",
     )
+    # Temporary discovery-debug audit — populated only in debug mode; null otherwise.
+    audit: Optional[DiscoveryAudit] = Field(
+        default=None,
+        description="Debug mode only: the facts the model keyed off when building the universe.",
+    )
+
+
+def summarize_discovery(result: "RuleExtractionResult") -> dict:
+    """Build the discovery-audit summary (extracted facts + obligation counts by
+    source) for debug logging / responses. Counts are NON-EXCLUSIVE tallies — an
+    obligation attributed to two sources is counted under both."""
+    counts = {
+        "regulator_derived": 0,
+        "license_derived": 0,
+        "operations_derived": 0,
+        "generic_derived": 0,
+    }
+    for r in result.rules:
+        srcs = (r.debug.discovery_sources if r.debug else None) or []
+        if "Regulator" in srcs:
+            counts["regulator_derived"] += 1
+        if "License / Registration" in srcs:
+            counts["license_derived"] += 1
+        if "Nature of Operations" in srcs:
+            counts["operations_derived"] += 1
+        # Jurisdiction + general regulatory knowledge both roll up to "generic".
+        if "Jurisdiction" in srcs or "Generic Compliance Knowledge" in srcs:
+            counts["generic_derived"] += 1
+    return {
+        "extracted_facts": result.audit.model_dump() if result.audit else None,
+        "obligation_counts": counts,
+        "total_obligations": len(result.rules),
+    }
 
 
 class RuleExtractorUnavailable(Exception):
@@ -169,13 +279,22 @@ def extract_rules_from_text(
     *,
     jurisdiction_hint: Optional[str] = None,
     model: str = "claude-opus-4-7",
+    debug: Optional[bool] = None,
 ) -> RuleExtractionResult:
-    """Call Claude on the supplied text and return candidate Rule rows."""
+    """Call Claude on the supplied text and return candidate Rule rows.
+
+    When `debug` is on (defaults to the COMPLIANCE_AGENT_DISCOVERY_DEBUG switch),
+    the prompt also asks the model to annotate WHY each obligation was discovered
+    and emit an extracted-facts audit, and we log a discovery summary."""
     if not is_live():
         raise RuleExtractorUnavailable(
             "AI rule extraction requires COMPLIANCE_AGENT_LIVE=1 plus either "
             "ANTHROPIC_API_KEY or OPENROUTER_API_KEY."
         )
+
+    if debug is None:
+        debug = discovery_debug_enabled()
+    system_text = SYSTEM_PROMPT + (DISCOVERY_DEBUG_ADDENDUM if debug else "")
 
     client = make_client()
 
@@ -193,7 +312,7 @@ def extract_rules_from_text(
         system=[
             {
                 "type": "text",
-                "text": SYSTEM_PROMPT,
+                "text": system_text,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
@@ -205,7 +324,22 @@ def extract_rules_from_text(
         raise RuntimeError(
             f"Rule extraction failed — stop_reason={response.stop_reason}."
         )
-    return response.parsed_output
+    result = response.parsed_output
+
+    if debug:
+        # Emit a server-log trace so discovery quality can be reviewed without
+        # any production-UI surface. One audit line + one line per obligation.
+        logger.info(
+            "DISCOVERY DEBUG audit %s",
+            json.dumps(summarize_discovery(result), default=str),
+        )
+        for r in result.rules:
+            logger.info(
+                "DISCOVERY DEBUG obligation %r -> %s",
+                r.name,
+                json.dumps(r.debug.model_dump(), default=str) if r.debug else "{}",
+            )
+    return result
 
 
 # ---------------------------------------------------------------------------
