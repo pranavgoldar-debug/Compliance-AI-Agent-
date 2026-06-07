@@ -508,14 +508,15 @@ def _dup_signatures(name, form_name, frequency) -> set:
 
 
 def _collapse_duplicate_rules(db, entity) -> int:
-    """Remove duplicate discovered rules that accumulated across earlier
-    refreshes. Group the entity's rules by duplicate signature (normalized
-    name/form + cadence); within each group keep the most-progressed rule
-    (production > sent-to-review staging > plain staging, then oldest) and
-    delete only the redundant UNREVIEWED staging drafts that belong solely to
-    this entity. Those drafts carry no calendar obligations, so removal is safe;
-    production rules and ones a human has sent to Review & Assign are never
-    touched. Returns the number removed."""
+    """Remove duplicate rules that accumulated across earlier refreshes. Group
+    the entity's rules by duplicate signature (normalized name/form + cadence);
+    within each group keep the safest copy to retain — the one that already has
+    calendar obligations, else the most-progressed (production > sent-to-review
+    > staging), else the oldest — and delete the redundant copies that have NO
+    obligations and belong solely to this entity. Keying deletion on "has no
+    obligations" (rather than status) is what makes this remove the duplicates
+    you actually see, while never orphaning a scheduled filing. Returns the
+    number removed."""
     from collections import defaultdict
     from compliance_agent.db import RuleStatus
     from compliance_agent.api.rules import _delete_rule_cascade
@@ -530,10 +531,12 @@ def _collapse_duplicate_rules(db, entity) -> int:
     for rules in groups.values():
         if len(rules) < 2:
             continue
-        # Keep the most-progressed (then oldest) — safest to retain.
+        # Keep the safest copy: one that already has obligations, else the
+        # most-progressed, else the oldest.
         keep, *rest = sorted(
             rules,
             key=lambda r: (
+                1 if r.obligations else 0,
                 1 if r.status == RuleStatus.production else 0,
                 1 if getattr(r, "sent_to_review", False) else 0,
                 -(r.id or 0),
@@ -541,13 +544,9 @@ def _collapse_duplicate_rules(db, entity) -> int:
             reverse=True,
         )
         for r in rest:
-            # Only remove unreviewed staging drafts not shared with another
-            # entity — regenerable and obligation-free, so deletion is safe.
-            if (
-                r.status == RuleStatus.staging
-                and not getattr(r, "sent_to_review", False)
-                and not [e for e in r.entities if e.id != entity.id]
-            ):
+            # Delete a redundant copy only when it has NO scheduled obligations
+            # (nothing to orphan) and isn't shared with another entity.
+            if not r.obligations and not [e for e in r.entities if e.id != entity.id]:
                 _delete_rule_cascade(db, r)
                 removed += 1
     return removed
