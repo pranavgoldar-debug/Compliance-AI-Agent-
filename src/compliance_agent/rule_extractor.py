@@ -378,18 +378,36 @@ class AssessmentResult(BaseModel):
 # follow-up questions for an entity from its nature of operations, licenses,
 # jurisdiction, and the items already discovered.
 # ---------------------------------------------------------------------------
-QUESTION_GEN_PROMPT = """You build an ADAPTIVE qualification questionnaire for ONE specific entity.
+QUESTION_GEN_PROMPT = """You build an ADAPTIVE follow-up questionnaire for ONE specific entity.
 
-You are given the entity's jurisdiction, nature of operations, the licenses it holds, and the list of regulatory items (filings / licenses / permits / registrations) already discovered for it (discovery assumed every activity is present, so the list is deliberately broad).
+You are given, IN PRIORITY ORDER, the entity's uploaded licences/registrations (and their document text), the regulator that issued them, the activities those licences AUTHORISE, the entity's nature of operations, its known primary facts (already answered), and the list of regulatory items already discovered for it. Discovery deliberately assumed every activity is present, so the discovered list is broad ON PURPOSE.
 
-Generate FOLLOW-UP qualification questions whose answers let us decide which discovered items are actually Mandatory, Conditional, or Not applicable for THIS entity.
+PURPOSE — APPLICABILITY ONLY. Your questions exist solely to decide which ALREADY-DISCOVERED items are Mandatory, Conditional, Not Applicable, or exempt for THIS entity. They must NEVER be used to shrink, gate, or remove items from the discovered universe — discovery is the source of truth for WHAT could apply; you only validate applicability, conditionality and exemptions.
 
-Rules:
-- Tailor questions to THIS entity — its jurisdiction, industry, nature of operations, licenses, and the discovered items. Do NOT produce generic boilerplate.
-- Every question must change the applicability of at least one discovered item.
-- Prefer closed answers (yes/no, threshold bands, frequencies) over free text.
-- THRESHOLDS: when a question turns on a threshold/limit, STATE THE ACTUAL FIGURE in the question text or the option labels (e.g. "Are cash transactions above the CAD 10,000 reporting threshold?", options "Over the AED 375,000 corporate-tax threshold"). Never ask "above the threshold?" without naming the number for that jurisdiction.
-- `primary_key`: these PRIMARY activities are already asked separately —
+FACT HIERARCHY — resolve every fact from these sources IN ORDER, and ask ONLY about facts that remain genuinely uncertain after evaluating all six:
+1. Uploaded licences / registrations (and their document text)
+2. The regulator identified from those licences
+3. The activities the licences AUTHORISE
+4. Nature of operations
+5. Known primary facts (already answered)
+6. Generic assumptions
+
+DO NOT ASK what is already established:
+- If a licence/registration, the issuing regulator, the authorised activities, the nature of operations, or a known primary fact already establishes a fact, do NOT ask it.
+- Never ask whether the entity holds a licence/registration it has already uploaded, and never ask the regulator to be identified — those are given.
+- Never re-ask a primary question (the `primary_key` ids below) or any fact already present in the known primary facts.
+
+ASK only what the documents cannot tell you — the high-impact facts only the entity can confirm:
+- AUTHORISED vs PERFORMED: a licence lists what the entity MAY do, not what it actually DOES. When a licence authorises several activities, ask which ones the entity ACTUALLY performs — each performed activity gates its own obligations. E.g. when a licence authorises money-services activities, ask whether the entity actually performs each authorised activity (virtual-asset activity, money transmission, foreign-exchange dealing, ...) — do NOT ask whether it is a money-services business (the licence already confirms that).
+- For a payment-services licence: ask whether customer funds are held / safeguarded, and whether cross-border payment services are provided — do NOT ask whether it provides payment services (the licence confirms it).
+- For a financial-services licence: ask activity-specific operational questions — do NOT ask regulator-identification questions.
+- Other applicability drivers only the entity knows: whether thresholds are met, registration/operating status (active vs dormant), employee headcount bands, tax-registration status, exemption eligibility, and filing frequencies.
+
+DYNAMIC + JURISDICTION-SPECIFIC: the same primary question is global, but your follow-ups MUST vary by regulator, licence type, authorised activities, nature of operations, and jurisdiction. No generic boilerplate.
+
+THRESHOLDS: when a question turns on a threshold/limit, STATE THE ACTUAL FIGURE for that jurisdiction in the question text or the option labels (e.g. "Are electronic funds transfers at or above the CAD 10,000 reporting threshold?", "Over the AED 375,000 corporate-tax threshold"). Never ask "above the threshold?" without naming the number.
+
+`primary_key`: these PRIMARY activities are already asked separately —
   registered_company, licensed_financial_activity, holds_customer_funds,
   employs_staff, grants_equity, takes_foreign_investment,
   intra_group_transactions, holds_personal_data, vat_gst_registered,
@@ -399,7 +417,8 @@ Rules:
   is "yes"), set `primary_key` to that id so it can be shown beneath it. If it
   is a general operation/nature-driven question not tied to a primary, leave
   `primary_key` null. Do NOT re-ask the primary questions themselves.
-- Produce 4-10 questions. Each needs: a stable snake_case `key`, the `question` text, 2-4 `options` (each {value, label}), `drives` (the item/family it gates), and `primary_key` (or null).
+
+Every question MUST change the applicability of at least one already-discovered item and name that item/family in `drives`. Prefer closed answers (yes/no, threshold bands, frequencies) over free text. Produce 4-10 questions. Each needs: a stable snake_case `key`, the `question` text, 2-4 `options` (each {value, label}), `drives`, and `primary_key` (or null).
 Return ONLY JSON matching the schema — no prose."""
 
 

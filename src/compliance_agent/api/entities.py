@@ -743,6 +743,7 @@ def generate_entity_questions(
         is_live,
         RuleExtractorUnavailable,
     )
+    from compliance_agent.api.licenses import _read_license_text, _MAX_PROMPT_CHARS
 
     entity = db.get(Entity, entity_id)
     if entity is None:
@@ -759,15 +760,33 @@ def generate_entity_questions(
         f"- {l.name} | {l.authority} | {l.license_type or 'n/a'} | {l.license_number or 'n/a'}"
         for l in licenses
     ) or "(none uploaded)"
+    # Feed the licence DOCUMENT TEXT, not just metadata: the generator must see
+    # what the licence/regulator/authorised-activities already establish so it
+    # does NOT re-ask facts that are extractable from the documents.
+    lic_texts: list[str] = []
+    for l in licenses:
+        try:
+            t = _read_license_text(l)
+        except Exception:  # noqa: BLE001
+            t = ""
+        if t and len(t.strip()) >= 200:
+            lic_texts.append(f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:8000]}")
+    # Primary answers already on file — the generator must never re-ask these.
+    profile = entity.finance_profile or {}
+    known_block = "\n".join(
+        f"- {k}: {v}" for k, v in profile.items() if v not in (None, "")
+    ) or "(none answered yet)"
     items_block = "\n".join(f"- {r.form_name} ({r.category})" for r in discovered) or "(none yet)"
     context = (
         f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {entity.jurisdiction_code}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
         f"Nature of operations: {entity.nature_of_operation or '(not provided)'}\n\n"
-        f"LICENSES HELD:\n{lic_block}\n\n"
-        f"REGULATORY ITEMS ALREADY DISCOVERED:\n{items_block}\n"
-    )
+        f"LICENSES / REGISTRATIONS HELD:\n{lic_block}\n"
+        + "".join(lic_texts)
+        + f"\n\nKNOWN PRIMARY FACTS (already answered — never re-ask):\n{known_block}\n\n"
+        f"REGULATORY ITEMS ALREADY DISCOVERED (validate applicability only — never remove):\n{items_block}\n"
+    )[:_MAX_PROMPT_CHARS]
 
     try:
         result = generate_secondary_questions(context, )
