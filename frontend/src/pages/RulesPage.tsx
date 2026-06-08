@@ -552,17 +552,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  // Mark an approved obligation inactive (archive it) when it no longer applies.
-  const archiveMutation = useMutation({
-    mutationFn: (id: number) =>
-      api.patch<Rule>(`/api/rules/${id}`, { status: "archived" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["obligations"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
 
   const backfillMutation = useMutation({
     mutationFn: () =>
@@ -672,7 +661,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
-              <th className="px-3 py-2.5 w-8" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -747,28 +735,6 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                       <span className="text-amber-700 italic">+ add URL</span>
                     )}
                   </button>
-                </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                  {isAdmin && r.status === "production" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      title="Mark inactive — archive this obligation (no longer applies)"
-                      disabled={archiveMutation.isPending}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Mark "${r.form_name}" inactive? It will be archived and stop generating filings.`,
-                          )
-                        ) {
-                          archiveMutation.mutate(r.id);
-                        }
-                      }}
-                    >
-                      <Archive className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                 </td>
               </tr>
             ))}
@@ -1055,20 +1021,6 @@ function StagingCard({ rule }: { rule: Rule }) {
                     Edit
                   </Button>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-red-600"
-                    disabled={busy}
-                    onClick={() => {
-                      if (window.confirm("Reject this rule? It will be archived (not deleted).")) {
-                        rejectMutation.mutate();
-                      }
-                    }}
-                  >
-                    {rejectMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Reject
-                  </Button>
-                  <Button
                     variant="ghost"
                     size="sm"
                     className="text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -1107,6 +1059,16 @@ function StagingTable({ rules }: { rules: Rule[] }) {
   const queryClient = useQueryClient();
   const openFiling = useOpenFiling();
   const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    staleTime: 300_000,
+  });
+  const userName = (id: number | null) => {
+    if (!id) return "—";
+    const u = users.find((x) => x.id === id);
+    return u ? u.full_name || u.email : "—";
+  };
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
@@ -1131,11 +1093,12 @@ function StagingTable({ rules }: { rules: Rule[] }) {
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
               <th className="px-3 py-2.5 text-left font-medium">Jurisdiction</th>
-              <th className="px-3 py-2.5 text-left font-medium">Obligation</th>
+              <th className="px-3 py-2.5 text-left font-medium">Form / Report</th>
               <th className="px-3 py-2.5 text-left font-medium">Authority</th>
               <th className="px-3 py-2.5 text-left font-medium">Category</th>
               <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
-              <th className="px-3 py-2.5 text-left font-medium">Due date</th>
+              <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
+              <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
               <th className="px-3 py-2.5 text-right font-medium">Actions</th>
             </tr>
@@ -1163,6 +1126,7 @@ function StagingTable({ rules }: { rules: Rule[] }) {
                 <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[220px] truncate" title={r.due_date_rule}>
                   {r.due_date_rule || "—"}
                 </td>
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">{userName(r.owner_id)}</td>
                 <td className="px-3 py-2.5 text-xs">
                   <button
                     type="button"
@@ -1182,15 +1146,6 @@ function StagingTable({ rules }: { rules: Rule[] }) {
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <Button size="sm" disabled={busy} onClick={() => approve.mutate(r.id)}>
                     Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-red-600 ml-1"
-                    disabled={busy}
-                    onClick={() => reject.mutate(r.id)}
-                  >
-                    Reject
                   </Button>
                 </td>
               </tr>
