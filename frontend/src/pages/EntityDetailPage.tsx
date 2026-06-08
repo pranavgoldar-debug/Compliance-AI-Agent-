@@ -1023,6 +1023,11 @@ function ComplianceRulesTab({
   const review = staging.filter((r) => r.entity_ids.includes(entity.id));
   const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
 
+  // Regulatory-body filter for the discovered list. Options derive from the
+  // discovered rules' authorities — which are this entity's jurisdiction's
+  // regulators — so the list changes with the jurisdiction.
+  const [regFilter, setRegFilter] = useState("");
+
   // Filters for the discovered list — by function and category. Fall back to a
   // client-side derive when the server hasn't set responsible_function.
   const allDiscovered = [...review, ...confirmed];
@@ -1038,9 +1043,13 @@ function ComplianceRulesTab({
   const categories = Array.from(
     new Set(allDiscovered.map((r) => r.category).filter(Boolean)),
   ).sort();
+  const regulators = Array.from(
+    new Set(allDiscovered.map((r) => r.authority).filter(Boolean)),
+  ).sort();
   const matchFilter = (r: Rule) =>
     (!fnFilter || fnOf(r) === fnFilter) &&
-    (!catFilter || r.category === catFilter);
+    (!catFilter || r.category === catFilter) &&
+    (!regFilter || r.authority === regFilter);
   const reviewShown = review.filter(matchFilter);
   const confirmedShown = confirmed.filter(matchFilter);
   const [addManualOpen, setAddManualOpen] = useState(false);
@@ -1230,11 +1239,22 @@ function ComplianceRulesTab({
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-              {(fnFilter || catFilter) && (
+              <select
+                value={regFilter}
+                onChange={(e) => setRegFilter(e.target.value)}
+                className="h-8 min-w-[160px] rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="">All regulatory bodies</option>
+                {regulators.map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+              {(fnFilter || catFilter || regFilter) && (
                 <button
                   onClick={() => {
                     setFnFilter("");
                     setCatFilter("");
+                    setRegFilter("");
                   }}
                   className="text-xs text-aspora-700 hover:underline"
                 >
