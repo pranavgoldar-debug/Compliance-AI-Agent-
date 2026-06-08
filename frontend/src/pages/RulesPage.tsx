@@ -423,7 +423,7 @@ export function RulesPage() {
           )}
         </div>
       ) : (
-        <ProductionTable rules={filtered} />
+        <ProductionTable rules={filtered} tab={tab} />
       )}
     </div>
   );
@@ -506,7 +506,7 @@ function ChangesPanel({ rules }: { rules: Rule[] }) {
 // ---------------------------------------------------------------------------
 // Production table
 // ---------------------------------------------------------------------------
-function ProductionTable({ rules }: { rules: Rule[] }) {
+function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
   const openFiling = useOpenFiling();
   const [checking, setChecking] = useState<Rule | null>(null);
   const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
