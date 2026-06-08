@@ -391,6 +391,38 @@ def delete_rule(
     return Response(status_code=204)
 
 
+class BulkDeletePayload(BaseModel):
+    ids: list[int]
+
+
+class BulkDeleteResult(BaseModel):
+    deleted: int
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResult)
+def bulk_delete_rules(
+    payload: BulkDeletePayload,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> BulkDeleteResult:
+    """Admin-only: permanently delete exactly the given rules (and their
+    obligations). Used to clear ONE section (For Action / Approved / Archived)
+    independently — the caller passes only that section's rule ids, so clearing
+    one section never touches the others."""
+    deleted = 0
+    for rid in payload.ids:
+        rule = db.get(Rule, rid)
+        if rule is not None:
+            _delete_rule_cascade(db, rule)
+            deleted += 1
+    log_activity(
+        db, actor_id=actor.id, action="rules.bulk_deleted",
+        target_type="rule", target_id=None, payload={"deleted": deleted},
+    )
+    db.commit()
+    return BulkDeleteResult(deleted=deleted)
+
+
 class CleanupRecentResult(BaseModel):
     deleted_rules: int
     deleted_obligations: int

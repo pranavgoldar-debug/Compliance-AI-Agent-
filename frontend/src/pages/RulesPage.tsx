@@ -571,19 +571,21 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  const wipeMutation = useMutation({
-    mutationFn: () =>
-      api.post<{ rules: number; obligations: number }>(
-        "/api/rules/wipe-catalogue",
-      ),
+  // Clear ONLY the section you're viewing — delete just this tab's rule ids,
+  // so clearing For Action / Approved / Archived never touches the others.
+  const sectionLabel =
+    tab === "staging" ? "For Action" : tab === "production" ? "Approved" : "Archived";
+  const clearSection = useMutation({
+    mutationFn: (ids: number[]) =>
+      api.post<{ deleted: number }>("/api/rules/bulk-delete", { ids }),
     onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["license-rules"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["obligations"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       window.alert(
-        `Catalogue cleared. Deleted ${r.rules} rule(s) and ${r.obligations} calendar filing(s). Users, entities and licenses are untouched.\n\nNow open a license and use "Find Regulations" to rebuild the catalogue.`,
+        `Cleared ${r.deleted} rule(s) from the ${sectionLabel} section. Other sections are untouched.`,
       );
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
@@ -601,22 +603,24 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
               variant="outline"
               size="sm"
               className="text-destructive hover:text-destructive hover:bg-destructive/10"
-              disabled={wipeMutation.isPending}
+              disabled={clearSection.isPending || !(rules && rules.length)}
               onClick={() => {
+                const ids = (rules ?? []).map((r) => r.id);
+                if (!ids.length) return;
                 if (
                   window.confirm(
-                    "Clear the ENTIRE catalogue? This deletes every rule and every calendar filing (obligations). Users, entities and licenses stay.\n\nThis is for starting clean with the AI-first flow — rebuild via 'Find Regulations'. Cannot be undone.",
+                    `Clear the ${sectionLabel} section? This permanently deletes the ${ids.length} rule(s) in THIS section (and their calendar filings). The other sections are untouched. Cannot be undone.`,
                   )
                 ) {
-                  wipeMutation.mutate();
+                  clearSection.mutate(ids);
                 }
               }}
-              title="Delete all rules + calendar entries. Users/entities/licenses stay."
+              title={`Delete only the rules in the ${sectionLabel} section`}
             >
-              {wipeMutation.isPending && (
+              {clearSection.isPending && (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               )}
-              Clear all rules
+              Clear {sectionLabel}
             </Button>
             <Button
               variant="outline"
