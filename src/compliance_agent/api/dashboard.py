@@ -47,7 +47,9 @@ def dashboard(
     # FINANCE_ONLY switch: every counter / list below is scoped to obligations
     # whose rule belongs to the Finance function. `fin` is an extra WHERE
     # clause (empty when the switch is off, so the full set shows).
-    fin: list = []
+    # Exclude obligations of archived entities from every dashboard counter and
+    # list below (archiving an entity archives its filings off the dashboard).
+    fin: list = [Obligation.entity.has(Entity.archived_at.is_(None))]
     if FINANCE_ONLY:
         allowed_rule_ids = [
             r.id

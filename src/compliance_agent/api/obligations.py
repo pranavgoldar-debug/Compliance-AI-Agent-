@@ -37,6 +37,7 @@ from compliance_agent.db import (
     Comment,
     Department,
     Document,
+    Entity,
     Notification,
     NotificationKind,
     Obligation,
@@ -73,6 +74,9 @@ def list_obligations(
     _: User = Depends(get_current_user),
 ) -> list[ObligationOut]:
     stmt = _base_query()
+    # Hide obligations of archived entities — archiving an entity archives its
+    # filings (they stay in the DB, just off the active views).
+    stmt = stmt.where(Obligation.entity.has(Entity.archived_at.is_(None)))
     if entity_id is not None:
         stmt = stmt.where(Obligation.entity_id == entity_id)
     if assignee_id is not None:
@@ -660,6 +664,8 @@ def calendar_range(
     stmt = (
         select(Obligation)
         .where(Obligation.due_date >= start, Obligation.due_date <= end)
+        # Archived entities' filings stay off the calendar.
+        .where(Obligation.entity.has(Entity.archived_at.is_(None)))
         .options(
             joinedload(Obligation.rule),
             joinedload(Obligation.entity),

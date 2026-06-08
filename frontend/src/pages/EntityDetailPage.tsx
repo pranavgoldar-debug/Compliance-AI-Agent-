@@ -1000,15 +1000,18 @@ function ComplianceRulesTab({
 
   // Entity-level discovery — driven by Nature of Operations + jurisdiction +
   // ALL licenses. Works with no license attached.
-  const discover = useMutation<{ available: boolean; created: number; notes?: string | null }>({
+  const discover = useMutation<{ available: boolean; created: number; duplicates_removed?: number; notes?: string | null }>({
     mutationFn: () => api.post(`/api/entities/${entity.id}/discover-regulations`),
     onSuccess: (r) => {
       refresh();
       if (r && r.available === false) {
         window.alert(r.notes || "AI is off in this deployment.");
       } else if (r) {
+        const removed = r.duplicates_removed
+          ? ` ${r.duplicates_removed} duplicate(s) removed.`
+          : "";
         window.alert(
-          `${r.created} regulation(s) discovered. Review them below, run "Activities" → "Find applicable regulations", then send the ones you want to Review & Assign.`,
+          `${r.created} regulation(s) discovered.${removed} Review them below, run "Activities" → "Find applicable regulations", then send the ones you want to Review & Assign.`,
         );
       }
     },

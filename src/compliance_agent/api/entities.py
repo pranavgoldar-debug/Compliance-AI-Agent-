@@ -114,6 +114,11 @@ def archive_entity(
     entity = db.get(Entity, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found.")
+    # Soft archive: flag the entity. Its obligations are NOT deleted — they are
+    # hidden from the active calendar / obligations / tasks / dashboard views
+    # (those filter out archived entities), so archiving an entity effectively
+    # archives its obligations too, reversibly. A hard delete is what removes
+    # the obligations for good.
     entity.archived_at = datetime.now(tz=timezone.utc)
     log_activity(
         db, actor_id=user.id, action="entity.archived", target_type="entity", target_id=entity.id
@@ -467,15 +472,89 @@ def _fallback_verdict(rule, entity) -> str:
 
 
 def _dedupe_key(text: Optional[str]) -> str:
-    """Normalize a filing name/form for duplicate detection: lowercase, drop
-    parenthetical asides, strip punctuation and collapse whitespace, and remove
-    generic filler words so 'Annual Accounts' and 'Annual Accounts (filing)'
-    or 'Annual Accounts Return' collapse to the same key."""
+    """Normalize a filing name/form for duplicate detection so near-duplicates
+    collapse to one key: lowercase, drop parenthetical asides, strip
+    punctuation, remove generic filler words, SINGULARISE tokens (so
+    'Asset'/'Assets' and 'Event'/'Events' match) and SORT them (so word-order
+    variants like 'Notification of Significant Events' and 'Significant Events
+    Notification' match). E.g. 'Client Money and Asset Return' and 'Client Money
+    and Assets Return' collapse to the same key."""
     s = re.sub(r"\([^)]*\)", " ", (text or "").lower())
     s = re.sub(r"[^a-z0-9]+", " ", s)
     # Drop noise words that don't distinguish one filing from another.
     drop = {"the", "a", "an", "of", "for", "to", "and", "filing", "form"}
-    return " ".join(w for w in s.split() if w not in drop).strip()
+    toks = []
+    for w in s.split():
+        if w in drop:
+            continue
+        # Crude singularisation so plural/singular phrasings share a key. Only
+        # for longer tokens, so short words aren't mangled. Applied to both
+        # sides of the comparison, so it stays internally consistent.
+        if len(w) >= 4 and w.endswith("s"):
+            w = w[:-1]
+        toks.append(w)
+    # Sort so word order doesn't create a false distinction.
+    return " ".join(sorted(toks)).strip()
+
+
+def _norm_freq(freq: Optional[str]) -> str:
+    """Normalize a frequency for duplicate signatures, so two rules count as the
+    same filing only when their cadence also matches — this keeps genuinely
+    distinct same-name filings (e.g. a Quarterly vs an Annual return) apart."""
+    return re.sub(r"[^a-z0-9]+", "", (freq or "").lower())
+
+
+def _dup_signatures(name, form_name, frequency) -> set:
+    """Duplicate signatures for a filing: the normalized name key and form key,
+    each paired with the normalized cadence. Two filings are duplicates only
+    when they share a signature (same normalized name/form AND same frequency)."""
+    f = _norm_freq(frequency)
+    return {(k, f) for k in (_dedupe_key(name), _dedupe_key(form_name)) if k}
+
+
+def _collapse_duplicate_rules(db, entity) -> int:
+    """Remove duplicate rules that accumulated across earlier refreshes. Group
+    the entity's rules by duplicate signature (normalized name/form + cadence);
+    within each group keep the safest copy to retain — the one that already has
+    calendar obligations, else the most-progressed (production > sent-to-review
+    > staging), else the oldest — and delete the redundant copies that have NO
+    obligations and belong solely to this entity. Keying deletion on "has no
+    obligations" (rather than status) is what makes this remove the duplicates
+    you actually see, while never orphaning a scheduled filing. Returns the
+    number removed."""
+    from collections import defaultdict
+    from compliance_agent.db import RuleStatus
+    from compliance_agent.api.rules import _delete_rule_cascade
+
+    groups: dict = defaultdict(list)
+    for r in list(entity.rules):
+        key = _dedupe_key(r.name) or _dedupe_key(r.form_name)
+        if key:
+            groups[(key, _norm_freq(r.frequency))].append(r)
+
+    removed = 0
+    for rules in groups.values():
+        if len(rules) < 2:
+            continue
+        # Keep the safest copy: one that already has obligations, else the
+        # most-progressed, else the oldest.
+        keep, *rest = sorted(
+            rules,
+            key=lambda r: (
+                1 if r.obligations else 0,
+                1 if r.status == RuleStatus.production else 0,
+                1 if getattr(r, "sent_to_review", False) else 0,
+                -(r.id or 0),
+            ),
+            reverse=True,
+        )
+        for r in rest:
+            # Delete a redundant copy only when it has NO scheduled obligations
+            # (nothing to orphan) and isn't shared with another entity.
+            if not r.obligations and not [e for e in r.entities if e.id != entity.id]:
+                _delete_rule_cascade(db, r)
+                removed += 1
+    return removed
 
 
 def _vat_return_overrides(profile: Optional[dict]) -> Optional[tuple[str, str]]:
@@ -627,7 +706,14 @@ def discover_entity_regulations(
         except Exception:  # noqa: BLE001
             t = ""
         if t and len(t.strip()) >= 200:
-            lic_texts.append(f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:8000]}")
+            # Match the license-path budget: the whole context is clamped to
+            # _MAX_PROMPT_CHARS below (which protects the front-matter facts), so
+            # cap per-document at the same budget rather than an arbitrary 8k —
+            # otherwise authorised activities deep in a licence never reach the
+            # model on this path.
+            lic_texts.append(
+                f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:_MAX_PROMPT_CHARS]}"
+            )
 
     context = (
         "Discover the regulatory obligations that GENUINELY APPLY to the entity "
@@ -661,19 +747,20 @@ def discover_entity_regulations(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
 
-    # Dedupe on the normalized name AND form_name, so near-duplicates the model
-    # phrases slightly differently (e.g. two 'Annual Accounts' with different
-    # due wording, or 'Annual Accounts' vs 'Annual Accounts (filing)') collapse
-    # to a single rule instead of both landing on the discovered list.
-    existing: set[str] = set()
+    # First collapse duplicates that earlier refreshes persisted, so the
+    # discovered list stops showing repeats of the same filing. Then dedupe new
+    # candidates on (normalized name/form + cadence): an exact repeat is
+    # skipped, but a genuinely different-cadence filing of the same name is kept.
+    deduped = _collapse_duplicate_rules(db, entity)
+    existing: set = set()
     for r in entity.rules:
-        existing.update(k for k in (_dedupe_key(r.name), _dedupe_key(r.form_name)) if k)
+        existing |= _dup_signatures(r.name, r.form_name, r.frequency)
     created: list = []
     for cand in result.rules:
-        keys = {k for k in (_dedupe_key(cand.name), _dedupe_key(cand.form_name)) if k}
-        if not keys or keys & existing:
+        sigs = _dup_signatures(cand.name, cand.form_name, cand.frequency)
+        if not sigs or sigs & existing:
             continue
-        existing |= keys
+        existing |= sigs
         rule = Rule(
             name=cand.name,
             jurisdiction_code=(juris or "xx")[:16],
@@ -721,10 +808,16 @@ def discover_entity_regulations(
         entity.qualification = {**(entity.qualification or {}), "coverage_notes": cov}
     log_activity(
         db, actor_id=user.id, action="entity.discovered_regulations",
-        target_type="entity", target_id=entity_id, payload={"created": len(created)},
+        target_type="entity", target_id=entity_id,
+        payload={"created": len(created), "duplicates_removed": deduped},
     )
     db.commit()
-    return {"available": True, "created": len(created), "notes": result.notes}
+    return {
+        "available": True,
+        "created": len(created),
+        "duplicates_removed": deduped,
+        "notes": result.notes,
+    }
 
 
 @router.post("/{entity_id}/generate-questions")
@@ -743,6 +836,7 @@ def generate_entity_questions(
         is_live,
         RuleExtractorUnavailable,
     )
+    from compliance_agent.api.licenses import _read_license_text, _MAX_PROMPT_CHARS
 
     entity = db.get(Entity, entity_id)
     if entity is None:
@@ -759,15 +853,33 @@ def generate_entity_questions(
         f"- {l.name} | {l.authority} | {l.license_type or 'n/a'} | {l.license_number or 'n/a'}"
         for l in licenses
     ) or "(none uploaded)"
+    # Feed the licence DOCUMENT TEXT, not just metadata: the generator must see
+    # what the licence/regulator/authorised-activities already establish so it
+    # does NOT re-ask facts that are extractable from the documents.
+    lic_texts: list[str] = []
+    for l in licenses:
+        try:
+            t = _read_license_text(l)
+        except Exception:  # noqa: BLE001
+            t = ""
+        if t and len(t.strip()) >= 200:
+            lic_texts.append(f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:8000]}")
+    # Primary answers already on file — the generator must never re-ask these.
+    profile = entity.finance_profile or {}
+    known_block = "\n".join(
+        f"- {k}: {v}" for k, v in profile.items() if v not in (None, "")
+    ) or "(none answered yet)"
     items_block = "\n".join(f"- {r.form_name} ({r.category})" for r in discovered) or "(none yet)"
     context = (
         f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {entity.jurisdiction_code}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
         f"Nature of operations: {entity.nature_of_operation or '(not provided)'}\n\n"
-        f"LICENSES HELD:\n{lic_block}\n\n"
-        f"REGULATORY ITEMS ALREADY DISCOVERED:\n{items_block}\n"
-    )
+        f"LICENSES / REGISTRATIONS HELD:\n{lic_block}\n"
+        + "".join(lic_texts)
+        + f"\n\nKNOWN PRIMARY FACTS (already answered — never re-ask):\n{known_block}\n\n"
+        f"REGULATORY ITEMS ALREADY DISCOVERED (validate applicability only — never remove):\n{items_block}\n"
+    )[:_MAX_PROMPT_CHARS]
 
     try:
         result = generate_secondary_questions(context, )
