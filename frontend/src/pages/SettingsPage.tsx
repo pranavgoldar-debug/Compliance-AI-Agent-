@@ -1837,29 +1837,27 @@ function AlertPoliciesTab() {
     <Card>
       <CardContent className="p-6 space-y-5">
         <div>
-          <h3 className="font-semibold">Lead-time mapping</h3>
-          <p className="text-xs text-muted-foreground">Effort band → days before due date the alert fires.</p>
+          <h3 className="font-semibold">Reminder lead times</h3>
+          <p className="text-xs text-muted-foreground">Filing cadence → days before the due date the first alert fires, and how often reminders then repeat.</p>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-secondary/30 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">Effort band</th>
+              <th className="px-3 py-2 text-left font-medium">Filing cadence</th>
               <th className="px-3 py-2 text-left font-medium">Days before due</th>
               <th className="px-3 py-2 text-left font-medium">Reminder cadence</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {[
-              { b: "1w", d: 14, c: "Daily after alert" },
-              { b: "2w", d: 28, c: "Every 2 days" },
-              { b: "4w", d: 56, c: "Weekly until 14d, daily after" },
-              { b: "8w", d: 112, c: "Weekly" },
-              { b: "12w", d: 168, c: "Bi-weekly until 28d, weekly after" },
+              { cadence: "Monthly", d: 7, c: "Daily after alert" },
+              { cadence: "Quarterly", d: 30, c: "Every 2 days" },
+              { cadence: "Half-yearly", d: 45, c: "Weekly" },
+              { cadence: "Annual", d: 60, c: "Weekly until 14d, daily after" },
+              { cadence: "Multi-year / long-form", d: 90, c: "Bi-weekly until 28d, weekly after" },
             ].map((r) => (
-              <tr key={r.b}>
-                <td className="px-3 py-2">
-                  <Badge variant="default">{r.b}</Badge>
-                </td>
+              <tr key={r.cadence}>
+                <td className="px-3 py-2">{r.cadence}</td>
                 <td className="px-3 py-2 tabular-nums">{r.d}</td>
                 <td className="px-3 py-2 text-muted-foreground">{r.c}</td>
               </tr>

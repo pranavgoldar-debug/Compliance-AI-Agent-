@@ -568,7 +568,6 @@ function TableView({
                 align="right"
                 title="Obligations due within the next few weeks (approaching their deadline)."
               />
-              <SortTh label="Last activity" sortKey="last" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -625,9 +624,6 @@ function TableView({
                   ) : (
                     <span className="text-muted-foreground">0</span>
                   )}
-                </td>
-                <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                  {e.last_filed_at ? fmtRelative(e.last_filed_at) : "No filings yet"}
                 </td>
               </tr>
             ))}

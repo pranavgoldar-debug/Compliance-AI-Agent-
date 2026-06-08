@@ -236,8 +236,13 @@ export function RulesPage() {
   }, [rules, q, fn, groupSel, applic, dateOrder]);
 
   const functions = useMemo(() => {
-    if (!rules) return [];
-    return Array.from(new Set(rules.map(fnOf))).filter(Boolean).sort();
+    // Always offer the four canonical teams (in order) so Compliance is
+    // selectable even when no loaded row currently resolves to it.
+    const CANON = ["Finance", "Compliance", "Legal", "HR"];
+    const extras = Array.from(new Set((rules ?? []).map(fnOf)))
+      .filter((f) => f && !CANON.includes(f))
+      .sort();
+    return [...CANON, ...extras];
   }, [rules]);
 
   return (
