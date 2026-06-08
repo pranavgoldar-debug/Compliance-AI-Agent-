@@ -171,20 +171,21 @@ _AUTO_SEED_RUNNING = False
 
 
 def _auto_seed_if_empty() -> None:
-    """First-boot bootstrap. If the users table is empty, run the demo seed
-    so logins work without anyone having to SSH in. After that, this is a
-    one-query no-op on every restart.
+    """First-boot bootstrap. If the users table is empty, ensure a single admin
+    login exists so the app is usable — WITHOUT seeding any demo entities,
+    rules or obligations. Real entities + licenses are uploaded by the user;
+    obligations are generated from those, never from the demo data.
 
-    Can be disabled by setting COMPLIANCE_AUTO_SEED=0 in the environment —
-    useful if you're about to import production data and don't want demo
-    rows in the way.
+    After the first boot this is a one-query no-op on every restart.
 
     Env vars:
-      COMPLIANCE_AUTO_SEED=0          → skip entirely
-      COMPLIANCE_AUTO_SEED_NO_ASSIGN=1 → seed users/entities/rules but leave
-                                        obligations unassigned
-      COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS=1 → seed users/entities/rules only;
-                                        skip obligation generation
+      COMPLIANCE_AUTO_SEED=0       → skip entirely (no admin created)
+      COMPLIANCE_AUTO_SEED_FULL=1  → load the full demo seed (users + entities
+                                     + rules + obligations) instead of the
+                                     admin-only bootstrap. Use only when you
+                                     explicitly want the demo data back.
+      COMPLIANCE_ADMIN_EMAIL / COMPLIANCE_ADMIN_PASSWORD / COMPLIANCE_ADMIN_NAME
+                                   → override the bootstrap admin credentials.
     """
     global _AUTO_SEED_RUNNING
     if _AUTO_SEED_RUNNING:
@@ -206,15 +207,21 @@ def _auto_seed_if_empty() -> None:
 
     _AUTO_SEED_RUNNING = True
     try:
-        # Lazy import — the seed-only modules aren't needed in steady state.
-        from compliance_agent.db.seed import run_seed
+        if os.environ.get("COMPLIANCE_AUTO_SEED_FULL") == "1":
+            # Explicit opt-in: restore the full demo dataset.
+            from compliance_agent.db.seed import run_seed
 
-        no_obligations = os.environ.get("COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS") == "1"
-        no_assign = os.environ.get("COMPLIANCE_AUTO_SEED_NO_ASSIGN") == "1"
-        run_seed(
-            auto_assign=not (no_assign or no_obligations),
-            create_obligations=not no_obligations,
-        )
+            no_obligations = os.environ.get("COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS") == "1"
+            no_assign = os.environ.get("COMPLIANCE_AUTO_SEED_NO_ASSIGN") == "1"
+            run_seed(
+                auto_assign=not (no_assign or no_obligations),
+                create_obligations=not no_obligations,
+            )
+        else:
+            # Default: admin login only — no demo entities/rules/obligations.
+            from compliance_agent.db.seed import seed_admin_only
+
+            seed_admin_only()
     except Exception as e:  # noqa: BLE001
         # Never block boot on seed failure. Surface in logs so an admin
         # can re-run seed manually if they need to.

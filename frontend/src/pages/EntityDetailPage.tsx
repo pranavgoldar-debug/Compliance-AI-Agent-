@@ -1060,7 +1060,8 @@ function ComplianceRulesTab({
   });
 
   // Entity-level discovery — driven by Nature of Operations + jurisdiction +
-  // ALL licenses. Works with no license attached.
+  // ALL licenses. Requires at least one license AND a nature of operations
+  // (gated below + enforced by the backend with a 400).
   const discover = useMutation<{ available: boolean; created: number; duplicates_removed?: number; notes?: string | null }>({
     mutationFn: () => api.post(`/api/entities/${entity.id}/discover-regulations`),
     onSuccess: (r) => {
@@ -1079,7 +1080,17 @@ function ComplianceRulesTab({
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  void licenses; // discovery is entity-level now; licenses no longer gate it
+  // Hard gate: discovery requires BOTH a license on file AND a stated nature
+  // of operations (the backend enforces this with a 400). Reflect it in the UI
+  // so the action is disabled with a reason rather than failing on click.
+  const hasLicense = (licenses?.length ?? 0) > 0;
+  const hasNature = Boolean(entity.nature_of_operation && entity.nature_of_operation.trim());
+  const canDiscover = hasLicense && hasNature;
+  const discoverBlockedReason = !hasLicense
+    ? "Upload at least one license for this entity first."
+    : !hasNature
+      ? "Set the entity's nature of operations first."
+      : "";
   // Both staging + confirmed forms, so a re-run doesn't duplicate what's
   // already in Review or Confirmed.
   const confirmedForms = [...confirmed, ...review].map((r) => r.form_name || r.name);
@@ -1153,7 +1164,11 @@ function ComplianceRulesTab({
                   <Plus className="h-4 w-4" />
                   Add regulation
                 </Button>
-                <Button onClick={() => discover.mutate()} disabled={discover.isPending}>
+                <Button
+                  onClick={() => discover.mutate()}
+                  disabled={discover.isPending || !canDiscover}
+                  title={discoverBlockedReason || undefined}
+                >
                   {discover.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (

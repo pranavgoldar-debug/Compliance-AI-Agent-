@@ -844,7 +844,11 @@ def discover_entity_regulations(
     """Entity-level discovery: from the entity's Nature of Operations,
     jurisdiction and ALL its licenses, ask the AI for the MAXIMAL set of
     regulatory obligations (all functions / item types, assume every activity
-    present). Works even with no license. Persists new items as Staging."""
+    present). Persists new items as Staging.
+
+    HARD GATE: requires BOTH at least one uploaded license AND a stated nature
+    of operations. Without them there's nothing entity-specific to ground on,
+    so we refuse rather than emit generic guesses."""
     from compliance_agent.db import License, Rule, RuleStatus
     from compliance_agent.classification import derive_function, owner_team_engine
     from compliance_agent.rule_extractor import (
@@ -863,6 +867,23 @@ def discover_entity_regulations(
 
     juris = entity.jurisdiction_code
     licenses = db.execute(select(License).where(License.entity_id == entity_id)).scalars().all()
+
+    # HARD GATE: both a license on file AND a stated nature of operations are
+    # mandatory before we generate anything. The license grounds what the
+    # entity is authorised to do; the nature of operations drives the
+    # follow-up questions and the mandatory-vs-not classification. Missing
+    # either → refuse (HTTP 400) instead of emitting generic guesses.
+    if not licenses:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload at least one license for this entity before generating obligations.",
+        )
+    if not (entity.nature_of_operation or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Set the entity's nature of operations before generating obligations.",
+        )
+
     lic_lines = [
         f"- {l.name} | {l.authority} | type {l.license_type or 'n/a'} | no {l.license_number or 'n/a'}"
         for l in licenses
