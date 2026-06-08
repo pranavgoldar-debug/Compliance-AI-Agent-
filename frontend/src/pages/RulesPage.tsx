@@ -156,7 +156,7 @@ function useOpenFiling() {
 
 export function RulesPage() {
   const [tab, setTab] = useState<RuleStatus>("staging");
-  const [stagingView, setStagingView] = useState<"card" | "table">("card");
+  const [stagingView, setStagingView] = useState<"card" | "table">("table");
   const [q, setQ] = useState("");
   const [jurisdictionCode, setJurisdictionCode] = useState<string>("");
   const [groupSel, setGroupSel] = useState<string[]>([]);
@@ -960,7 +960,7 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-aspora-700 hover:underline normal-case tracking-normal"
                   >
-                    View original regulation
+                    View source
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
@@ -1236,7 +1236,6 @@ function ExtractedField({
   onChange?: (v: string) => void;
   options?: string[];
 }) {
-  const conf = pseudoConfidence(value);
   const editable = editing && !!onChange;
   const base = editable
     ? "border-aspora-300 bg-background"
@@ -1245,7 +1244,6 @@ function ExtractedField({
     <div>
       <div className="flex items-center justify-between mb-1">
         <label className="text-[11px] font-medium text-muted-foreground">{label}</label>
-        <ConfidenceDot level={conf} />
       </div>
       {options ? (
         <select
