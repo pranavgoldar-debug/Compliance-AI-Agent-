@@ -1,7 +1,7 @@
 // Compliance Rules — admin manages the rule templates that generate per-entity
 // obligations. Two tabs: Production (flat table) and Staging (side-by-side
 // review cards with confidence indicators).
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
@@ -803,8 +803,8 @@ function ConfidenceDot({ level }: { level: Confidence }) {
 const TAX_TYPE_OPTIONS = ["Direct Tax", "Indirect Tax", "Not a Tax"];
 const APPLICABILITY_OPTIONS = ["Mandatory", "Conditional", "Sector-specific"];
 
-function StagingCard({ rule }: { rule: Rule }) {
-  const [open, setOpen] = useState(false);
+function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   const [editing, setEditing] = useState(false);
   const queryClient = useQueryClient();
 
@@ -1057,7 +1057,9 @@ function StagingCard({ rule }: { rule: Rule }) {
 // lives in the card view.
 function StagingTable({ rules }: { rules: Rule[] }) {
   const queryClient = useQueryClient();
-  const openFiling = useOpenFiling();
+  // Clicking a row expands it to the SAME inline review panel the card view
+  // shows (uniform behaviour across table + cards), not a separate drawer.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
@@ -1105,14 +1107,15 @@ function StagingTable({ rules }: { rules: Rule[] }) {
           </thead>
           <tbody className="divide-y divide-border">
             {rules.map((r) => (
-              <tr key={r.id} className="hover:bg-secondary/30">
+              <Fragment key={r.id}>
+              <tr className="hover:bg-secondary/30">
                 <td className="px-3 py-2.5">
                   <JurisdictionBadge code={r.jurisdiction_code} />
                 </td>
                 <td className="px-3 py-2.5 font-medium">
                   <button
                     type="button"
-                    onClick={() => openFiling(r)}
+                    onClick={() => setExpandedId((id) => (id === r.id ? null : r.id))}
                     className="text-left hover:text-aspora-700 hover:underline"
                   >
                     {r.form_name}
@@ -1149,6 +1152,14 @@ function StagingTable({ rules }: { rules: Rule[] }) {
                   </Button>
                 </td>
               </tr>
+              {expandedId === r.id && (
+                <tr>
+                  <td colSpan={9} className="p-3 bg-secondary/20">
+                    <StagingCard rule={r} defaultOpen />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
