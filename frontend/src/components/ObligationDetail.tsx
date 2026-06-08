@@ -715,37 +715,16 @@ function ActionBar({
           // without a UTR (refund, internal transfer) and still expect
           // final sign-off, not a return to filing-verify.
           if (status === "pending_review") {
-            const isFinalReview = obligation.department === "finance";
             return isAdmin ? (
               <>
-                {isFinalReview ? (
-                  <Button
-                    size="sm"
-                    onClick={() => onPatch({ status: "completed" })}
-                    disabled={saving}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Approve & close
-                  </Button>
-                ) : (
-                  <>
-                    <HandoffToFinanceButton
-                      obligationId={obligation.id}
-                      users={users}
-                      disabled={saving}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onPatch({ status: "completed" })}
-                      disabled={saving}
-                      title="No payment needed — close it without sending to finance"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Approve without payment
-                    </Button>
-                  </>
-                )}
+                <Button
+                  size="sm"
+                  onClick={() => onPatch({ status: "completed" })}
+                  disabled={saving}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Approve & close
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
