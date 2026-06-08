@@ -1251,11 +1251,10 @@ def applicable_rules(
                 select(Rule)
                 .where(
                     Rule.jurisdiction_code == lic.jurisdiction_code,
+                    # Mirror the Review & Assign "Approved" section exactly —
+                    # that tab is status == production (no extra approved_at
+                    # gate), so the license list shows the same approved set.
                     Rule.status == RuleStatus.production,
-                    # Only rules APPROVED in Review & Assign — approved_at is
-                    # stamped on the staging→production approval. Excludes any
-                    # production rule that wasn't human-approved there.
-                    Rule.approved_at.isnot(None),
                 )
                 .order_by(Rule.category, Rule.form_name)
             )
@@ -1756,10 +1755,11 @@ def schedule_rules_for_license(
 def _schedule_filings_for_license(
     db: Session, lic: License, *, mandatory_only: bool
 ) -> tuple[int, int, int]:
-    """Create a compliance obligation for every APPROVED production rule in the
-    licence's jurisdiction (approved in Review & Assign). Skips any that already
-    have an obligation on the computed due date. Returns (scheduled,
-    skipped_existing, applicable). Does NOT commit."""
+    """Create a compliance obligation for every approved (production) rule in
+    the licence's jurisdiction — the same set shown in the Review & Assign
+    "Approved" section. Skips any that already have an obligation on the
+    computed due date. Returns (scheduled, skipped_existing, applicable). Does
+    NOT commit."""
     pool = _dedupe_rules(
         [
             r
@@ -1767,9 +1767,6 @@ def _schedule_filings_for_license(
                 select(Rule).where(
                     Rule.jurisdiction_code == lic.jurisdiction_code,
                     Rule.status == RuleStatus.production,
-                    # Only rules approved in Review & Assign get scheduled, so
-                    # the calendar matches the approved obligations list.
-                    Rule.approved_at.isnot(None),
                 )
             )
             .scalars()
