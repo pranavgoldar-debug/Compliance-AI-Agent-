@@ -476,6 +476,27 @@ function GeneratedQuestionRow({
 }
 
 
+// Mirror the backend dedupe signature (normalized name/form + cadence) so the
+// "Add to Review" action never promotes a discovered draft that already exists
+// in Review or Confirmed.
+const _STOP_WORDS = ["the", "a", "an", "of", "for", "to", "and", "filing", "form"];
+function _normName(s?: string | null): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((w) => w && !_STOP_WORDS.includes(w))
+    .map((w) => (w.length >= 4 && w.endsWith("s") ? w.slice(0, -1) : w))
+    .sort()
+    .join(" ");
+}
+function ruleSigs(name?: string | null, form?: string | null, freq?: string | null): string[] {
+  const f = (freq || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return [_normName(name), _normName(form)].filter(Boolean).map((k) => `${k}|${f}`);
+}
+
+
 // "Activities" → a pop-up questionnaire (fixed primary questions, each
 // revealing its AI-generated follow-ups when set to "Yes", plus operation-
 // specific questions). On "Find applicable regulations" the AI reads the
@@ -587,25 +608,42 @@ function ApplicabilitySection({
 
   const addToReview = useMutation({
     mutationFn: async () => {
+      // Don't promote a draft that already exists in Review/Confirmed — skip
+      // (archive) it so the review section doesn't collect duplicates.
+      const itemRuleIds = new Set(items.map((i) => i.rule_id));
+      const existing = new Set<string>();
+      for (const r of [...staging.filter((r) => r.sent_to_review), ...production]) {
+        if (itemRuleIds.has(r.id)) continue;
+        ruleSigs(r.name, r.form_name, r.frequency).forEach((s) => existing.add(s));
+      }
+      let skipped = 0;
       await Promise.all(
         items
           .filter((i) => i.rule_id)
-          .map((i) =>
-            picked.has(i.form_name)
-              ? api.patch(`/api/rules/${i.rule_id}`, {
-                  status: "staging",
-                  sent_to_review: true,
-                  applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
-                })
-              : api.patch(`/api/rules/${i.rule_id}`, { status: "archived" }),
-          ),
+          .map((i) => {
+            if (!picked.has(i.form_name)) {
+              return api.patch(`/api/rules/${i.rule_id}`, { status: "archived" });
+            }
+            const dup = ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s));
+            if (dup) {
+              skipped++;
+              return api.patch(`/api/rules/${i.rule_id}`, { status: "archived" });
+            }
+            return api.patch(`/api/rules/${i.rule_id}`, {
+              status: "staging",
+              sent_to_review: true,
+              applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
+            });
+          }),
       );
+      return skipped;
     },
-    onSuccess: () => {
+    onSuccess: (skipped) => {
       queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["obligations"] });
-      window.alert(`${picked.size} obligation(s) sent to Review & Assign.`);
+      const note = skipped ? ` ${skipped} skipped — already in Review & Assign.` : "";
+      window.alert(`${picked.size - skipped} obligation(s) sent to Review & Assign.${note}`);
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
