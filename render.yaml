@@ -34,9 +34,17 @@ services:
       # redeploys — needed to sign session JWTs.
       - key: APP_SECRET
         generateValue: true
-      # COMPLIANCE_AGENT_LIVE / ANTHROPIC_API_KEY / SMTP_* / Slack are
-      # intentionally NOT declared here. Add them as environment variables
-      # in the Render dashboard so they stay out of git.
+      # LLM model when routing through OpenRouter. Set to xAI Grok so the
+      # agent runs on Grok instead of Claude — the moment OPENROUTER_API_KEY
+      # is present, llm_client routes EVERY call through OpenRouter with this
+      # model (it ignores the hardcoded claude-* ids and wins over
+      # ANTHROPIC_API_KEY). Remove OPENROUTER_API_KEY to switch back to Claude.
+      - key: OPENROUTER_MODEL
+        value: x-ai/grok-4.3
+      # COMPLIANCE_AGENT_LIVE / OPENROUTER_API_KEY (or ANTHROPIC_API_KEY) /
+      # SMTP_* / Slack are intentionally NOT declared here. Add them as
+      # environment variables in the Render dashboard so they stay out of git.
+      # To run on Grok: set COMPLIANCE_AGENT_LIVE=1 and OPENROUTER_API_KEY.
       #
       # After the FIRST successful deploy, open Render → service → Shell
       # and run `python -m compliance_agent.cli seed` once to populate
