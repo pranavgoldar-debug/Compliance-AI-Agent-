@@ -1432,7 +1432,6 @@ export function LicenseDetailBody({
   isAdmin: boolean;
   onChanged: () => void;
 }) {
-  const [aiOpen, setAiOpen] = useState(false);
   const [ruleSearch, setRuleSearch] = useState("");
   const detailQueryClient = useQueryClient();
 
@@ -1667,23 +1666,6 @@ export function LicenseDetailBody({
                   <div className="text-sm font-semibold">
                     Applicable regulations
                   </div>
-                  <div className="flex items-center gap-2">
-                    {isAdmin && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAiOpen(true)}
-                        title={
-                          license.has_file
-                            ? "Read the uploaded license with Claude and find the filings it triggers"
-                            : "No PDF needed — Claude finds the regulations this license type owes, ready to review and add"
-                        }
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Find Regulations
-                      </Button>
-                    )}
-                  </div>
                 </div>
 
                 {rulesQuery.isLoading ? (
@@ -1733,19 +1715,6 @@ export function LicenseDetailBody({
                 </div>
               )}
             </div>
-
-            <AIExtractDialog
-              license={license}
-              open={aiOpen}
-              onOpenChange={setAiOpen}
-              existingForms={[
-                ...(rulesQuery.data?.direct ?? []),
-                ...(rulesQuery.data?.entity_other ?? []),
-              ].flatMap((r) => [r.form_name, r.name].filter(Boolean) as string[])}
-              onCreated={() => {
-                onChanged();
-              }}
-            />
 
         </div>
       </CardContent>
@@ -1887,8 +1856,8 @@ function RegulationsTable({
       {isAdmin && (
         <div className="text-xs text-muted-foreground">
           Showing Finance filings only. These are auto-scheduled onto the
-          calendar — every Production filing in this jurisdiction appears
-          automatically when you open the license.
+          calendar — every filing approved in Review &amp; Assign for this
+          jurisdiction appears automatically when you open the license.
         </div>
       )}
       <div className="rounded-lg border border-border overflow-x-auto">
