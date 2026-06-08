@@ -860,7 +860,7 @@ def discover_entity_regulations(
     # skipped, but a genuinely different-cadence filing of the same name is kept.
     deduped = _collapse_duplicate_rules(db, entity)
     existing: set = set()
-    for r in entity.rules:
+    for r in _entity_rules_fresh(db, entity):
         existing |= _dup_signatures(r.name, r.form_name, r.frequency)
     created: list = []
     for cand in result.rules:
