@@ -44,10 +44,23 @@ class ExtractRequest(BaseModel):
     jurisdiction_hint: Optional[str] = None
 
 
+class NormalizedRule(CandidateRule):
+    """A candidate rule enriched by the dedupe pass (rule_normalize). The extra
+    fields ride out to the review UI; bulk-create ignores them (no DB columns)."""
+
+    canonical_key: Optional[str] = None
+    code_status: Optional[str] = None
+    obligation_type: Optional[str] = None
+    register: Optional[str] = None
+    merged_from: list[str] = []
+    merge_reason: Optional[str] = None
+    merge_confidence: Optional[float] = None
+
+
 class ExtractResponse(BaseModel):
     available: bool
     jurisdiction_hint: Optional[str] = None
-    rules: list[CandidateRule]
+    rules: list[NormalizedRule]
     notes: Optional[str] = None
 
 
@@ -92,10 +105,19 @@ def extract_rules(
         # to know whether to retry, top up credits, fix the key, etc.
         raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
 
+    # Normalize -> Adjudicate: collapse semantic duplicates (same filing under
+    # several phrasings) and tag obligation_type before the admin reviews them,
+    # so the same item can't be ticked + persisted twice.
+    from compliance_agent.rule_normalize import normalize_and_dedupe
+
+    juris = result.jurisdiction_hint or payload.jurisdiction_hint or ""
+    cand_dicts = [r.model_dump() for r in result.rules]
+    deduped, _report = normalize_and_dedupe(cand_dicts, jurisdiction=juris)
+
     return ExtractResponse(
         available=True,
         jurisdiction_hint=result.jurisdiction_hint or payload.jurisdiction_hint,
-        rules=result.rules,
+        rules=[NormalizedRule(**d) for d in deduped],
         notes=result.notes,
     )
 

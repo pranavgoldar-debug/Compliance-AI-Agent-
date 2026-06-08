@@ -992,6 +992,32 @@ def ai_extract_obligations(
             d["applicability_differs"] = False
         candidates.append(d)
 
+    # Normalize -> Adjudicate: assign a deterministic canonical_key (CA::T1134)
+    # and obligation_type to every candidate, collapse coded duplicates, then
+    # run a conservative LLM pass over the uncoded remainder. This stops the
+    # same filing coming back under several phrasings (T1134 x2, T4 x3, the
+    # CIT-balance variants) and tags non-filings so the UI can route them.
+    from compliance_agent.rule_normalize import normalize_and_dedupe
+
+    candidates, dedupe_report = normalize_and_dedupe(
+        candidates, jurisdiction=lic.jurisdiction_code
+    )
+    if dedupe_report.removed:
+        log_activity(
+            db,
+            actor_id=user.id,
+            action="license.ai_extract_deduped",
+            target_type="license",
+            target_id=license_id,
+            payload={
+                "before": dedupe_report.input_count,
+                "after": dedupe_report.output_count,
+                "removed": dedupe_report.removed,
+                "merged": [s for s, _ in dedupe_report.merged],
+            },
+        )
+        db.commit()
+
     # NOTE: the AI extract is the comprehensive "source of truth" / cross-check
     # tool, so it is deliberately NOT narrowed by the FINANCE_ONLY switch — it
     # surfaces every obligation Claude finds (finance + compliance + legal).
