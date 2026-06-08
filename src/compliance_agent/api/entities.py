@@ -512,22 +512,54 @@ def _dup_signatures(name, form_name, frequency) -> set:
     return {(k, f) for k in (_dedupe_key(name), _dedupe_key(form_name)) if k}
 
 
-def _collapse_duplicate_rules(db, entity) -> int:
-    """Remove duplicate rules that accumulated across earlier refreshes. Group
-    the entity's rules by duplicate signature (normalized name/form + cadence);
-    within each group keep the safest copy to retain — the one that already has
-    calendar obligations, else the most-progressed (production > sent-to-review
-    > staging), else the oldest — and delete the redundant copies that have NO
-    obligations and belong solely to this entity. Keying deletion on "has no
-    obligations" (rather than status) is what makes this remove the duplicates
-    you actually see, while never orphaning a scheduled filing. Returns the
-    number removed."""
-    from collections import defaultdict
-    from compliance_agent.db import RuleStatus
+def _entity_rules_fresh(db, entity) -> list:
+    """Query the entity's rules straight from the DB (not the cached relationship
+    collection), so dedupe sees rows added earlier in the SAME request after a
+    flush — otherwise newly-created duplicates are invisible to the collapse."""
+    from compliance_agent.db import Rule
+
+    return (
+        db.execute(select(Rule).where(Rule.entities.any(Entity.id == entity.id)))
+        .scalars()
+        .all()
+    )
+
+
+def _remove_rule_from_entity(db, rule, entity) -> None:
+    """Remove a duplicate rule from THIS entity's view. If the rule is shared with
+    other entities, just unlink it from this one (and drop this entity's
+    obligations for it). If it belongs only to this entity, delete it outright.
+    Works regardless of obligations or sharing, so the dedupe always takes
+    effect."""
+    from sqlalchemy import delete as sa_delete
+    from compliance_agent.db import Obligation
     from compliance_agent.api.rules import _delete_rule_cascade
 
+    others = [e for e in rule.entities if e.id != entity.id]
+    if others:
+        rule.entities = others
+        db.execute(
+            sa_delete(Obligation).where(
+                Obligation.rule_id == rule.id, Obligation.entity_id == entity.id
+            )
+        )
+        db.flush()
+    else:
+        _delete_rule_cascade(db, rule)
+
+
+def _collapse_duplicate_rules(db, entity) -> int:
+    """Remove duplicate rules for this entity. Group its rules (read FRESH from
+    the DB) by duplicate signature (normalized name/form + cadence); within each
+    group keep the safest copy — one that already has obligations, else the
+    most-progressed (production > sent-to-review > staging), else the oldest — and
+    remove the rest from this entity (unlink if shared, delete if not). Returns
+    the number removed."""
+    from collections import defaultdict
+    from compliance_agent.db import RuleStatus
+
     groups: dict = defaultdict(list)
-    for r in list(entity.rules):
+    for r in _entity_rules_fresh(db, entity):
         key = _dedupe_key(r.name) or _dedupe_key(r.form_name)
         if key:
             groups[(key, _norm_freq(r.frequency))].append(r)
@@ -536,8 +568,6 @@ def _collapse_duplicate_rules(db, entity) -> int:
     for rules in groups.values():
         if len(rules) < 2:
             continue
-        # Keep the safest copy: one that already has obligations, else the
-        # most-progressed, else the oldest.
         keep, *rest = sorted(
             rules,
             key=lambda r: (
@@ -549,11 +579,8 @@ def _collapse_duplicate_rules(db, entity) -> int:
             reverse=True,
         )
         for r in rest:
-            # Delete a redundant copy only when it has NO scheduled obligations
-            # (nothing to orphan) and isn't shared with another entity.
-            if not r.obligations and not [e for e in r.entities if e.id != entity.id]:
-                _delete_rule_cascade(db, r)
-                removed += 1
+            _remove_rule_from_entity(db, r, entity)
+            removed += 1
     return removed
 
 
@@ -600,9 +627,8 @@ def _collapse_vat_returns(db, entity) -> int:
     monthly, Quarterly if quarterly. Removes the redundant obligation-free
     copies. Returns the number removed."""
     from compliance_agent.db import RuleStatus
-    from compliance_agent.api.rules import _delete_rule_cascade
 
-    vat_rules = [r for r in list(entity.rules) if _is_vat_return(r)]
+    vat_rules = [r for r in _entity_rules_fresh(db, entity) if _is_vat_return(r)]
     if not vat_rules:
         return 0
     keep, *rest = sorted(
@@ -621,9 +647,8 @@ def _collapse_vat_returns(db, entity) -> int:
         keep.frequency, keep.due_date_rule = override
     removed = 0
     for r in rest:
-        if not r.obligations and not [e for e in r.entities if e.id != entity.id]:
-            _delete_rule_cascade(db, r)
-            removed += 1
+        _remove_rule_from_entity(db, r, entity)
+        removed += 1
     return removed
 
 
