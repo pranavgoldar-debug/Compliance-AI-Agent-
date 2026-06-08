@@ -53,6 +53,99 @@ def derive_function(category: str = "", area: str = "") -> str:
     return "Compliance"
 
 
+# Conduct/prudential regulators whose filings are Compliance regardless of the
+# entity's activity (the recipient wins — see owner_team_engine RULE 1).
+_REGULATOR_TOKENS = (
+    "fca", "dfsa", "fintrac", "central bank", "conduct authority",
+    "monetary authority", "securities commission", "prudential authority",
+    "financial conduct", "financial services authority", " regulator",
+)
+
+
+def owner_team_engine(
+    name: str = "",
+    authority: str = "",
+    category: str = "",
+    area: str = "",
+    triggering_activity: str | None = None,
+) -> str:
+    """Deterministic owner-team classifier — always returns exactly one of
+    Finance / Compliance / Legal / HR (the routing spec). Decides by WHAT the
+    filing is about and WHO receives it, applying rules in order with the three
+    tie-breakers, then an activity fallback. Used as the deterministic fallback
+    when the model doesn't set owner_team, and as a reconciliation signal."""
+    subj = f"{name} {category} {area}".lower()
+    recipient = (authority or "").lower()
+    is_regulator = any(tok.strip() in recipient for tok in _REGULATOR_TOKENS)
+
+    # TIE-BREAKER B — client-money/safeguarding, or an auditor's report to a
+    # regulator about regulated conduct -> Compliance (NOT Finance), even though
+    # it is an "audit". Checked before the audited-financial-statements case.
+    if (
+        "client money" in subj
+        or "client-money" in subj
+        or "safeguarding" in subj
+        or ("audit" in subj and is_regulator and "financial statement" not in subj)
+    ):
+        return "Compliance"
+    # TIE-BREAKER A — audited financial statements filed to a REGISTRY -> Finance
+    # (about the numbers), NOT Legal, even though the registry receives it.
+    if "audited financial" in subj or "statutory account" in subj or (
+        "financial statement" in subj
+        and ("registr" in recipient or "companies house" in recipient)
+    ):
+        return "Finance"
+    # TIE-BREAKER C — data protection (registration / fee / breach) -> Legal.
+    if any(k in subj for k in ("data protection", "data-protection", "privacy", "gdpr", "pipeda")):
+        return "Legal"
+
+    # RULE 1 — submitted TO a conduct/prudential regulator, OR an AML/financial-
+    # crime / prudential / supervision / controllers / change-in-control /
+    # breach / money-services filing -> Compliance (recipient wins; check FIRST).
+    if is_regulator or any(k in subj for k in (
+        "aml", "cft", "financial crime", "prudential", "capital adequacy",
+        "supervision fee", "controllers", "change in control", "change-in-control",
+        "breach", "material change", "significant event", "money services",
+        "suspicious transaction", "terrorist property", "large cash transaction",
+        "electronic funds transfer", "virtual currency transaction",
+    )):
+        return "Compliance"
+    # RULE 2 — tax or audited numbers -> Finance.
+    if any(k in subj for k in (
+        "corporate tax", "corporation tax", "income tax", "tax return", "vat",
+        "gst", "hst", "withholding", "tds", "transfer pricing", "fdi",
+        "statistical", " t2", "t106",
+    )):
+        return "Finance"
+    # RULE 3 — employee-facing -> HR.
+    if any(k in subj for k in (
+        "form 16", "provident fund", "state insurance", "pension",
+        "social security", "eosb", "dews", "record of employment", "p60",
+        "p11d", " t4", "payroll",
+    )):
+        return "HR"
+    # RULE 4 — registry / governance / ownership -> Legal.
+    if any(k in subj for k in (
+        "annual accounts", "annual return", "confirmation statement", "director",
+        "trade licence", "trade license", "deposits return", "beneficial owner",
+        "ubo", "psc", "ben-2", "registry", "registrar",
+    )):
+        return "Legal"
+    # RULE 5 — fallback by triggering activity.
+    return {
+        "licensed_financial_activity": "Compliance",
+        "holds_customer_funds": "Compliance",
+        "sanctions_exposure": "Compliance",
+        "vat_gst_registered": "Finance",
+        "intra_group_transactions": "Finance",
+        "takes_foreign_investment": "Finance",
+        "employs_staff": "HR",
+        "registered_company": "Legal",
+        "has_owners_controllers": "Legal",
+        "holds_personal_data": "Legal",
+    }.get(triggering_activity or "", "Compliance")
+
+
 # --- Tax-type classification ------------------------------------------------
 # A filing is exactly one of: a tax on income/profits/gains (Direct), a tax on
 # goods/services/transactions collected on the authority's behalf (Indirect), or

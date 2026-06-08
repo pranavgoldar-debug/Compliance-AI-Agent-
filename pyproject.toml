@@ -30,12 +30,17 @@ dependencies = [
 #   pip install -e ".[postgres]"   — psycopg2 for postgresql:// URLs
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9"]
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 compliance-agent = "compliance_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 
 [tool.setuptools.package-data]
 "compliance_agent" = ["data/regulations/**/*.txt", "data/static/**/*"]

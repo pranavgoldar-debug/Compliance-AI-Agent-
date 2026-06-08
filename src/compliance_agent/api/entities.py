@@ -828,7 +828,7 @@ def discover_entity_regulations(
     regulatory obligations (all functions / item types, assume every activity
     present). Works even with no license. Persists new items as Staging."""
     from compliance_agent.db import License, Rule, RuleStatus
-    from compliance_agent.classification import derive_function
+    from compliance_agent.classification import derive_function, owner_team_engine
     from compliance_agent.rule_extractor import (
         extract_rules_from_text,
         is_live,
@@ -935,7 +935,10 @@ def discover_entity_regulations(
             responsible_function=(
                 getattr(cand, "owner_team", None)
                 if getattr(cand, "owner_team", None) in ("Finance", "Compliance", "Legal", "HR")
-                else derive_function(cand.category, cand.area)
+                else owner_team_engine(
+                    cand.name, cand.authority, cand.category, cand.area,
+                    getattr(cand, "triggering_activity", None),
+                )
             ),
             condition=getattr(cand, "condition", None),
             triggering_activity=getattr(cand, "triggering_activity", None),
