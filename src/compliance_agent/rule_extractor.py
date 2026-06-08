@@ -315,8 +315,11 @@ def extract_rules_from_text(
     response = client.messages.parse(
         model=model,
         max_tokens=16000,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "high"},
+        # Deterministic discovery: temperature 0 so the SAME entity yields the
+        # SAME obligation set on every Refresh. Otherwise each run (temp 1 +
+        # thinking) invents a slightly different set, and "add-only" refresh
+        # layers the run-to-run variation — including noise — onto the list.
+        temperature=0,
         system=[
             {
                 "type": "text",
