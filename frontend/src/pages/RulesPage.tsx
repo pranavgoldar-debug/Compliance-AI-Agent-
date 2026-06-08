@@ -955,18 +955,6 @@ function StagingCard({ rule }: { rule: Rule }) {
             {rule.applicability}
           </Badge>
         )}
-        {rule.confidence && (
-          <Badge
-            variant={/pending|verify|standard/i.test(rule.confidence) ? "alert" : "neutral"}
-            title={rule.confidence}
-          >
-            {/pending/i.test(rule.confidence)
-              ? "Unverified"
-              : /verify|standard/i.test(rule.confidence)
-                ? "Verify"
-                : "Sourced"}
-          </Badge>
-        )}
         <Badge variant="alert">Awaiting review</Badge>
       </button>
 
