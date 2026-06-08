@@ -416,7 +416,13 @@ ASK only what the documents cannot tell you — the high-impact facts only the e
 
 DYNAMIC + JURISDICTION-SPECIFIC: the same primary question is global, but your follow-ups MUST vary by regulator, licence type, authorised activities, nature of operations, and jurisdiction. No generic boilerplate.
 
-THRESHOLDS: when a question turns on a threshold/limit, STATE THE ACTUAL FIGURE for that jurisdiction in the question text or the option labels (e.g. "Are electronic funds transfers at or above the CAD 10,000 reporting threshold?", "Over the AED 375,000 corporate-tax threshold"). Never ask "above the threshold?" without naming the number.
+THRESHOLDS: when a question turns on a threshold/limit, STATE THE ACTUAL FIGURE for that jurisdiction in the question text or the option labels (e.g. "Are electronic funds transfers at or above the CAD 10,000 reporting threshold?", "Over the AED 375,000 corporate-tax threshold"). Never ask "above the threshold?" without naming the number. If there is NO clean regulatory threshold for a fact (employee headcount usually has none — payroll filings apply from the first employee, and remittance frequency is set by withholding amount, not headcount), do NOT invent arbitrary numeric bands — ask the decisive yes/no, or use the regime's REAL tiers (e.g. the actual remittance-frequency thresholds), never made-up buckets.
+
+OPTION QUALITY — make the choices genuinely useful:
+- Every option must be DECISION-RELEVANT: picking it must change at least one item's applicability. No filler options.
+- For single-answer questions the options must be MUTUALLY EXCLUSIVE and cover the realistic answers; include a "Not applicable" or "Not sure" where it genuinely helps.
+- Label options in concrete, real-world terms (named figures, named activities, named provinces/regimes) — not vague "low / medium / high".
+- MULTI-SELECT: when the natural answer is "select all that apply" — e.g. which authorised activities the entity actually performs, which provinces it operates in, which customer types it serves — set `multi_select` true and list each choice as its own option. Use single-select (multi_select false) for yes/no, a single threshold band, or a single frequency.
 
 `primary_key`: these PRIMARY activities are already asked separately —
   registered_company, licensed_financial_activity, holds_customer_funds,
@@ -429,7 +435,7 @@ THRESHOLDS: when a question turns on a threshold/limit, STATE THE ACTUAL FIGURE 
   is a general operation/nature-driven question not tied to a primary, leave
   `primary_key` null. Do NOT re-ask the primary questions themselves.
 
-Every question MUST change the applicability of at least one already-discovered item and name that item/family in `drives`. Prefer closed answers (yes/no, threshold bands, frequencies) over free text. Produce 4-10 questions. Each needs: a stable snake_case `key`, the `question` text, 2-4 `options` (each {value, label}), `drives`, and `primary_key` (or null).
+Every question MUST change the applicability of at least one already-discovered item and name that item/family in `drives`. Prefer closed answers (yes/no, real threshold bands, frequencies, named choices) over free text. Produce 4-10 questions. Each needs: a stable snake_case `key`, the `question` text, 2-6 `options` (each {value, label}), `multi_select` (true for "select all that apply", else false), `drives`, and `primary_key` (or null).
 Return ONLY JSON matching the schema — no prose."""
 
 
@@ -442,6 +448,10 @@ class GeneratedQuestion(BaseModel):
     key: str = Field(description="Stable snake_case id for the question.")
     question: str
     options: list[GenOption]
+    multi_select: bool = Field(
+        default=False,
+        description="True when the answer is 'select all that apply' (checkboxes).",
+    )
     drives: str = Field(default="", description="The item/family this question gates.")
     primary_key: Optional[str] = Field(
         default=None,

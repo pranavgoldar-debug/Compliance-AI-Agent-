@@ -655,6 +655,29 @@ def _collapse_vat_returns(db, entity) -> int:
     return removed
 
 
+def _reconcile_drafts(db, entity, keep_sigs: set) -> int:
+    """Drop unreviewed AI drafts that the current (deterministic) discovery run no
+    longer produces, so the discovered list reflects the LATEST run instead of
+    accumulating across refreshes. Only obligation-free staging drafts not yet
+    sent to Review & Assign are removed; confirmed / reviewed rules are kept, and
+    VAT/GST returns are left to _collapse_vat_returns."""
+    from compliance_agent.db import RuleStatus
+
+    removed = 0
+    for r in _entity_rules_fresh(db, entity):
+        if _is_vat_return(r):
+            continue
+        if (
+            r.status == RuleStatus.staging
+            and not getattr(r, "sent_to_review", False)
+            and not r.obligations
+            and not (_dup_signatures(r.name, r.form_name, r.frequency) & keep_sigs)
+        ):
+            _remove_rule_from_entity(db, r, entity)
+            removed += 1
+    return removed
+
+
 def _secondary_answers_block(qualification: Optional[dict]) -> str:
     """Render the entity's adaptive (secondary) question answers for the prompt."""
     if not qualification:
@@ -911,6 +934,14 @@ def discover_entity_regulations(
     # are a duplicate). Runs after the add so it catches newly-created variants.
     deduped += _collapse_vat_returns(db, entity)
     db.flush()
+    # Reconcile: drop leftover drafts the current run no longer produces, so the
+    # discovered list reflects the latest deterministic run rather than
+    # accumulating across refreshes. (No manual adds exist to protect.)
+    run_sigs: set = set()
+    for cand in result.rules:
+        run_sigs |= _dup_signatures(cand.name, cand.form_name, cand.frequency)
+    deduped += _reconcile_drafts(db, entity, run_sigs)
+    db.flush()
     # Discovered rules are drafts (sent_to_review=False): they do NOT get a
     # calendar obligation here. That happens only when a human sends them to
     # Review & Assign (PATCH sets sent_to_review=True → ensure_obligations).
@@ -1008,6 +1039,7 @@ def generate_entity_questions(
             "key": q.key,
             "question": q.question,
             "options": [{"value": o.value, "label": o.label} for o in q.options],
+            "multi_select": bool(getattr(q, "multi_select", False)),
             "drives": q.drives,
             "primary_key": q.primary_key,
         }

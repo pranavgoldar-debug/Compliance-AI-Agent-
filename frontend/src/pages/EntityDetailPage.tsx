@@ -431,10 +431,25 @@ function GeneratedQuestionRow({
   onPick: (v: string) => void;
   disabled: boolean;
 }) {
+  // Multi-select answers are stored as a comma-joined string, so a single value
+  // type still covers both single- and multi-select questions.
+  const multi = !!q.multi_select;
+  const selected = multi ? (value ? value.split(",").filter(Boolean) : []) : [];
+  const isOn = (v: string) => (multi ? selected.includes(v) : value === v);
+  const pick = (v: string) => {
+    if (!multi) return onPick(v);
+    const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v];
+    onPick(next.join(","));
+  };
   return (
     <div className="flex items-center justify-between gap-3 flex-wrap">
       <div className="min-w-0">
-        <div className="text-sm">{q.question}</div>
+        <div className="text-sm">
+          {q.question}
+          {multi && (
+            <span className="text-[11px] text-muted-foreground"> · select all that apply</span>
+          )}
+        </div>
         {q.drives && <div className="text-[11px] text-muted-foreground">{q.drives}</div>}
       </div>
       <div className="inline-flex flex-wrap gap-1">
@@ -443,10 +458,10 @@ function GeneratedQuestionRow({
             key={o.value}
             type="button"
             disabled={disabled}
-            onClick={() => onPick(o.value)}
+            onClick={() => pick(o.value)}
             className={cn(
               "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-              value === o.value
+              isOn(o.value)
                 ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
                 : "border-input bg-background hover:bg-secondary text-muted-foreground",
             )}

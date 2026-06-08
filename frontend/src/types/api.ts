@@ -38,6 +38,7 @@ export interface GeneratedQuestion {
   key: string;
   question: string;
   options: { value: string; label: string }[];
+  multi_select?: boolean;
   drives?: string;
   primary_key?: string | null;
 }
