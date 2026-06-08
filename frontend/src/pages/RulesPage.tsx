@@ -908,6 +908,15 @@ function StagingCard({ rule }: { rule: Rule }) {
     mutationFn: () => api.delete(`/api/rules/${rule.id}`),
     onSuccess: refresh,
   });
+  // Apply the deterministic routing-engine's owner-team suggestion when it
+  // disagrees with the stored team (LLM-vs-engine reconciliation).
+  const applyOwnerMutation = useMutation({
+    mutationFn: () =>
+      api.patch<Rule>(`/api/rules/${rule.id}`, {
+        responsible_function: rule.owner_team_suggested,
+      }),
+    onSuccess: refresh,
+  });
   const busy =
     saveMutation.isPending ||
     promoteMutation.isPending ||
@@ -952,6 +961,22 @@ function StagingCard({ rule }: { rule: Rule }) {
       {open && (
         <CardContent className="p-0 border-t border-border">
           <div>
+            {rule.owner_team_suggested && (
+              <div className="mx-5 mt-4 rounded-lg border border-aspora-300 bg-aspora-50/40 px-3 py-2 text-xs flex items-center justify-between gap-3">
+                <span>
+                  Owner team is <strong>{rule.responsible_function}</strong> — the routing
+                  engine suggests <strong>{rule.owner_team_suggested}</strong>.
+                </span>
+                <button
+                  type="button"
+                  disabled={applyOwnerMutation.isPending}
+                  onClick={() => applyOwnerMutation.mutate()}
+                  className="rounded-md border border-aspora-400 bg-white px-2.5 py-1 font-medium text-aspora-700 hover:bg-aspora-50 disabled:opacity-60"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
             {/* Editable extracted fields (full width) */}
             <div className="p-5 space-y-3">
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2 flex items-center justify-between">

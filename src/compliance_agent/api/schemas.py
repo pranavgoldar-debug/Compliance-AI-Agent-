@@ -185,6 +185,9 @@ class RuleOut(_Base):
     applicability_note: Optional[str] = None
     tax_type: TaxType = TaxType.not_tax
     responsible_function: Optional[str] = None
+    # Deterministic owner-team engine's suggestion, set ONLY when it disagrees
+    # with responsible_function — so review can surface the conflict for a human.
+    owner_team_suggested: Optional[str] = None
     plain_description: Optional[str] = None
     status: RuleStatus
     source_url: Optional[str] = None

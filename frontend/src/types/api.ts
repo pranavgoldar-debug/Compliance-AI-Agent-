@@ -115,6 +115,7 @@ export interface Rule {
   applicability_note: string | null;
   tax_type: TaxType;
   responsible_function: string | null;
+  owner_team_suggested?: string | null;
   status: RuleStatus;
   source_url: string | null;
   submission_url: string | null;
