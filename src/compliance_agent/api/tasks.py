@@ -16,7 +16,7 @@ from compliance_agent.api._helpers import serialize_obligation
 from compliance_agent.api.schemas import ObligationOut
 from compliance_agent.auth import get_current_user
 from compliance_agent.classification import keep_function
-from compliance_agent.db import Comment, Obligation, ObligationStatus, User, get_session
+from compliance_agent.db import Comment, Entity, Obligation, ObligationStatus, User, get_session
 
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -40,7 +40,10 @@ def list_my_tasks(
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> list[ObligationOut]:
-    base = select(Obligation).options(
+    base = select(Obligation).where(
+        # Skip obligations of archived entities — archiving hides its filings.
+        Obligation.entity.has(Entity.archived_at.is_(None))
+    ).options(
         joinedload(Obligation.rule),
         joinedload(Obligation.entity),
         joinedload(Obligation.assignee),
