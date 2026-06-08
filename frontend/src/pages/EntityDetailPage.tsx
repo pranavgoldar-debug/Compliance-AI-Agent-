@@ -989,7 +989,14 @@ function ComplianceRulesTab({
   // client-side derive when the server hasn't set responsible_function.
   const allDiscovered = [...review, ...confirmed];
   const fnOf = (r: Rule) => r.responsible_function || deriveFunction(r.category, r.area);
-  const functions = Array.from(new Set(allDiscovered.map(fnOf))).sort();
+  // Always offer the four canonical teams (in order), plus any unexpected extra
+  // the data carries — so Compliance is selectable even when, on first load, no
+  // row currently resolves to it.
+  const CANON_FUNCTIONS = ["Finance", "Compliance", "Legal", "HR"];
+  const extraFns = Array.from(new Set(allDiscovered.map(fnOf)))
+    .filter((f) => f && !CANON_FUNCTIONS.includes(f))
+    .sort();
+  const functions = [...CANON_FUNCTIONS, ...extraFns];
   const categories = Array.from(
     new Set(allDiscovered.map((r) => r.category).filter(Boolean)),
   ).sort();
