@@ -665,7 +665,7 @@ def read_source_with_claude(
     try:
         client = make_client()
         response = client.messages.create(
-            model="claude-opus-4-7",
+            model="claude-opus-4-8",
             max_tokens=1500,
             system=system,
             tools=[tool],

@@ -16,7 +16,7 @@ Call sites stay the same:
     from compliance_agent.ai.llm_client import make_client
     client = make_client()
     response = client.messages.create(
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
         max_tokens=4096,
         system="...",
         messages=[{"role": "user", "content": "..."}],
@@ -84,7 +84,7 @@ def make_client():
 def resolve_model(model: str) -> str:
     """Map our internal model string to whatever the active backend wants.
 
-    Anthropic path: passes through unchanged (e.g. claude-opus-4-7).
+    Anthropic path: passes through unchanged (e.g. claude-opus-4-8).
     OpenRouter path: returns OPENROUTER_MODEL if set, else a sensible
     default (anthropic/claude-sonnet-4-5 — fast + cheap for tool flows).
     """

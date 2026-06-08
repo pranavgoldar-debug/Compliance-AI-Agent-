@@ -374,7 +374,7 @@ def chat(
         max_iterations = 6
         for _ in range(max_iterations):
             response = client.messages.create(
-                model="claude-opus-4-7",
+                model="claude-opus-4-8",
                 max_tokens=4096,
                 system=SYSTEM_PROMPT,
                 tools=TOOLS,

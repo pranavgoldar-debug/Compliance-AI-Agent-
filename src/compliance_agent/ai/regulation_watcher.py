@@ -223,7 +223,7 @@ def _summarise_change(form_name: str, diff_text: str) -> str:
 
     client = make_client()
     response = client.messages.create(
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
         max_tokens=400,
         system=(
             "You are a compliance research assistant. Given a unified diff of a "
