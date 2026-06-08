@@ -591,6 +591,42 @@ def _is_vat_return(rule) -> bool:
     return is_vat and "return" in blob
 
 
+def _collapse_vat_returns(db, entity) -> int:
+    """A VAT/GST return is filed at ONE cadence, so the model emitting both a
+    Monthly and a Quarterly variant is a duplicate (unlike a genuine
+    quarterly-vs-annual pair of *different* filings, which we keep apart). Keep a
+    single VAT/GST return and stamp its cadence from the entity's answered
+    vat_frequency (via _vat_return_overrides) — so it shows Monthly if they file
+    monthly, Quarterly if quarterly. Removes the redundant obligation-free
+    copies. Returns the number removed."""
+    from compliance_agent.db import RuleStatus
+    from compliance_agent.api.rules import _delete_rule_cascade
+
+    vat_rules = [r for r in list(entity.rules) if _is_vat_return(r)]
+    if not vat_rules:
+        return 0
+    keep, *rest = sorted(
+        vat_rules,
+        key=lambda r: (
+            1 if r.obligations else 0,
+            1 if r.status == RuleStatus.production else 0,
+            1 if getattr(r, "sent_to_review", False) else 0,
+            -(r.id or 0),
+        ),
+        reverse=True,
+    )
+    # Stamp the kept return with the entity's answered cadence, if they gave one.
+    override = _vat_return_overrides(entity.finance_profile)
+    if override:
+        keep.frequency, keep.due_date_rule = override
+    removed = 0
+    for r in rest:
+        if not r.obligations and not [e for e in r.entities if e.id != entity.id]:
+            _delete_rule_cascade(db, r)
+            removed += 1
+    return removed
+
+
 def _secondary_answers_block(qualification: Optional[dict]) -> str:
     """Render the entity's adaptive (secondary) question answers for the prompt."""
     if not qualification:
@@ -841,6 +877,11 @@ def discover_entity_regulations(
         rule.entities = [entity]
         db.add(rule)
         created.append(rule)
+    db.flush()
+    # Collapse VAT/GST returns to a single entry stamped with the answered
+    # cadence (a return is filed at one cadence, so Monthly + Quarterly variants
+    # are a duplicate). Runs after the add so it catches newly-created variants.
+    deduped += _collapse_vat_returns(db, entity)
     db.flush()
     # Discovered rules are drafts (sent_to_review=False): they do NOT get a
     # calendar obligation here. That happens only when a human sends them to
