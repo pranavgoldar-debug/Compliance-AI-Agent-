@@ -110,13 +110,52 @@ def archive_entity(
     user: User = Depends(require_admin),
 ) -> EntityOut:
     from datetime import datetime, timezone
+    from sqlalchemy import delete as sa_delete, update as sa_update
+
+    from compliance_agent.db import (
+        Comment,
+        Document,
+        Notification,
+        Obligation,
+        ObligationStatus,
+    )
 
     entity = db.get(Entity, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found.")
     entity.archived_at = datetime.now(tz=timezone.utc)
+    # Archiving means the entity is no longer operating, so clear its OPEN
+    # obligations off the calendar/dashboard — mirroring how archiving a rule
+    # drops its pending filings. Completed filings are kept for history; proof
+    # documents are unlinked, not deleted.
+    open_ids = (
+        db.execute(
+            select(Obligation.id).where(
+                Obligation.entity_id == entity.id,
+                Obligation.status.in_(
+                    [
+                        ObligationStatus.not_started,
+                        ObligationStatus.in_progress,
+                        ObligationStatus.pending_review,
+                    ]
+                ),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if open_ids:
+        db.execute(sa_delete(Comment).where(Comment.obligation_id.in_(open_ids)))
+        db.execute(sa_delete(Notification).where(Notification.obligation_id.in_(open_ids)))
+        db.execute(
+            sa_update(Document)
+            .where(Document.obligation_id.in_(open_ids))
+            .values(obligation_id=None)
+        )
+        db.execute(sa_delete(Obligation).where(Obligation.id.in_(open_ids)))
     log_activity(
-        db, actor_id=user.id, action="entity.archived", target_type="entity", target_id=entity.id
+        db, actor_id=user.id, action="entity.archived", target_type="entity",
+        target_id=entity.id, payload={"obligations_removed": len(open_ids)},
     )
     db.commit()
     db.refresh(entity)
