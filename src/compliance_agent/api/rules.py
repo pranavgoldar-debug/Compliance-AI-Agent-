@@ -172,6 +172,7 @@ def _serialize_rule(rule: Rule, entity_applicability: Optional[str] = None) -> R
         applicability_note=rule.applicability_note,
         responsible_function=_current_owner,
         owner_team_suggested=(_engine_owner if _engine_owner != _current_owner else None),
+        confidence=getattr(rule, "confidence", None),
         tax_type=(
             derive_tax_type(rule.name, rule.form_name, rule.category, rule.area)
             or rule.tax_type
