@@ -870,7 +870,7 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
       }),
     onSuccess: refresh,
   });
-  const rejectMutation = useMutation({
+  const archiveMutation = useMutation({
     mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { status: "archived" }),
     onSuccess: refresh,
   });
@@ -890,12 +890,12 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
   const busy =
     saveMutation.isPending ||
     promoteMutation.isPending ||
-    rejectMutation.isPending ||
+    archiveMutation.isPending ||
     deleteMutation.isPending;
   const err =
     saveMutation.error ||
     promoteMutation.error ||
-    rejectMutation.error ||
+    archiveMutation.error ||
     deleteMutation.error;
 
   return (
@@ -1023,6 +1023,24 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
                 <>
                   <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing(true)}>
                     Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Archive "${rule.form_name}"? It moves to the Archived section and stops generating filings. You can still delete it later.`,
+                        )
+                      ) {
+                        archiveMutation.mutate();
+                      }
+                    }}
+                    title="Move to Archived (reversible — not a permanent delete)"
+                  >
+                    {archiveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Archive
                   </Button>
                   <Button
                     variant="ghost"
