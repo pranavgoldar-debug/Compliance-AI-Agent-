@@ -1766,6 +1766,36 @@ function statusLabel(status: string | null): string {
 // Columns: Function · Regulator · Category · Obligation (plain English) ·
 // Frequency · Due · Mandatory/Conditional. Every column except the obligation
 // text gets a dropdown filter.
+// Canonical filter options so the Function / Category dropdowns always offer
+// the full set — even when no approved filing of that kind is present yet.
+// Category strings mirror the rule extractor's category list exactly so they
+// match the values stored on rules (the filter compares by equality).
+const FUNCTION_OPTIONS = ["Finance", "Compliance", "Legal", "HR"];
+const CATEGORY_OPTIONS = [
+  "Regulatory",
+  "AML / CFT",
+  "Corporate Tax",
+  "Information Returns",
+  "VAT",
+  "GST/HST",
+  "Sales/Use Tax",
+  "Excise Tax",
+  "Forex / Cross-Border",
+  "Corporate & Statutory",
+  "Payroll",
+  "Pensions",
+  "Social Security",
+  "Workers Compensation",
+  "Data Protection & Privacy",
+  "Cybersecurity",
+  "Consumer Protection",
+  "CIS",
+  "Statistics",
+  "EU Reporting",
+  "Accounting Control",
+  "Unclaimed Property",
+];
+
 function RegulationsTable({
   items,
   licenseId,
@@ -1787,9 +1817,11 @@ function RegulationsTable({
     Array.from(new Set(vals.filter((v): v is string => !!v))).sort((a, b) =>
       a.localeCompare(b),
     );
-  const fnOpts = uniq(items.map((r) => r.responsible_function));
+  // Full fixed list ∪ whatever's present, so every function/category is always
+  // selectable (and a custom value on a rule still shows up).
+  const fnOpts = uniq([...FUNCTION_OPTIONS, ...items.map((r) => r.responsible_function)]);
   const regOpts = uniq(items.map((r) => r.authority));
-  const catOpts = uniq(items.map((r) => r.category));
+  const catOpts = uniq([...CATEGORY_OPTIONS, ...items.map((r) => r.category)]);
   const freqOpts = uniq(items.map((r) => r.frequency));
 
   const rows = items.filter(
