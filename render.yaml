@@ -21,6 +21,11 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       # Wires the FastAPI app to the Postgres add-on declared above.
+      # NOTE: free Postgres expires after ~90 days. Once it's gone this URL
+      # points at a dead host — the app probes it at boot and automatically
+      # falls back to a local (ephemeral) SQLite DB so the service still
+      # starts and auto-seeds. Set COMPLIANCE_DB_STRICT=1 to disable that
+      # fallback once you're on a managed Postgres.
       - key: COMPLIANCE_DB_URL
         fromDatabase:
           name: compliance-agent-db

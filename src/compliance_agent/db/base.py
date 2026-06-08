@@ -12,13 +12,16 @@ Alembic when we cut the next round of schema changes.
 """
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_url() -> str:
@@ -33,7 +36,9 @@ def _resolve_url() -> str:
     return f"sqlite:///{db_path}"
 
 
-DATABASE_URL = _resolve_url()
+def _sqlite_url() -> str:
+    db_path = Path(os.environ.get("COMPLIANCE_DB_PATH", "compliance.db")).resolve()
+    return f"sqlite:///{db_path}"
 
 
 def _engine_kwargs(url: str) -> dict:
@@ -49,10 +54,51 @@ def _engine_kwargs(url: str) -> dict:
         kwargs["pool_size"] = int(os.environ.get("COMPLIANCE_DB_POOL_SIZE", "5"))
         kwargs["max_overflow"] = int(os.environ.get("COMPLIANCE_DB_MAX_OVERFLOW", "5"))
         kwargs["pool_recycle"] = 1800
+        # Bound the connect attempt so an unreachable host fails fast (and the
+        # SQLite fallback below can kick in) instead of hanging the boot.
+        kwargs["connect_args"] = {
+            "connect_timeout": int(os.environ.get("COMPLIANCE_DB_CONNECT_TIMEOUT", "10"))
+        }
     return kwargs
 
 
-engine = create_engine(DATABASE_URL, **_engine_kwargs(DATABASE_URL))
+def _resolve_engine() -> tuple[str, "object"]:
+    """Pick the database URL and build the engine.
+
+    When a Postgres URL is configured we verify the server is actually
+    reachable at boot. On Render's free tier the bundled Postgres expires
+    after 90 days; once it's gone the old connection string is still wired to
+    COMPLIANCE_DB_URL, so the app would crash on startup ("could not connect /
+    is the server accepting TCP/IP connections"). Rather than hard-fail, we
+    fall back to a local SQLite database so the service still boots (the schema
+    auto-creates and auto-seeds). Set COMPLIANCE_DB_STRICT=1 to disable the
+    fallback and fail loudly instead — use that once you're on a paid/managed
+    Postgres you never want to silently leave behind.
+    """
+    url = _resolve_url()
+    eng = create_engine(url, **_engine_kwargs(url))
+
+    if url.startswith("sqlite") or os.environ.get("COMPLIANCE_DB_STRICT") == "1":
+        return url, eng
+
+    try:
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return url, eng
+    except Exception as exc:  # noqa: BLE001 — any connect failure → fall back
+        eng.dispose()
+        fallback = _sqlite_url()
+        logger.warning(
+            "Configured database is unreachable (%s). Falling back to SQLite at "
+            "%s so the service can boot. Data here is local/ephemeral; set "
+            "COMPLIANCE_DB_STRICT=1 to fail instead of falling back.",
+            exc,
+            fallback,
+        )
+        return fallback, create_engine(fallback, **_engine_kwargs(fallback))
+
+
+DATABASE_URL, engine = _resolve_engine()
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
