@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { FiscalYearEndPicker } from "@/components/FiscalYearEndPicker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -354,7 +355,7 @@ function AddEntityDialog({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Fiscal year end</label>
-              <Input value={fye} placeholder="31-Dec" onChange={(e) => setFye(e.target.value)} />
+              <FiscalYearEndPicker value={fye} onChange={setFye} />
             </div>
           </div>
 

@@ -1459,6 +1459,24 @@ def _parse_fy_end(text: Optional[str]) -> Optional[tuple[int, int]]:
     return None
 
 
+_MONTH_ABBR = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+]
+
+
+def canonical_fye(text: Optional[str]) -> Optional[str]:
+    """Normalise any fiscal-year-end input ('December', '31 December', '31/12',
+    'dec', 'Dec 31', '31-Dec') to a short canonical 'DD-Mon' string (e.g.
+    '31-Dec') that always fits the column and parses the same way every time.
+    Case- and format-insensitive. Returns None when unparseable."""
+    parsed = _parse_fy_end(text)
+    if not parsed:
+        return None
+    mon, day = parsed
+    return f"{day:02d}-{_MONTH_ABBR[mon - 1]}"
+
+
 def _add_months(d: date, n: int) -> date:
     """d shifted by n calendar months, clamping the day to the target month."""
     total = d.year * 12 + (d.month - 1) + n

@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { FiscalYearEndPicker } from "@/components/FiscalYearEndPicker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -1603,11 +1604,7 @@ function EditEntityDialog({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Fiscal year end</label>
-              <Input
-                value={fye}
-                placeholder="31-Mar"
-                onChange={(e) => setFye(e.target.value)}
-              />
+              <FiscalYearEndPicker value={fye} onChange={setFye} />
             </div>
           </div>
 

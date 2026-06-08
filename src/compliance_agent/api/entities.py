@@ -51,7 +51,17 @@ def create_entity(
     db: Session = Depends(get_session),
     user: User = Depends(require_admin),
 ) -> EntityOut:
-    entity = Entity(**payload.model_dump())
+    from compliance_agent.api.licenses import canonical_fye
+
+    data = payload.model_dump()
+    # Normalise fiscal year-end to a short canonical 'DD-Mon' so any input
+    # ('December', '31 December', '31/12') saves consistently and never
+    # overflows the column (the cause of the HTTP 500).
+    if data.get("fiscal_year_end"):
+        data["fiscal_year_end"] = canonical_fye(data["fiscal_year_end"]) or str(
+            data["fiscal_year_end"]
+        )[:10]
+    entity = Entity(**data)
     db.add(entity)
     db.flush()
     log_activity(
@@ -73,6 +83,14 @@ def update_entity(
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found.")
     fields = payload.model_dump(exclude_unset=True)
+    # Normalise fiscal year-end (case/format-insensitive, short canonical form)
+    # so it saves consistently and never overflows the column.
+    if fields.get("fiscal_year_end"):
+        from compliance_agent.api.licenses import canonical_fye
+
+        fields["fiscal_year_end"] = canonical_fye(fields["fiscal_year_end"]) or str(
+            fields["fiscal_year_end"]
+        )[:10]
     for field, value in fields.items():
         setattr(entity, field, value)
     # When the Primary Activity answers change, reconcile this entity's calendar:
@@ -868,6 +886,9 @@ def discover_entity_regulations(
         f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
+        f"Fiscal year end: {entity.fiscal_year_end or '(not set)'} — express any "
+        f"year-end-relative deadline (e.g. corporate tax, annual accounts) "
+        f"relative to THIS date.\n"
         f"Nature of operations: {entity.nature_of_operation or '(not provided)'}"
         + _confirmed_activities_block(entity.finance_profile)
         + "\n\nLICENSES HELD:\n" + "\n".join(lic_lines) + "\n" + "".join(lic_texts)
