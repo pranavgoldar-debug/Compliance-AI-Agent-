@@ -452,10 +452,10 @@ def _fallback_verdict(rule, entity) -> str:
       - a matched activity answered No/NA (and none Yes) -> not_applicable
       - a matched activity answered Yes (the trigger is confirmed) -> mandatory
       - matched but every answer is TBC/unanswered -> conditional (kept, unsure)
-      - the filing maps to no activity -> the rule's own Mandatory/Conditional flag
+      - the filing maps to no activity -> conditional (no evidence it applies to
+        THIS entity, so flag "verify" rather than assert Mandatory)
     """
     from compliance_agent.activity_gate import matched_activities
-    from compliance_agent.db import Applicability
 
     profile = entity.finance_profile or {}
     hits = matched_activities(
@@ -468,7 +468,10 @@ def _fallback_verdict(rule, entity) -> str:
         if answers & {"no", "na"}:
             return "not_applicable"
         return "conditional"
-    return "mandatory" if rule.applicability == Applicability.mandatory else "conditional"
+    # No machine condition AND no matching activity -> we have no positive
+    # evidence this filing applies to THIS entity. Flag it Conditional (verify),
+    # never assert Mandatory — that's what produced a wall of false "mandatory".
+    return "conditional"
 
 
 def _dedupe_key(text: Optional[str]) -> str:
