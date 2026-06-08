@@ -149,11 +149,8 @@ def _ob_context_fields(obligation: Obligation) -> list[dict]:
     from compliance_agent.api._helpers import days_remaining
 
     days = days_remaining(obligation.due_date)
-    assignee = (
-        obligation.assignee.full_name or obligation.assignee.email
-        if obligation.assignee
-        else "Unassigned"
-    )
+    # Slack <@id> mention renders the assignee's name highlighted (blue).
+    assignee = _mention(obligation.assignee)
     return [
         {"type": "mrkdwn", "text": f"*Entity*\n{entity}"},
         {"type": "mrkdwn", "text": f"*Due*\n{obligation.due_date.isoformat()} ({_days_word(days)})"},
@@ -225,7 +222,7 @@ def assignment_blocks(
     form = obligation.rule.form_name if obligation.rule else "Compliance item"
     entity = obligation.entity.name if obligation.entity else "—"
     text = (
-        f":bell: {assignee.full_name or assignee.email}, you're on "
+        f":bell: {_mention(assignee)}, you're on "
         f"{form} ({entity})."
     )
     blocks = [
@@ -365,7 +362,7 @@ def payment_request_blocks(*, obligation: Obligation, actor: User) -> dict:
             },
         },
         {"type": "section", "fields": _ob_context_fields(obligation)},
-        _view_button(obligation, "Pay & log UTR →"),
+        _view_button(obligation),
         {"type": "divider"},
     ]
     return {"text": text, "blocks": blocks}
