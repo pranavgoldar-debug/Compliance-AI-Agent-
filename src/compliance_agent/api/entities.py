@@ -667,6 +667,51 @@ def entity_gaps(
     }
 
 
+# Human phrasing for the primary activity flags, used to feed CONFIRMED
+# activities into discovery. POSITIVE-ONLY: only "yes" answers are fed, and only
+# to EXPAND the universe — a "no" is never sent, so this can add the families an
+# activity triggers but can never narrow or drop anything.
+_ACTIVITY_LABELS: dict[str, str] = {
+    "registered_company": "is a registered company that files accounts and corporate tax",
+    "licensed_financial_activity": "holds or operates a financial-services licence",
+    "holds_customer_funds": "holds or safeguards customer funds",
+    "employs_staff": "employs staff and runs payroll",
+    "grants_equity": "grants equity, options or share-based awards",
+    "takes_foreign_investment": "receives foreign / cross-border investment",
+    "intra_group_transactions": "transacts with other group companies (related-party)",
+    "holds_personal_data": "processes personal data of individuals",
+    "vat_gst_registered": "is VAT / GST registered",
+    "has_owners_controllers": "has shareholders / beneficial owners / controllers",
+    "sanctions_exposure": "moves money / has customers (sanctions exposure)",
+    "conducts_esr_relevant_activity": "conducts an economic-substance relevant activity",
+    "audit_required": "is subject to a statutory audit",
+}
+
+
+def _confirmed_activities_block(profile: Optional[dict]) -> str:
+    """Render the entity's CONFIRMED primary activities (answered 'yes') as an
+    additive discovery input. Positive-only: only confirmed activities are fed,
+    and only to EXPAND the obligation universe — never as a filter. This recovers
+    families the free-text nature-of-operations missed (e.g. share-scheme returns
+    when equity is granted) without ever dropping anything."""
+    from compliance_agent.activity_gate import primary_only
+
+    prof = primary_only(profile) or {}
+    lines = [
+        f"- The entity {_ACTIVITY_LABELS.get(k, k.replace('_', ' '))}."
+        for k, v in prof.items()
+        if str(v).strip().lower() == "yes"
+    ]
+    if not lines:
+        return ""
+    return (
+        "\n\nCONFIRMED ACTIVITIES (admin-verified — each EXPANDS the obligation "
+        "universe; treat each as a trigger and ADD every filing it implies in "
+        "this jurisdiction; never use these to remove anything):\n"
+        + "\n".join(lines)
+    )
+
+
 @router.post("/{entity_id}/discover-regulations")
 def discover_entity_regulations(
     entity_id: int,
@@ -729,15 +774,16 @@ def discover_entity_regulations(
         "obligations that any company of this legal type in this jurisdiction "
         "must meet (e.g. annual accounts/return, corporate tax, payroll/social "
         "security if it employs staff). Add activity-specific obligations ONLY "
-        "when the nature of operations or a license clearly triggers them. If an "
-        "activity is genuinely uncertain, leave it out — it is surfaced later "
-        "via the qualification questions, not guessed here. One entry per "
-        "distinct item.\n\n"
+        "when the nature of operations, a CONFIRMED ACTIVITY below, or a license "
+        "clearly triggers them. If an activity is genuinely uncertain, leave it "
+        "out — it is surfaced later via the qualification questions, not guessed "
+        "here. One entry per distinct item.\n\n"
         f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
-        f"Nature of operations: {entity.nature_of_operation or '(not provided)'}\n\n"
-        f"LICENSES HELD:\n" + "\n".join(lic_lines) + "\n" + "".join(lic_texts)
+        f"Nature of operations: {entity.nature_of_operation or '(not provided)'}"
+        + _confirmed_activities_block(entity.finance_profile)
+        + "\n\nLICENSES HELD:\n" + "\n".join(lic_lines) + "\n" + "".join(lic_texts)
     )[:_MAX_PROMPT_CHARS]
 
     try:
