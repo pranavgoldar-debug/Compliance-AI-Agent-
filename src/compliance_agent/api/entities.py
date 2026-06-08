@@ -922,6 +922,34 @@ def discover_entity_regulations(
         "clearly triggers them. If an activity is genuinely uncertain, leave it "
         "out — it is surfaced later via the qualification questions, not guessed "
         "here. One entry per distinct item.\n\n"
+        # Recall guidance for regulated money-movement businesses. The model
+        # reliably lists the generic corporate/tax/payroll filings but forgets
+        # the transaction-level AML reports and the payments-regulator returns
+        # that are the CORE obligations of an MSB/PSP. This is type-level
+        # guidance only (no jurisdiction-specific form names) — it nudges recall
+        # without asserting any specific filing exists.
+        "REGULATED-ACTIVITY CHECKLIST — if the nature of operations or the "
+        "licences indicate the entity is a money-services business, money "
+        "transmitter, remittance provider, foreign-exchange dealer, "
+        "virtual-currency / crypto dealer, or payment service provider, do NOT "
+        "stop at the generic corporate/tax/payroll filings. Make sure you have "
+        "CONSIDERED and included (only where they genuinely apply to THIS "
+        "entity) the obligations these businesses characteristically owe:\n"
+        "- Transaction reports to the AML/financial-intelligence regulator: "
+        "large-cash transaction reports, large virtual-currency transaction "
+        "reports, electronic / cross-border funds-transfer reports above the "
+        "reporting threshold, suspicious-transaction reports, and "
+        "terrorist-property reports.\n"
+        "- AML programme duties: compliance programme + risk assessment, the "
+        "periodic effectiveness review, ongoing monitoring, customer "
+        "identification (KYC), PEP and sanctions screening, and record-keeping.\n"
+        "- Registration / renewal with the AML regulator.\n"
+        "- For payment service providers: any periodic or annual report to the "
+        "payments regulator under the applicable retail-payments / "
+        "payment-services regime.\n"
+        "These are frequently the MOST important obligations for such a business "
+        "and the easiest to overlook — include them when the entity clearly "
+        "performs these activities.\n\n"
         f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
