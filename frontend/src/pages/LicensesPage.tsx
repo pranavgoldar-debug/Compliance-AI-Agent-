@@ -1676,7 +1676,14 @@ export function LicenseDetailBody({
                   </div>
                 ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? null : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
-                    <TrackingCounts counts={rulesQuery.data.counts} />
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/60 px-2.5 py-1 text-foreground">
+                        <span className="font-semibold tabular-nums">
+                          {rulesQuery.data.counts.total}
+                        </span>
+                        <span>active</span>
+                      </span>
+                    </div>
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
@@ -1736,34 +1743,6 @@ function Stat({
         {label}
       </div>
       <div className="mt-0.5">{value}</div>
-    </div>
-  );
-}
-
-function TrackingCounts({ counts }: { counts: Record<string, number> }) {
-  const items: { key: string; label: string; tone: string }[] = [
-    { key: "total", label: "Applicable rules", tone: "bg-secondary/60 text-foreground" },
-    { key: "not_scheduled", label: "No deadline scheduled", tone: "bg-slate-100 text-slate-700" },
-    { key: "unassigned", label: "Unassigned", tone: "bg-amber-100 text-amber-800" },
-    { key: "not_started", label: "Not started", tone: "bg-slate-100 text-slate-700" },
-    { key: "in_progress", label: "In progress", tone: "bg-blue-100 text-blue-700" },
-    { key: "pending_review", label: "Pending review", tone: "bg-purple-100 text-purple-700" },
-  ];
-  return (
-    <div className="flex flex-wrap gap-2 text-xs">
-      {items.map((it) => {
-        const n = counts[it.key] ?? 0;
-        if (it.key !== "total" && n === 0) return null;
-        return (
-          <span
-            key={it.key}
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${it.tone}`}
-          >
-            <span className="font-semibold tabular-nums">{n}</span>
-            <span>{it.label}</span>
-          </span>
-        );
-      })}
     </div>
   );
 }
@@ -1855,20 +1834,19 @@ function RegulationsTable({
     <div className="space-y-2">
       {isAdmin && (
         <div className="text-xs text-muted-foreground">
-          Showing Finance filings only. These are auto-scheduled onto the
-          calendar — every filing approved in Review &amp; Assign for this
-          jurisdiction appears automatically when you open the license.
+          Across all functions (Finance, Legal, HR, Compliance). These are
+          auto-scheduled onto the calendar — every filing approved in Review
+          &amp; Assign for this jurisdiction appears automatically when you open
+          the license.
         </div>
       )}
       <div className="rounded-lg border border-border overflow-x-auto">
       <table className="w-full text-sm min-w-[920px]">
         <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground align-top">
           <tr>
-            <th className="px-3 py-2 text-left font-medium w-[110px]">
+            <th className="px-3 py-2 text-left font-medium w-[120px]">
               Function
-              <div className="mt-1 text-xs font-normal normal-case text-foreground">
-                Finance
-              </div>
+              <Sel value={fn} onChange={setFn} opts={fnOpts} label="" />
             </th>
             <th className="px-3 py-2 text-left font-medium w-[150px]">
               Regulator

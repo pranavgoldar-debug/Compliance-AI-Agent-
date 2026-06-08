@@ -34,7 +34,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
 from compliance_agent.classification import (
-    FINANCE_ONLY,
     derive_function,
     derive_tax_type,
     keep_function,
@@ -1241,9 +1240,10 @@ def applicable_rules(
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
 
-    # 1. Candidate pool: production rules in this jurisdiction.
-    #    FINANCE_ONLY switch: keep only Finance-function rules. _dedupe_rules
-    #    collapses near-duplicate filings (e.g. two CT600 rows).
+    # 1. Candidate pool: approved (production) rules in this jurisdiction,
+    #    across ALL functions (Finance / Legal / HR / Compliance) — this view
+    #    is intentionally not narrowed by FINANCE_ONLY. _dedupe_rules collapses
+    #    near-duplicate filings (e.g. two CT600 rows).
     pool = _dedupe_rules(
         [
             r
@@ -1260,19 +1260,15 @@ def applicable_rules(
             )
             .scalars()
             .all()
-            if keep_function(r.category, r.area, r.responsible_function)
+            # All functions (Finance / Legal / HR / Compliance): this license
+            # obligations view is intentionally NOT narrowed by FINANCE_ONLY.
         ]
     )
 
     license_tokens = _tokens(lic.authority, lic.license_type, lic.name)
-
-    # 2. Rules already attached to the entity — used to flag "Other obligations".
-    entity_rule_ids: set[int] = set()
     entity = lic.entity
-    if entity is not None:
-        entity_rule_ids = {r.id for r in entity.rules}
 
-    # 3. Tracking — for each rule, find the next upcoming, not-yet-completed
+    # 2. Tracking — for each rule, find the next upcoming, not-yet-completed
     # obligation against THIS license's entity. One query, then bucket by
     # rule_id.
     today_d = date.today()
@@ -1348,36 +1344,25 @@ def applicable_rules(
     direct: list[LicenseRuleHit] = []
     entity_other: list[LicenseRuleHit] = []
 
-    # License-specific: a rule is "directly applicable" when its authority /
-    # type token-matches the licence (e.g. an FCA licence surfaces FCA rules).
-    # In FINANCE_ONLY mode the pool is already just Finance filings (tax / VAT
-    # / CT etc.) — those apply to the entity by virtue of operating in the
-    # jurisdiction, not via this licence's authority — so surface them all
-    # rather than showing an empty list when the authority doesn't match.
+    # Every approved (production) filing in the entity's jurisdiction is
+    # applicable to it — across ALL functions (Finance / Legal / HR /
+    # Compliance), not just Finance. Token-matching the licence authority only
+    # affects the "why" label, not whether the row is shown.
     juris_label = lic.jurisdiction_code.upper()
     for rule in pool:
         rule_tokens = _tokens(rule.authority, rule.category, rule.area)
         shared = license_tokens & rule_tokens
-        if shared:
-            direct.append(
-                _hit(
-                    rule,
-                    relevance="direct",
-                    match_reason=f"matched on: {', '.join(sorted(shared))}",
-                )
+        direct.append(
+            _hit(
+                rule,
+                relevance="direct",
+                match_reason=(
+                    f"matched on: {', '.join(sorted(shared))}"
+                    if shared
+                    else f"Approved filing in {juris_label}"
+                ),
             )
-        elif FINANCE_ONLY:
-            direct.append(
-                _hit(
-                    rule,
-                    relevance="direct",
-                    match_reason=f"Finance filing in {juris_label}",
-                )
-            )
-        elif rule.id in entity_rule_ids:
-            entity_other.append(
-                _hit(rule, relevance="entity", match_reason="attached to this entity")
-            )
+        )
 
     # Roll-up counts so the UI can show "5 unassigned · 3 in progress · …"
     counts: dict[str, int] = {
@@ -1771,7 +1756,7 @@ def _schedule_filings_for_license(
             )
             .scalars()
             .all()
-            if keep_function(r.category, r.area, r.responsible_function)
+            # All functions — match the all-function obligations list above.
         ]
     )
     today_d = date.today()
