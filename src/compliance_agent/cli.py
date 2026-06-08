@@ -85,7 +85,7 @@ def _write_or_print(rendered: str, output: Optional[Path]) -> None:
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--framework", "framework_hint", default=None, help="Optional framework hint.")
 @click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=None)
-@click.option("--model", default="claude-opus-4-7", show_default=True, help="Claude model (live only).")
+@click.option("--model", default="claude-opus-4-8", show_default=True, help="Claude model (live only).")
 @click.option("--verify", is_flag=True, default=False, help="Run the verifier pass.")
 @click.option("--live", is_flag=True, default=False, help="Call Anthropic API; default is mock mode.")
 @click.option(
@@ -125,7 +125,7 @@ def extract(
 @click.argument("new_source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--framework", "framework_hint", default=None, help="Optional framework hint.")
 @click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=None)
-@click.option("--model", default="claude-opus-4-7", show_default=True, help="Claude model (live only).")
+@click.option("--model", default="claude-opus-4-8", show_default=True, help="Claude model (live only).")
 @click.option("--live", is_flag=True, default=False, help="Call Anthropic API; default is mock mode.")
 @click.option(
     "--format",

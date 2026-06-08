@@ -287,7 +287,7 @@ def extract_rules_from_text(
     document_text: str,
     *,
     jurisdiction_hint: Optional[str] = None,
-    model: str = "claude-opus-4-7",
+    model: str = "claude-opus-4-8",
     debug: Optional[bool] = None,
 ) -> RuleExtractionResult:
     """Call Claude on the supplied text and return candidate Rule rows.
@@ -468,7 +468,7 @@ class GeneratedQuestions(BaseModel):
 def generate_secondary_questions(
     context_block: str,
     *,
-    model: str = "claude-opus-4-7",
+    model: str = "claude-opus-4-8",
 ) -> GeneratedQuestions:
     """Generate adaptive secondary qualification questions for an entity."""
     if not is_live():
@@ -503,7 +503,7 @@ def assess_obligations(
     obligations_block: str,
     *,
     jurisdiction_hint: Optional[str] = None,
-    model: str = "claude-opus-4-7",
+    model: str = "claude-opus-4-8",
 ) -> AssessmentResult:
     """Classify each discovered obligation as mandatory / conditional /
     not_applicable for this company, based on its profile answers."""
@@ -576,7 +576,7 @@ def extract_license_metadata(
     document_text: str,
     *,
     jurisdiction_hint: Optional[str] = None,
-    model: str = "claude-opus-4-7",
+    model: str = "claude-opus-4-8",
 ) -> LicenseMetadata:
     """Call Claude on a license document and return its metadata fields."""
     if not is_live():
