@@ -525,12 +525,22 @@ def _norm_freq(freq: Optional[str]) -> str:
     return re.sub(r"[^a-z0-9]+", "", (freq or "").lower())
 
 
-def _dup_signatures(name, form_name, frequency) -> set:
+def _dup_signatures(name, form_name, frequency, jurisdiction=None) -> set:
     """Duplicate signatures for a filing: the normalized name key and form key,
-    each paired with the normalized cadence. Two filings are duplicates only
-    when they share a signature (same normalized name/form AND same frequency)."""
+    each paired with the normalized cadence — plus a canonical form-code key
+    (e.g. CANADA::T1134) when the filing maps to a known/leading form code. Two
+    filings are duplicates when they share a signature, so the same filing under
+    different phrasings ('T1134 return' / 'Foreign Affiliate Information Return')
+    collapses via the shared canonical key, while genuinely different forms (T4
+    vs T4A) never do."""
+    from compliance_agent.rule_normalize import canonical_code
+
     f = _norm_freq(frequency)
-    return {(k, f) for k in (_dedupe_key(name), _dedupe_key(form_name)) if k}
+    sigs = {(k, f) for k in (_dedupe_key(name), _dedupe_key(form_name)) if k}
+    code = canonical_code(name, form_name, jurisdiction)
+    if code:
+        sigs.add((("canon", code), f))
+    return sigs
 
 
 def _entity_rules_fresh(db, entity) -> list:
@@ -578,10 +588,18 @@ def _collapse_duplicate_rules(db, entity) -> int:
     the number removed."""
     from collections import defaultdict
     from compliance_agent.db import RuleStatus
+    from compliance_agent.rule_normalize import canonical_code
 
     groups: dict = defaultdict(list)
     for r in _entity_rules_fresh(db, entity):
-        key = _dedupe_key(r.name) or _dedupe_key(r.form_name)
+        # Prefer the canonical form-code key so phrasing variants of the same
+        # coded filing (T1134 x2, T4 x3) group together; fall back to the
+        # normalized name key for uncoded filings.
+        code = canonical_code(r.name, r.form_name, r.jurisdiction_code)
+        if code:
+            key = ("canon", code)
+        else:
+            key = _dedupe_key(r.name) or _dedupe_key(r.form_name)
         if key:
             groups[(key, _norm_freq(r.frequency))].append(r)
 
@@ -689,7 +707,7 @@ def _reconcile_drafts(db, entity, keep_sigs: set) -> int:
             r.status == RuleStatus.staging
             and not getattr(r, "sent_to_review", False)
             and not r.obligations
-            and not (_dup_signatures(r.name, r.form_name, r.frequency) & keep_sigs)
+            and not (_dup_signatures(r.name, r.form_name, r.frequency, r.jurisdiction_code) & keep_sigs)
         ):
             _remove_rule_from_entity(db, r, entity)
             removed += 1
@@ -908,10 +926,10 @@ def discover_entity_regulations(
     deduped = _collapse_duplicate_rules(db, entity)
     existing: set = set()
     for r in _entity_rules_fresh(db, entity):
-        existing |= _dup_signatures(r.name, r.form_name, r.frequency)
+        existing |= _dup_signatures(r.name, r.form_name, r.frequency, r.jurisdiction_code)
     created: list = []
     for cand in result.rules:
-        sigs = _dup_signatures(cand.name, cand.form_name, cand.frequency)
+        sigs = _dup_signatures(cand.name, cand.form_name, cand.frequency, juris)
         if not sigs or sigs & existing:
             continue
         existing |= sigs
@@ -963,7 +981,7 @@ def discover_entity_regulations(
     # accumulating across refreshes. (No manual adds exist to protect.)
     run_sigs: set = set()
     for cand in result.rules:
-        run_sigs |= _dup_signatures(cand.name, cand.form_name, cand.frequency)
+        run_sigs |= _dup_signatures(cand.name, cand.form_name, cand.frequency, juris)
     deduped += _reconcile_drafts(db, entity, run_sigs)
     db.flush()
     # Discovered rules are drafts (sent_to_review=False): they do NOT get a
