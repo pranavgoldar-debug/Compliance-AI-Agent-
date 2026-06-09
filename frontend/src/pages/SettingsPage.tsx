@@ -22,6 +22,15 @@ import {
   Trash2,
   Pencil,
   X,
+  BookOpen,
+  Workflow,
+  CalendarClock,
+  Sparkles,
+  AlertTriangle,
+  FileText,
+  PlusCircle,
+  Search,
+  ShieldCheck,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -46,6 +55,7 @@ import type { Entity, Role, Rule, UserBrief, UserOut } from "@/types/api";
 
 
 type TabKey =
+  | "playbook"
   | "profile"
   | "users"
   | "integrations"
@@ -56,6 +66,8 @@ type TabKey =
 
 
 const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.ComponentType<{ className?: string }> }[] = [
+  // Everyone — how the workspace works + the rules for writing due dates.
+  { key: "playbook", label: "Playbook & Guide", icon: BookOpen },
   { key: "profile", label: "Profile", icon: Bell },
   { key: "users", label: "Users & Roles", adminOnly: true, icon: Building2 },
   { key: "integrations", label: "Integrations", adminOnly: true, icon: Slack },
@@ -118,6 +130,7 @@ export function SettingsPage() {
         </nav>
 
         <div className="min-w-0">
+          {tab === "playbook" && <PlaybookTab />}
           {tab === "profile" && <ProfileTab user={user} />}
           {tab === "users" && isAdmin && <UsersTab />}
           {tab === "integrations" && isAdmin && <IntegrationsTab />}
@@ -126,6 +139,256 @@ export function SettingsPage() {
           {tab === "retention" && isAdmin && <RetentionTab />}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Playbook & Guide — static, everyone-visible. How the workspace works + the
+// rules for writing due dates so they parse onto the calendar correctly.
+// ---------------------------------------------------------------------------
+function PlaybookSection({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="h-9 w-9 rounded-lg bg-aspora-50 text-aspora-600 grid place-items-center shrink-0">
+            {icon}
+          </span>
+          <div className="min-w-0">
+            <h3 className="font-semibold leading-tight">{title}</h3>
+            {subtitle && (
+              <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+            )}
+          </div>
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function PlaybookTab() {
+  const lifecycle = [
+    { n: 1, label: "Entities", desc: "Set up each company + its fiscal year-end. Due dates anchor on this." },
+    { n: 2, label: "Find Regulations", desc: "AI discovers the finance filings for an entity's jurisdiction." },
+    { n: 3, label: "Staging", desc: "Discovered filings land here as drafts — nothing on the calendar yet." },
+    { n: 4, label: "Review & Assign", desc: "An admin checks each filing, sets the owner, and approves it." },
+    { n: 5, label: "Production", desc: "Approved filings auto-appear on the Calendar for every attached entity." },
+    { n: 6, label: "Track", desc: "Owners work obligations in Filings / Workspace; proofs go in Documents." },
+  ];
+
+  const dueDateRules = [
+    { want: "Monthly, on a fixed day", type: "by the 25th of the following month", freq: "Monthly" },
+    { want: "Annual, fixed calendar date", type: "by 30 Jun  ·  31 Dec", freq: "Annually" },
+    { want: "Within N months of FY-end", type: "within 9 months of the financial year end", freq: "Annually" },
+    { want: "Offset month + day after period end", type: "15th day of the 6th month after the end of the tax period", freq: "Annually / Quarterly" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Intro */}
+      <Card className="border-aspora-200 bg-aspora-50/40">
+        <CardContent className="p-6">
+          <div className="flex items-start gap-3">
+            <span className="h-10 w-10 rounded-lg bg-aspora-600 text-white grid place-items-center shrink-0">
+              <BookOpen className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-semibold text-lg leading-tight">Aspora Compliance OS — Playbook</h2>
+              <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+                How the workspace fits together, the rule lifecycle, and — most
+                importantly — how to phrase a filing's due date so it lands on
+                the calendar correctly. Read the <span className="font-medium text-foreground">Writing due dates</span> section
+                before you add or edit any regulation.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Lifecycle */}
+      <PlaybookSection
+        icon={<Workflow className="h-5 w-5" />}
+        title="How a filing flows through the workspace"
+        subtitle="From discovery to a tracked obligation on someone's calendar."
+      >
+        <ol className="space-y-2.5">
+          {lifecycle.map((s) => (
+            <li key={s.n} className="flex items-start gap-3">
+              <span className="h-6 w-6 rounded-full bg-aspora-100 text-aspora-700 text-xs font-semibold grid place-items-center shrink-0 mt-0.5">
+                {s.n}
+              </span>
+              <div className="text-sm">
+                <span className="font-medium">{s.label}</span>
+                <span className="text-muted-foreground"> — {s.desc}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </PlaybookSection>
+
+      {/* Rule lifecycle / statuses */}
+      <PlaybookSection
+        icon={<ShieldCheck className="h-5 w-5" />}
+        title="The rule lifecycle: Staging → Production"
+        subtitle="A filing only hits the calendar once it's Production."
+      >
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Badge variant="alert">Staging</Badge>
+          <span className="text-muted-foreground">draft — found by AI or just created, awaiting review</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Badge variant="completed">Production</Badge>
+          <span className="text-muted-foreground">approved — live on the calendar for every attached entity</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Badge variant="neutral">Retired / Archived</Badge>
+          <span className="text-muted-foreground">no longer required — drops off the calendar, kept for history</span>
+        </div>
+      </PlaybookSection>
+
+      {/* Writing due dates — the important bit */}
+      <PlaybookSection
+        icon={<CalendarClock className="h-5 w-5" />}
+        title="Writing due dates so they land correctly"
+        subtitle="The deadline is read by a text parser — phrasing matters."
+      >
+        <p className="text-sm text-muted-foreground">
+          The <span className="font-medium text-foreground">due date field is free text</span>, and the system
+          parses it (together with the <span className="font-medium text-foreground">Frequency</span>) into a real
+          calendar date — anchored on each entity's fiscal year-end where the rule is FY-relative.
+          Use one of these shapes:
+        </p>
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">What you want</th>
+                <th className="px-3 py-2 text-left font-medium">Type it like this</th>
+                <th className="px-3 py-2 text-left font-medium">Frequency</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {dueDateRules.map((r) => (
+                <tr key={r.want} className="align-top">
+                  <td className="px-3 py-2.5 text-muted-foreground">{r.want}</td>
+                  <td className="px-3 py-2.5">
+                    <code className="font-mono text-[12px] text-aspora-800 bg-aspora-50 rounded px-1.5 py-0.5">
+                      {r.type}
+                    </code>
+                  </td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{r.freq}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            <strong>Avoid vague text</strong> like <code className="font-mono">annually</code>,{" "}
+            <code className="font-mono">as required</code>, or <code className="font-mono">see regulation</code>.
+            When the parser can't read a real deadline it falls back to “today + interval”, so the date
+            drifts day-to-day instead of sitting on the true statutory deadline.
+          </div>
+        </div>
+      </PlaybookSection>
+
+      {/* Adding a regulation yourself */}
+      <PlaybookSection
+        icon={<PlusCircle className="h-5 w-5" />}
+        title="Adding a regulation yourself"
+        subtitle="What happens when you create one manually (admins only)."
+      >
+        <ul className="space-y-2 text-sm">
+          <li className="flex items-start gap-2">
+            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
+            <span>
+              A manually-added rule is created as <Badge variant="completed" className="align-middle">Production</Badge>{" "}
+              straight away — it <span className="font-medium">skips Staging and Review &amp; Assign</span>.
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
+            <span>
+              It appears on the <span className="font-medium">Calendar</span> for each attached entity (subject to
+              that entity's activity applicability), once saved/approved.
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
+            <span>
+              The <span className="font-medium">due date you type is parsed by the same rules above</span> — so write it
+              in one of the supported shapes, and set the matching Frequency.
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
+            <span>
+              Only <span className="font-medium">Finance-function</span> filings are shown while the finance-only
+              switch is on — Compliance/Legal items are hidden, not deleted.
+            </span>
+          </li>
+        </ul>
+      </PlaybookSection>
+
+      {/* Page-by-page */}
+      <PlaybookSection
+        icon={<FileText className="h-5 w-5" />}
+        title="Page-by-page quick reference"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
+          {[
+            ["Home", "At-a-glance overdue / upcoming / recently completed."],
+            ["Calendar", "Every due date across entities; the source of truth for deadlines."],
+            ["Filings", "Your obligations to work — assign, attach proof, mark complete."],
+            ["Documents", "Filed proofs and entity paperwork, organised in folders."],
+            ["Entities", "Companies + fiscal year-ends + bank accounts (admin)."],
+            ["Review & Assign", "Approve discovered filings and pick owners (admin)."],
+            ["Regulation Library", "Browse the full catalog of finance filings."],
+            ["Audit Log", "Who did what, when (admin)."],
+          ].map(([name, desc]) => (
+            <div key={name} className="flex items-start gap-2">
+              <span className="font-medium shrink-0">{name}</span>
+              <span className="text-muted-foreground">— {desc}</span>
+            </div>
+          ))}
+        </div>
+      </PlaybookSection>
+
+      {/* Tips */}
+      <PlaybookSection
+        icon={<Sparkles className="h-5 w-5" />}
+        title="Tips"
+      >
+        <ul className="space-y-2 text-sm text-muted-foreground">
+          <li className="flex items-start gap-2">
+            <Search className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
+            Press the search in the top bar to jump to any entity, filing, or page.
+          </li>
+          <li className="flex items-start gap-2">
+            <CalendarClock className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
+            Set each entity's fiscal year-end accurately — FY-relative deadlines depend on it.
+          </li>
+          <li className="flex items-start gap-2">
+            <Bell className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
+            Turn on Slack / email under Profile to get reminders before deadlines.
+          </li>
+        </ul>
+      </PlaybookSection>
     </div>
   );
 }
