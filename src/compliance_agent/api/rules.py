@@ -797,3 +797,76 @@ def verify_rule_due_date(
         )
         db.commit()
     return result.model_dump()
+
+
+class ApplyDueDatePayload(BaseModel):
+    due_date_rule: str
+    source_url: Optional[str] = None
+
+
+@router.post("/{rule_id}/apply-due-date")
+def apply_rule_due_date(
+    rule_id: int,
+    payload: ApplyDueDatePayload,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> dict:
+    """Apply a verified deadline to the rule: overwrite due_date_rule (+ source
+    URL), then recompute and update the pending obligations' due dates from the
+    new rule. Used by the 'Apply' action after source verification."""
+    from datetime import date
+    from compliance_agent.api.licenses import _next_due_for_rule, _parse_fy_end
+    from compliance_agent.db import ObligationStatus
+
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+    new_text = (payload.due_date_rule or "").strip()
+    if not new_text:
+        raise HTTPException(status_code=400, detail="due_date_rule is required.")
+
+    rule.due_date_rule = new_text
+    if payload.source_url:
+        rule.source_url = payload.source_url.strip()
+    db.flush()
+
+    # Recompute each entity's next due date from the corrected rule and move its
+    # pending (not completed / not-applicable) obligations onto that date.
+    today = date.today()
+    updated = 0
+    next_due = None
+    for ent in rule.entities:
+        new_due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end))
+        next_due = new_due
+        obs = (
+            db.execute(
+                select(Obligation).where(
+                    Obligation.rule_id == rule.id,
+                    Obligation.entity_id == ent.id,
+                    Obligation.status.notin_(
+                        [ObligationStatus.completed, ObligationStatus.not_applicable]
+                    ),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for ob in obs:
+            ob.due_date = new_due
+            updated += 1
+
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="rule.due_date_applied",
+        target_type="rule",
+        target_id=rule_id,
+        payload={"due_date_rule": new_text, "obligations_updated": updated},
+    )
+    db.commit()
+    return {
+        "due_date_rule": rule.due_date_rule,
+        "source_url": rule.source_url,
+        "obligations_updated": updated,
+        "next_due": next_due.isoformat() if next_due else None,
+    }

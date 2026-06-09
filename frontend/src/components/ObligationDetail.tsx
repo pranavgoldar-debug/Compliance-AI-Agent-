@@ -328,6 +328,7 @@ function Header({
   onClose?: () => void;
 }) {
   const { user: currentUser } = useAuth();
+  const queryClient = useQueryClient();
 
   // On-demand: verify this filing's deadline against the live regulator source
   // (Claude web search). Read-only — shows the confirmed deadline + citation;
@@ -344,6 +345,24 @@ function Header({
   }>({
     mutationFn: () =>
       api.post(`/api/rules/${obligation.rule_id}/verify-due-date`),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  // Apply a verified deadline: overwrite the rule's due-date text + source and
+  // reschedule its pending obligations onto the recomputed date.
+  const applyDueDate = useMutation({
+    mutationFn: () =>
+      api.post(`/api/rules/${obligation.rule_id}/apply-due-date`, {
+        due_date_rule: verifyDueDate.data?.due_date_rule,
+        source_url: verifyDueDate.data?.source_url ?? null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["obligation"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
+    },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
@@ -437,6 +456,24 @@ function Header({
                     >
                       <ExternalLink className="h-3 w-3" /> Source
                     </a>
+                  )}
+                  {verifyDueDate.data.due_date_rule && (
+                    <div className="pt-1">
+                      <Button
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => applyDueDate.mutate()}
+                        disabled={applyDueDate.isPending || applyDueDate.isSuccess}
+                        title="Overwrite this filing's deadline with the verified one and reschedule its obligations"
+                      >
+                        {applyDueDate.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : applyDueDate.isSuccess ? (
+                          <CheckCircle2 className="h-3 w-3" />
+                        ) : null}
+                        {applyDueDate.isSuccess ? "Applied" : "Apply this deadline"}
+                      </Button>
+                    </div>
                   )}
                 </>
               ) : (
