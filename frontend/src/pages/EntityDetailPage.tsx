@@ -570,14 +570,33 @@ function ApplicabilitySection({
   const setProfileAnswer = (key: string, value: string) =>
     savePrimary.mutate({ ...profile, [key]: value });
 
-  // Find applicable regulations — AI reads answers + discovered list. Cached per
-  // entity so the inventory survives tab switches; only re-runs on click.
+  // The result the server has already persisted for this entity. The assess
+  // endpoint saves it in TWO places — last_assessment and qualification.assessment
+  // — so read both: whichever the deployed backend wrote restores the inventory.
+  // It comes back on every entity fetch, so it survives navigation, reload, and
+  // new sessions; the AI only re-runs on an explicit click.
+  const laItems = (entity.last_assessment?.items as AssessItem[] | undefined) ?? undefined;
+  const qaItems =
+    (entity.qualification as unknown as { assessment?: AssessItem[] } | null)?.assessment ??
+    undefined;
+  const persistedItems = laItems ?? qaItems;
+  const persisted: AssessResp | undefined = persistedItems
+    ? {
+        available: true,
+        items: persistedItems,
+        notes: entity.last_assessment?.notes ?? null,
+      }
+    : undefined;
+  // Find applicable regulations — AI reads answers + discovered list. Seeded from
+  // the persisted result so the inventory shows on every mount even if the
+  // in-memory cache was dropped; only re-runs the AI on an explicit click.
   const assess = useQuery<AssessResp>({
     queryKey: ["assess", entity.id],
     queryFn: () => api.post<AssessResp>(`/api/entities/${entity.id}/assess-obligations`),
     enabled: false,
     staleTime: Infinity,
     gcTime: Infinity,
+    initialData: persisted,
     retry: false,
   });
   useEffect(() => {
@@ -585,10 +604,9 @@ function ApplicabilitySection({
       window.alert(assess.error instanceof Error ? assess.error.message : String(assess.error));
     }
   }, [assess.isError, assess.error]);
-  // Fresh assessment if just run; otherwise the persisted one on the entity —
-  // so the inventory survives navigation/reload and only recomputes on demand.
-  const result =
-    assess.data ?? (entity.last_assessment as unknown as AssessResp | undefined);
+  // Fresh run wins; otherwise fall back to the persisted result. Either way it
+  // only recomputes (and spends tokens) when the user re-runs explicitly.
+  const result = assess.data ?? persisted;
   // Apply the shared Function/Category filter to the inventory too.
   const items = (result?.items ?? []).filter(
     (i) =>
