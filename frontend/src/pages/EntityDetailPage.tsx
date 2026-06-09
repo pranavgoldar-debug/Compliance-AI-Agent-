@@ -648,8 +648,11 @@ function ApplicabilitySection({
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  // Hidden until "Refresh Regulations" has produced discovered items.
-  if (!hasDiscovered) return null;
+  // Hidden until "Refresh Regulations" has produced discovered items. But once
+  // an assessment has been run, keep showing it even if the staging/production
+  // rule queries momentarily report nothing on remount (tab switch) — otherwise
+  // the result would vanish until the user re-runs "Find applicable regulations".
+  if (!hasDiscovered && !assess.data) return null;
 
   const gateKeys = new Set(gates.map((g) => g.key));
   const followupsFor = (primaryKey: string) =>
