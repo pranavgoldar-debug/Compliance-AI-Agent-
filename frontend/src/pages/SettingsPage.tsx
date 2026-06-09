@@ -23,14 +23,7 @@ import {
   Pencil,
   X,
   BookOpen,
-  Workflow,
-  CalendarClock,
-  Sparkles,
-  AlertTriangle,
-  FileText,
-  PlusCircle,
-  Search,
-  ShieldCheck,
+  RotateCcw,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -40,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
+import { Markdown } from "@/components/Markdown";
 import { useAuth } from "@/contexts/AuthContext";
 import { JURISDICTIONS, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -145,245 +139,165 @@ export function SettingsPage() {
 
 
 // ---------------------------------------------------------------------------
-// Playbook & Guide — static, everyone-visible. How the workspace works + the
-// rules for writing due dates so they parse onto the calendar correctly.
+// Playbook & Guide — everyone-visible guide; admins can edit the whole thing.
+// Content is markdown, persisted server-side (/api/playbook). When nothing is
+// saved we render DEFAULT_PLAYBOOK_MD below, which is also what the editor
+// seeds from — so admins edit from the real guide, not a blank box.
 // ---------------------------------------------------------------------------
-function PlaybookSection({
-  icon,
-  title,
-  subtitle,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardContent className="p-6 space-y-4">
-        <div className="flex items-start gap-3">
-          <span className="h-9 w-9 rounded-lg bg-aspora-50 text-aspora-600 grid place-items-center shrink-0">
-            {icon}
-          </span>
-          <div className="min-w-0">
-            <h3 className="font-semibold leading-tight">{title}</h3>
-            {subtitle && (
-              <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
-            )}
-          </div>
-        </div>
-        {children}
-      </CardContent>
-    </Card>
-  );
+const DEFAULT_PLAYBOOK_MD = `## Aspora Compliance OS — Playbook
+
+How the workspace fits together, the rule lifecycle, and — most importantly — how to phrase a filing's due date so it lands on the calendar correctly. Read **Writing due dates** before you add or edit any regulation.
+
+### How a filing flows through the workspace
+
+1. **Entities** — Set up each company + its fiscal year-end. Due dates anchor on this.
+2. **Find Regulations** — AI discovers the finance filings for an entity's jurisdiction.
+3. **For Action** — Discovered filings wait in Review & Assign as drafts; nothing on the calendar yet.
+4. **Review & Assign** — An admin checks each filing, sets the owner, and approves it.
+5. **Approved** — Approved filings auto-appear on the Calendar for every attached entity.
+6. **Track** — Owners work obligations in Filings / Workspace; proofs go in Documents.
+
+### The rule lifecycle: For Action → Approved
+
+- **For Action** — draft found by AI or just added, waiting in Review & Assign.
+- **Approved** — live on the calendar for every attached entity.
+- **Archived** — no longer required; drops off the calendar, kept for history.
+
+### Writing due dates so they land correctly
+
+The due date field is free text, and the system parses it (together with the **Frequency**) into a real calendar date — anchored on each entity's fiscal year-end where the rule is FY-relative. Use one of these shapes:
+
+| What you want | Type it like this | Frequency |
+|---|---|---|
+| Monthly, on a fixed day | \`by the 25th of the following month\` | Monthly |
+| Annual, fixed calendar date | \`by 30 Jun\` · \`31 Dec\` | Annually |
+| Within N months of FY-end | \`within 9 months of the financial year end\` | Annually |
+| Offset month + day after period end | \`15th day of the 6th month after the end of the tax period\` | Annually / Quarterly |
+
+> **Avoid vague text** like \`annually\`, \`as required\`, or \`see regulation\`. When the parser can't read a real deadline it falls back to "today + interval", so the date drifts day-to-day instead of sitting on the true statutory deadline.
+
+### Adding a regulation yourself (admins)
+
+- Add one from an **entity's page, under its Compliance section** — pick the filings that apply to that company.
+- Your picks land in **Review & Assign** as **For Action** — the same as AI-discovered filings. Approve them to put them on the Calendar.
+- The **due date you type is parsed by the same rules above** — write it in a supported shape and set the matching Frequency.
+
+### Page-by-page quick reference
+
+- **Home** — At-a-glance overdue / upcoming / recently completed.
+- **Calendar** — Every due date across entities; the source of truth for deadlines.
+- **Filings** — Your obligations to work: assign, attach proof, mark complete.
+- **Documents** — Filed proofs and entity paperwork, organised in folders.
+- **Entities** — Companies + fiscal year-ends + bank accounts (admin).
+- **Review & Assign** — Approve filings and pick owners (admin).
+- **Regulation Library** — Browse the full catalog of finance filings.
+- **Audit Log** — Who did what, when (admin).
+
+### Tips
+
+- Use the search in the top bar to jump to any entity, filing, or page.
+- Set each entity's fiscal year-end accurately — FY-relative deadlines depend on it.
+- Turn on Slack / email under Profile to get reminders before deadlines.
+`;
+
+
+interface PlaybookData {
+  markdown: string | null;
+  updated_at: string | null;
 }
 
 
 function PlaybookTab() {
-  const lifecycle = [
-    { n: 1, label: "Entities", desc: "Set up each company + its fiscal year-end. Due dates anchor on this." },
-    { n: 2, label: "Find Regulations", desc: "AI discovers the finance filings for an entity's jurisdiction." },
-    { n: 3, label: "For Action", desc: "Discovered filings wait in Review & Assign as drafts — nothing on the calendar yet." },
-    { n: 4, label: "Review & Assign", desc: "An admin checks each filing, sets the owner, and approves it." },
-    { n: 5, label: "Approved", desc: "Approved filings auto-appear on the Calendar for every attached entity." },
-    { n: 6, label: "Track", desc: "Owners work obligations in Filings / Workspace; proofs go in Documents." },
-  ];
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
 
-  const dueDateRules = [
-    { want: "Monthly, on a fixed day", type: "by the 25th of the following month", freq: "Monthly" },
-    { want: "Annual, fixed calendar date", type: "by 30 Jun  ·  31 Dec", freq: "Annually" },
-    { want: "Within N months of FY-end", type: "within 9 months of the financial year end", freq: "Annually" },
-    { want: "Offset month + day after period end", type: "15th day of the 6th month after the end of the tax period", freq: "Annually / Quarterly" },
-  ];
+  const { data } = useQuery({
+    queryKey: ["playbook"],
+    queryFn: () => api.get<PlaybookData>("/api/playbook"),
+  });
 
-  return (
-    <div className="space-y-4">
-      {/* Intro */}
-      <Card className="border-aspora-200 bg-aspora-50/40">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-3">
-            <span className="h-10 w-10 rounded-lg bg-aspora-600 text-white grid place-items-center shrink-0">
-              <BookOpen className="h-5 w-5" />
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const save = useMutation({
+    mutationFn: (markdown: string) =>
+      api.post<PlaybookData>("/api/playbook", { markdown }),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["playbook"], fresh);
+      setEditing(false);
+    },
+  });
+
+  const content = data?.markdown ?? DEFAULT_PLAYBOOK_MD;
+
+  if (editing) {
+    return (
+      <Card>
+        <CardContent className="p-6 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold">Edit the Playbook</h3>
+            <span className="text-[11px] text-muted-foreground">
+              Markdown — headings (#), **bold**, lists, tables, and &gt; callouts
             </span>
-            <div>
-              <h2 className="font-semibold text-lg leading-tight">Aspora Compliance OS — Playbook</h2>
-              <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-                How the workspace fits together, the rule lifecycle, and — most
-                importantly — how to phrase a filing's due date so it lands on
-                the calendar correctly. Read the <span className="font-medium text-foreground">Writing due dates</span> section
-                before you add or edit any regulation.
-              </p>
+          </div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+            className="w-full h-[60vh] rounded-md border border-input bg-background p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-aspora-300"
+          />
+          {save.error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {(save.error as Error).message}
             </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Button onClick={() => save.mutate(draft)} disabled={save.isPending}>
+              {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Save
+            </Button>
+            <Button variant="outline" onClick={() => setEditing(false)} disabled={save.isPending}>
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
+            <Button
+              variant="ghost"
+              className="ml-auto text-muted-foreground"
+              onClick={() => setDraft(DEFAULT_PLAYBOOK_MD)}
+              disabled={save.isPending}
+              title="Replace the editor contents with the built-in default guide"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset to default
+            </Button>
           </div>
         </CardContent>
       </Card>
+    );
+  }
 
-      {/* Lifecycle */}
-      <PlaybookSection
-        icon={<Workflow className="h-5 w-5" />}
-        title="How a filing flows through the workspace"
-        subtitle="From discovery to a tracked obligation on someone's calendar."
-      >
-        <ol className="space-y-2.5">
-          {lifecycle.map((s) => (
-            <li key={s.n} className="flex items-start gap-3">
-              <span className="h-6 w-6 rounded-full bg-aspora-100 text-aspora-700 text-xs font-semibold grid place-items-center shrink-0 mt-0.5">
-                {s.n}
-              </span>
-              <div className="text-sm">
-                <span className="font-medium">{s.label}</span>
-                <span className="text-muted-foreground"> — {s.desc}</span>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </PlaybookSection>
-
-      {/* Rule lifecycle / statuses */}
-      <PlaybookSection
-        icon={<ShieldCheck className="h-5 w-5" />}
-        title="The rule lifecycle: For Action → Approved"
-        subtitle="A filing only hits the calendar once it's Approved."
-      >
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Badge variant="alert">For Action</Badge>
-          <span className="text-muted-foreground">draft — found by AI or just added, waiting in Review &amp; Assign</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Badge variant="neutral">Approved</Badge>
-          <span className="text-muted-foreground">live on the calendar for every attached entity</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Badge variant="neutral">Archived</Badge>
-          <span className="text-muted-foreground">no longer required — drops off the calendar, kept for history</span>
-        </div>
-      </PlaybookSection>
-
-      {/* Writing due dates — the important bit */}
-      <PlaybookSection
-        icon={<CalendarClock className="h-5 w-5" />}
-        title="Writing due dates so they land correctly"
-        subtitle="The deadline is read by a text parser — phrasing matters."
-      >
-        <p className="text-sm text-muted-foreground">
-          The <span className="font-medium text-foreground">due date field is free text</span>, and the system
-          parses it (together with the <span className="font-medium text-foreground">Frequency</span>) into a real
-          calendar date — anchored on each entity's fiscal year-end where the rule is FY-relative.
-          Use one of these shapes:
-        </p>
-        <div className="rounded-lg border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">What you want</th>
-                <th className="px-3 py-2 text-left font-medium">Type it like this</th>
-                <th className="px-3 py-2 text-left font-medium">Frequency</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {dueDateRules.map((r) => (
-                <tr key={r.want} className="align-top">
-                  <td className="px-3 py-2.5 text-muted-foreground">{r.want}</td>
-                  <td className="px-3 py-2.5">
-                    <code className="font-mono text-[12px] text-aspora-800 bg-aspora-50 rounded px-1.5 py-0.5">
-                      {r.type}
-                    </code>
-                  </td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{r.freq}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-          <div>
-            <strong>Avoid vague text</strong> like <code className="font-mono">annually</code>,{" "}
-            <code className="font-mono">as required</code>, or <code className="font-mono">see regulation</code>.
-            When the parser can't read a real deadline it falls back to “today + interval”, so the date
-            drifts day-to-day instead of sitting on the true statutory deadline.
+  return (
+    <Card>
+      <CardContent className="p-6">
+        {isAdmin && (
+          <div className="flex justify-end -mt-1 mb-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDraft(data?.markdown ?? DEFAULT_PLAYBOOK_MD);
+                setEditing(true);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
           </div>
-        </div>
-      </PlaybookSection>
-
-      {/* Adding a regulation yourself */}
-      <PlaybookSection
-        icon={<PlusCircle className="h-5 w-5" />}
-        title="Adding a regulation yourself"
-        subtitle="Where to add one manually (admins only)."
-      >
-        <ul className="space-y-2 text-sm">
-          <li className="flex items-start gap-2">
-            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
-            <span>
-              Add one from an <span className="font-medium">entity's page, under its Compliance section</span> — pick the
-              filings that apply to that company.
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
-            <span>
-              Your picks land in <span className="font-medium">Review &amp; Assign</span> as{" "}
-              <Badge variant="alert" className="align-middle">For Action</Badge> — the same as AI-discovered filings.
-              Approve them to put them on the Calendar.
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
-            <span>
-              The <span className="font-medium">due date you type is parsed by the same rules above</span> — so write it
-              in one of the supported shapes, and set the matching Frequency.
-            </span>
-          </li>
-        </ul>
-      </PlaybookSection>
-
-      {/* Page-by-page */}
-      <PlaybookSection
-        icon={<FileText className="h-5 w-5" />}
-        title="Page-by-page quick reference"
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
-          {[
-            ["Home", "At-a-glance overdue / upcoming / recently completed."],
-            ["Calendar", "Every due date across entities; the source of truth for deadlines."],
-            ["Filings", "Your obligations to work — assign, attach proof, mark complete."],
-            ["Documents", "Filed proofs and entity paperwork, organised in folders."],
-            ["Entities", "Companies + fiscal year-ends + bank accounts (admin)."],
-            ["Review & Assign", "Approve discovered filings and pick owners (admin)."],
-            ["Regulation Library", "Browse the full catalog of finance filings."],
-            ["Audit Log", "Who did what, when (admin)."],
-          ].map(([name, desc]) => (
-            <div key={name} className="flex items-start gap-2">
-              <span className="font-medium shrink-0">{name}</span>
-              <span className="text-muted-foreground">— {desc}</span>
-            </div>
-          ))}
-        </div>
-      </PlaybookSection>
-
-      {/* Tips */}
-      <PlaybookSection
-        icon={<Sparkles className="h-5 w-5" />}
-        title="Tips"
-      >
-        <ul className="space-y-2 text-sm text-muted-foreground">
-          <li className="flex items-start gap-2">
-            <Search className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
-            Press the search in the top bar to jump to any entity, filing, or page.
-          </li>
-          <li className="flex items-start gap-2">
-            <CalendarClock className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
-            Set each entity's fiscal year-end accurately — FY-relative deadlines depend on it.
-          </li>
-          <li className="flex items-start gap-2">
-            <Bell className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
-            Turn on Slack / email under Profile to get reminders before deadlines.
-          </li>
-        </ul>
-      </PlaybookSection>
-    </div>
+        )}
+        <Markdown source={content} />
+      </CardContent>
+    </Card>
   );
 }
 

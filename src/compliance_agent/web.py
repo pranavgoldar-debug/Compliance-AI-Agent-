@@ -37,6 +37,7 @@ from compliance_agent.api import (
     integrations_me_router,
     integrations_webhook_router,
     notifications_router,
+    playbook_router,
     obligations_router,
     retention_router,
     licenses_router,
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(document_obligation_upload_router)
     app.include_router(activities_router)
     app.include_router(notifications_router)
+    app.include_router(playbook_router)
     app.include_router(exports_router)
     app.include_router(system_router)
     app.include_router(ai_assist_router)  # Phase 7 AI assist endpoints

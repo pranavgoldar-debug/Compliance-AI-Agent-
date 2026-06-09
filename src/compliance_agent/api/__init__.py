@@ -18,6 +18,7 @@ from compliance_agent.api.integrations import (
     webhook_router as integrations_webhook_router,
 )
 from compliance_agent.api.notifications import router as notifications_router
+from compliance_agent.api.playbook import router as playbook_router
 from compliance_agent.api.obligations import (
     calendar_router,
     router as obligations_router,
@@ -47,6 +48,7 @@ __all__ = [
     "integrations_me_router",
     "integrations_webhook_router",
     "notifications_router",
+    "playbook_router",
     "obligations_router",
     "calendar_router",
     "retention_router",
