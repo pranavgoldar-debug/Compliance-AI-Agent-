@@ -601,12 +601,23 @@ function ApplicabilitySection({
   const notApplicable = grp("not_applicable");
 
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Default-tick mandatory + conditional. Keyed on the result's form names (a
+  // stable string) so the selection also initializes when the result is
+  // restored from the persisted entity.last_assessment after navigation — not
+  // only on a fresh run (which the old [assess.data] dependency missed).
+  const resultKey = (result?.items ?? []).map((i) => i.form_name).join("|");
   useEffect(() => {
     if (result) {
-      setPicked(new Set(items.filter((i) => i.verdict !== "not_applicable").map((i) => i.form_name)));
+      setPicked(
+        new Set(
+          (result.items ?? [])
+            .filter((i) => i.verdict !== "not_applicable")
+            .map((i) => i.form_name),
+        ),
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assess.data]);
+  }, [resultKey]);
   const toggle = (form: string) =>
     setPicked((p) => {
       const n = new Set(p);
@@ -712,9 +723,17 @@ function ApplicabilitySection({
     if (questions.length === 0 && isAdmin) generate.mutate();
     setOpen(true);
   };
-  const findApplicable = () => {
+  const findApplicable = async () => {
     setOpen(false);
-    assess.refetch();
+    await assess.refetch();
+    // Refresh the entity so its server-persisted `last_assessment` (saved by the
+    // assess endpoint) is loaded into the entity cache immediately. That makes
+    // `entity.last_assessment` the durable source for the result, so it survives
+    // left-sidebar navigation and full reloads — not just in-page tab switches
+    // (which were the only thing the volatile assess.data cache covered).
+    // Navigation never re-runs the AI (the query stays enabled:false), so no
+    // tokens are spent on revisits.
+    queryClient.invalidateQueries({ queryKey: ["entity"] });
   };
 
   const Col = ({ title, list, tone }: { title: string; list: AssessItem[]; tone: "alert" | "neutral" | "muted" }) => (
