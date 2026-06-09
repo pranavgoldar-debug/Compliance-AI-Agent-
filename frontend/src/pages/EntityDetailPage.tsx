@@ -42,7 +42,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
+import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, userInitials, JURISDICTIONS } from "@/lib/format";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, BankDetails, Entity, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
@@ -1591,6 +1591,7 @@ function EditEntityDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState(entity.name);
   const [legalType, setLegalType] = useState(entity.legal_type);
+  const [jurisdictionCode, setJurisdictionCode] = useState(entity.jurisdiction_code ?? "");
   const [regNumber, setRegNumber] = useState(entity.registration_number ?? "");
   const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
   const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
@@ -1604,6 +1605,7 @@ function EditEntityDialog({
     if (open) {
       setName(entity.name);
       setLegalType(entity.legal_type);
+      setJurisdictionCode(entity.jurisdiction_code ?? "");
       setRegNumber(entity.registration_number ?? "");
       setFye(entity.fiscal_year_end ?? "");
       setIncDate(entity.incorporation_date ?? "");
@@ -1628,6 +1630,7 @@ function EditEntityDialog({
       return api.patch<Entity>(`/api/entities/${entity.id}`, {
         name: name.trim(),
         legal_type: legalType.trim(),
+        jurisdiction_code: jurisdictionCode || null,
         registration_number: regNumber.trim() || null,
         fiscal_year_end: fye.trim() || null,
         incorporation_date: incDate || null,
@@ -1654,6 +1657,21 @@ function EditEntityDialog({
           <div className="space-y-1">
             <label className="text-xs font-medium">Legal name</label>
             <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Jurisdiction</label>
+            <select
+              value={jurisdictionCode}
+              onChange={(e) => setJurisdictionCode(e.target.value)}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">— Select —</option>
+              {Object.entries(JURISDICTIONS).map(([code, j]) => (
+                <option key={code} value={code}>
+                  {j.flag} {j.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
