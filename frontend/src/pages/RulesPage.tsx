@@ -46,7 +46,7 @@ import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtRelative, JURISDICTIONS, deriveFunction } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Rule, RuleStatus, UserBrief, Obligation } from "@/types/api";
+import type { Rule, RuleStatus, UserBrief, Obligation, Entity } from "@/types/api";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 
 // Higher-level category groups for the filter. Each rule's free-text `category`
@@ -162,6 +162,8 @@ export function RulesPage() {
   const [groupSel, setGroupSel] = useState<string[]>([]);
   const [fn, setFn] = useState<string>("");
   const [applic, setApplic] = useState<string>("");
+  const [freq, setFreq] = useState<string>("");
+  const [entityId, setEntityId] = useState<string>("");
   const [dateOrder, setDateOrder] = useState<"latest" | "oldest">("latest");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const navigate = useNavigate();
@@ -178,6 +180,12 @@ export function RulesPage() {
       if (tab === "staging") params.set("in_review", "true");
       return api.get<Rule[]>(`/api/rules?${params.toString()}`);
     },
+  });
+
+  // Entities — fuels the Entity filter; any entity you add shows up here.
+  const { data: entities = [] } = useQuery({
+    queryKey: ["entities"],
+    queryFn: () => api.get<Entity[]>("/api/entities"),
   });
 
   // Counts for tab badges (kept cheap: separate small queries).
@@ -228,12 +236,21 @@ export function RulesPage() {
     if (groupSel.length)
       arr = arr.filter((r) => groupSel.includes(categoryGroup(r.category)));
     if (applic) arr = arr.filter((r) => r.applicability === applic);
+    if (freq) arr = arr.filter((r) => r.frequency === freq);
+    if (entityId)
+      arr = arr.filter((r) => r.entity_ids.includes(Number(entityId)));
     // Sort by when the item was added (created_at) — latest or oldest first.
     return [...arr].sort((a, b) => {
       const cmp = a.created_at.localeCompare(b.created_at);
       return dateOrder === "latest" ? -cmp : cmp;
     });
-  }, [rules, q, fn, groupSel, applic, dateOrder]);
+  }, [rules, q, fn, groupSel, applic, freq, entityId, dateOrder]);
+
+  const freqOptions = useMemo(
+    () =>
+      Array.from(new Set((rules ?? []).map((r) => r.frequency).filter(Boolean))).sort(),
+    [rules],
+  );
 
   const functions = useMemo(() => {
     // Always offer the four canonical teams (in order) so Compliance is
@@ -344,6 +361,30 @@ export function RulesPage() {
           <option value="Mandatory">Mandatory</option>
           <option value="Conditional">Conditional</option>
           <option value="Sector-specific">Sector-specific</option>
+        </select>
+        <select
+          value={freq}
+          onChange={(e) => setFreq(e.target.value)}
+          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All frequencies</option>
+          {freqOptions.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+        <select
+          value={entityId}
+          onChange={(e) => setEntityId(e.target.value)}
+          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All entities</option>
+          {entities.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.name}
+            </option>
+          ))}
         </select>
         <select
           value={dateOrder}
@@ -677,7 +718,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                   <button
                     type="button"
                     onClick={() => openFiling(r)}
-                    className="font-medium text-left hover:text-aspora-700 hover:underline"
+                    className="font-medium text-left text-blue-600 hover:text-blue-700 hover:underline"
                   >
                     {r.form_name}
                   </button>
@@ -1138,7 +1179,7 @@ function StagingTable({ rules }: { rules: Rule[] }) {
                   <button
                     type="button"
                     onClick={() => setExpandedId((id) => (id === r.id ? null : r.id))}
-                    className="text-left hover:text-aspora-700 hover:underline"
+                    className="text-left text-blue-600 hover:text-blue-700 hover:underline"
                   >
                     {r.form_name}
                   </button>
