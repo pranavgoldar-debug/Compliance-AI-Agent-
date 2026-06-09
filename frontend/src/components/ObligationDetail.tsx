@@ -247,24 +247,6 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
     queryFn: () => api.get<UserBrief[]>("/api/users"),
   });
 
-  // On-demand: verify this filing's deadline against the live regulator source
-  // (Claude web search). Read-only — shows the confirmed deadline + citation;
-  // does not change the rule. Anthropic-only.
-  const verifyDueDate = useMutation<{
-    available: boolean;
-    verified?: boolean;
-    due_date_rule?: string | null;
-    source_url?: string | null;
-    source_quote?: string | null;
-    confidence?: string | null;
-    summary?: string | null;
-    notes?: string | null;
-  }>({
-    mutationFn: () =>
-      api.post(`/api/rules/${obligation?.rule_id}/verify-due-date`),
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
-
   const patchMutation = useMutation({
     mutationFn: (patch: Partial<Obligation>) =>
       api.patch<Obligation>(`/api/obligations/${obligationId}`, patch),
@@ -345,6 +327,26 @@ function Header({
   variant: "drawer" | "page";
   onClose?: () => void;
 }) {
+  const { user: currentUser } = useAuth();
+
+  // On-demand: verify this filing's deadline against the live regulator source
+  // (Claude web search). Read-only — shows the confirmed deadline + citation;
+  // does not change the rule. Anthropic-only.
+  const verifyDueDate = useMutation<{
+    available: boolean;
+    verified?: boolean;
+    due_date_rule?: string | null;
+    source_url?: string | null;
+    source_quote?: string | null;
+    confidence?: string | null;
+    summary?: string | null;
+    notes?: string | null;
+  }>({
+    mutationFn: () =>
+      api.post(`/api/rules/${obligation.rule_id}/verify-due-date`),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <div
       className={cn(
