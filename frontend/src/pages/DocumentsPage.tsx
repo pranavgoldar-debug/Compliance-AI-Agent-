@@ -644,7 +644,7 @@ function AllDocsView({
                   {d.entity_name || "—"}
                 </td>
                 <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                  {d.obligation_form_name || "Entity-level"}
+                  {d.obligation_form_name || "—"}
                 </td>
                 <td className="px-3 py-2.5 text-xs">{d.folder || d.category}</td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">

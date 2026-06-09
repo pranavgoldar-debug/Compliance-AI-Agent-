@@ -436,7 +436,7 @@ function DocumentRow({
         {doc.obligation_form_name ? (
           <Badge variant="default">{doc.obligation_form_name}</Badge>
         ) : (
-          <span className="text-xs italic">Entity-level</span>
+          <span className="text-xs">—</span>
         )}
       </td>
       <td className="px-3 py-2.5">
