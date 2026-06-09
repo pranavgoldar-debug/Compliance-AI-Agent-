@@ -629,7 +629,9 @@ function ApplicabilitySection({
       setPicked(
         new Set(
           (result.items ?? [])
-            .filter((i) => i.verdict !== "not_applicable")
+            // Default-tick ONLY mandatory; conditional + not-applicable start
+            // unticked so the user opts those into Review & Assign deliberately.
+            .filter((i) => i.verdict === "mandatory")
             .map((i) => i.form_name),
         ),
       );
