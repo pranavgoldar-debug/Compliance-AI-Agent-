@@ -761,3 +761,39 @@ def read_source_with_claude(
     return PageSummary(
         available=False, rule_id=rule_id, url=url, error="No structured response from Claude."
     )
+
+
+@router.post("/{rule_id}/verify-due-date")
+def verify_rule_due_date(
+    rule_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> dict:
+    """Verify this rule's filing deadline against the LIVE regulator source via
+    Claude's web search. Read-only: returns the confirmed deadline + a citation
+    (source URL + verbatim quote) + confidence. Does NOT mutate the rule — a
+    human decides whether to apply it. Anthropic-only (web search)."""
+    from compliance_agent.ai.due_date_verifier import verify_due_date_from_source
+
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+
+    result = verify_due_date_from_source(
+        form_name=rule.form_name or rule.name,
+        authority=rule.authority,
+        jurisdiction=rule.jurisdiction_code,
+        frequency=rule.frequency,
+        current_rule_text=rule.due_date_rule,
+    )
+    if result.available:
+        log_activity(
+            db,
+            actor_id=actor.id,
+            action="rule.due_date_verified",
+            target_type="rule",
+            target_id=rule_id,
+            payload={"verified": result.verified, "source_url": result.source_url},
+        )
+        db.commit()
+    return result.model_dump()

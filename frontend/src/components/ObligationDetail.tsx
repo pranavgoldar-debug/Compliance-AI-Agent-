@@ -247,6 +247,24 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
     queryFn: () => api.get<UserBrief[]>("/api/users"),
   });
 
+  // On-demand: verify this filing's deadline against the live regulator source
+  // (Claude web search). Read-only — shows the confirmed deadline + citation;
+  // does not change the rule. Anthropic-only.
+  const verifyDueDate = useMutation<{
+    available: boolean;
+    verified?: boolean;
+    due_date_rule?: string | null;
+    source_url?: string | null;
+    source_quote?: string | null;
+    confidence?: string | null;
+    summary?: string | null;
+    notes?: string | null;
+  }>({
+    mutationFn: () =>
+      api.post(`/api/rules/${obligation?.rule_id}/verify-due-date`),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   const patchMutation = useMutation({
     mutationFn: (patch: Partial<Obligation>) =>
       api.patch<Obligation>(`/api/obligations/${obligationId}`, patch),
@@ -366,7 +384,84 @@ function Header({
             />
             <Badge variant="neutral">Due {fmtDate(obligation.due_date)}</Badge>
             {obligation.period_label && <Badge variant="neutral">{obligation.period_label}</Badge>}
+            {currentUser?.role === "admin" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => verifyDueDate.mutate()}
+                disabled={verifyDueDate.isPending || !obligation.rule_id}
+                title="Check this deadline against the regulator's website (Claude web search)"
+              >
+                {verifyDueDate.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                Verify due date
+              </Button>
+            )}
           </div>
+          {verifyDueDate.data && (
+            <div className="mt-2 rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs space-y-1">
+              {!verifyDueDate.data.available ? (
+                <span className="text-muted-foreground">{verifyDueDate.data.notes}</span>
+              ) : verifyDueDate.data.verified ? (
+                <>
+                  <div className="flex items-center gap-1.5 font-medium text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Verified from source
+                    {verifyDueDate.data.confidence
+                      ? ` · ${verifyDueDate.data.confidence} confidence`
+                      : ""}
+                  </div>
+                  {verifyDueDate.data.due_date_rule && (
+                    <div>
+                      <span className="text-muted-foreground">Deadline:</span>{" "}
+                      {verifyDueDate.data.due_date_rule}
+                    </div>
+                  )}
+                  {verifyDueDate.data.source_quote && (
+                    <div className="italic text-muted-foreground">
+                      "{verifyDueDate.data.source_quote}"
+                    </div>
+                  )}
+                  {verifyDueDate.data.source_url && (
+                    <a
+                      href={verifyDueDate.data.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-aspora-700 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Source
+                    </a>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5 font-medium text-amber-700">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Couldn't confirm from an authoritative source
+                  </div>
+                  {(verifyDueDate.data.summary || verifyDueDate.data.notes) && (
+                    <div className="text-muted-foreground">
+                      {verifyDueDate.data.summary || verifyDueDate.data.notes}
+                    </div>
+                  )}
+                  {verifyDueDate.data.source_url && (
+                    <a
+                      href={verifyDueDate.data.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-aspora-700 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Source
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-start gap-3">
