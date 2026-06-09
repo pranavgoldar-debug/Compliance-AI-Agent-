@@ -1443,7 +1443,24 @@ function AddRegulationDialog({
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium">Frequency</label>
-              <Input value={frequency} onChange={(e) => setFrequency(e.target.value)} />
+              <select
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+              >
+                {[
+                  "Annual",
+                  "Half-Yearly",
+                  "Quarterly",
+                  "Monthly",
+                  "Bi-annual",
+                  "Event-based",
+                  "Continuous",
+                  "One-time",
+                ].map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Function</label>
