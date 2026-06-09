@@ -14,6 +14,7 @@ interface LocationState {
 const GOOGLE_ERRORS: Record<string, string> = {
   google_no_account:
     "No Finance Compliance OS account for that Google email. Ask your admin for access.",
+  google_domain: "Use your @aspora.com Google account to sign in.",
   google_unverified: "That Google email isn't verified.",
   google_unconfigured: "Google sign-in isn't enabled.",
   google_state: "Sign-in session expired. Please try again.",

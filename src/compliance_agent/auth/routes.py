@@ -142,6 +142,14 @@ def _google_redirect_uri() -> str:
     return f"{app_base_url()}/api/auth/google/callback"
 
 
+def _allowed_email_domains() -> set[str]:
+    """Email domains allowed to sign in with Google. Defaults to aspora.com;
+    override with GOOGLE_ALLOWED_DOMAINS (comma-separated, e.g. "aspora.com,acme.io").
+    Set it to empty to allow any domain."""
+    raw = os.environ.get("GOOGLE_ALLOWED_DOMAINS", "aspora.com")
+    return {d.strip().lower().lstrip("@") for d in raw.split(",") if d.strip()}
+
+
 def _issue_session_cookie(response: Response, user: User) -> None:
     """Set the session cookie exactly like the password login flow."""
     token = create_token(user.id, role=user.role.value)
@@ -239,6 +247,11 @@ def google_callback(
     email = (info.get("email") or "").strip().lower()
     if not email or not info.get("email_verified"):
         return RedirectResponse(url="/login?error=google_unverified")
+
+    # Domain allowlist — restrict Google sign-in to approved org domains.
+    allowed = _allowed_email_domains()
+    if allowed and email.rsplit("@", 1)[-1] not in allowed:
+        return RedirectResponse(url="/login?error=google_domain")
 
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if user is None or not user.is_active:
