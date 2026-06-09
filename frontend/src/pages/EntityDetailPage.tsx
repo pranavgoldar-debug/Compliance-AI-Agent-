@@ -580,7 +580,10 @@ function ApplicabilitySection({
       window.alert(assess.error instanceof Error ? assess.error.message : String(assess.error));
     }
   }, [assess.isError, assess.error]);
-  const result = assess.data;
+  // Fresh assessment if just run; otherwise the persisted one on the entity —
+  // so the inventory survives navigation/reload and only recomputes on demand.
+  const result =
+    assess.data ?? (entity.last_assessment as unknown as AssessResp | undefined);
   // Apply the shared Function/Category filter to the inventory too.
   const items = (result?.items ?? []).filter(
     (i) =>
@@ -652,7 +655,7 @@ function ApplicabilitySection({
   // an assessment has been run, keep showing it even if the staging/production
   // rule queries momentarily report nothing on remount (tab switch) — otherwise
   // the result would vanish until the user re-runs "Find applicable regulations".
-  if (!hasDiscovered && !assess.data) return null;
+  if (!hasDiscovered && !result) return null;
 
   const gateKeys = new Set(gates.map((g) => g.key));
   const followupsFor = (primaryKey: string) =>
@@ -2143,7 +2146,10 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
       window.alert(assess.error instanceof Error ? assess.error.message : String(assess.error));
     }
   }, [assess.isError, assess.error]);
-  const result = assess.data;
+  // Fresh assessment if just run; otherwise the persisted one on the entity —
+  // so the inventory survives navigation/reload and only recomputes on demand.
+  const result =
+    assess.data ?? (entity.last_assessment as unknown as AssessResp | undefined);
   const items = result?.items ?? [];
   const group = (v: string) => items.filter((i) => i.verdict === v);
   const mandatory = group("mandatory");

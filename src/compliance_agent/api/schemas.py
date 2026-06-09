@@ -109,6 +109,7 @@ class EntityOut(_Base):
     bank_details: Optional[dict] = None
     qualification: Optional[dict] = None
     document_folders: Optional[list] = None
+    last_assessment: Optional[dict] = None
     country_lead: Optional[UserBrief] = None
     archived_at: Optional[datetime] = None
     created_at: datetime

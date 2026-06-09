@@ -425,6 +425,9 @@ def assess_entity_obligations(
         db, actor_id=user.id, action="entity.assessed_obligations",
         target_type="entity", target_id=entity_id, payload={"count": len(items)},
     )
+    # Persist so the inventory survives navigation / reload and only recomputes
+    # when the user explicitly re-runs "Find applicable regulations".
+    entity.last_assessment = {"items": items, "notes": ai_notes}
     db.commit()
     return {"available": True, "items": items, "notes": ai_notes}
 

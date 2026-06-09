@@ -193,6 +193,10 @@ class Entity(Base):
     # with the defaults on first read.
     document_folders: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
+    # Last "Find applicable regulations" result ({items, notes}), persisted so
+    # the inventory survives navigation / reload and only recomputes on demand.
+    last_assessment: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     country_lead_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     country_lead: Mapped[Optional[User]] = relationship(
         "User", back_populates="led_entities", foreign_keys=[country_lead_id]

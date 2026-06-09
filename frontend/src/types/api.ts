@@ -89,6 +89,9 @@ export interface Entity {
   finance_profile: Record<string, string> | null;
   qualification: Qualification | null;
   document_folders: string[] | null;
+  /** Persisted "Find applicable regulations" result, so the inventory survives
+      navigation/reload and only recomputes on demand. Shape = AssessResp. */
+  last_assessment: { items: unknown[]; notes?: string | null } | null;
   ownership: OwnershipStage[] | null;
   bank_details: BankDetails | null;
   country_lead: UserBrief | null;

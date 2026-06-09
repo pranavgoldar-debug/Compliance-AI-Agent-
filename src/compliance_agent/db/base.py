@@ -334,6 +334,8 @@ def _add_missing_columns() -> None:
             ("qualification", "JSON" if is_pg else text_type),
             # User-creatable document folder names.
             ("document_folders", "JSON" if is_pg else text_type),
+            # Persisted "Find applicable regulations" result ({items, notes}).
+            ("last_assessment", "JSON" if is_pg else text_type),
         ],
         # Free-text folder for documents (dynamic, user-creatable).
         "documents": [
