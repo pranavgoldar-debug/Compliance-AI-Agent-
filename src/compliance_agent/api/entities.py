@@ -994,9 +994,11 @@ def discover_entity_regulations(
     for r in _entity_rules_fresh(db, entity):
         existing |= _dup_signatures(r.name, r.form_name, r.frequency, r.jurisdiction_code)
     created: list = []
+    already_present = 0  # candidates skipped because they already exist here
     for cand in result.rules:
         sigs = _dup_signatures(cand.name, cand.form_name, cand.frequency, juris)
         if not sigs or sigs & existing:
+            already_present += 1
             continue
         existing |= sigs
         rule = Rule(
@@ -1069,6 +1071,12 @@ def discover_entity_regulations(
     return {
         "available": True,
         "created": len(created),
+        # Names of the filings that were NOT already present and have now been
+        # added — so the admin sees exactly what's new vs what was already
+        # tracked. A second run (or a different function's owner) only ever
+        # adds what's missing; everything else is counted in already_present.
+        "added": [r.name for r in created],
+        "already_present": already_present,
         "duplicates_removed": deduped,
         "notes": result.notes,
     }

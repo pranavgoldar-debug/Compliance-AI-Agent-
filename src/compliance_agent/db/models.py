@@ -54,6 +54,7 @@ class Department(str, enum.Enum):
     compliance = "compliance"  # files returns, manages regulatory submissions
     finance = "finance"        # pays bills, verifies payment references
     legal = "legal"            # reviews contracts, opinions, change notifications
+    hr = "hr"                  # payroll / employment obligations
     risk = "risk"              # risk-assessment outputs, audits
     operations = "operations"  # day-to-day operational tasks
 

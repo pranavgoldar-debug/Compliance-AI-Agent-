@@ -121,7 +121,26 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
     _migrate_obligation_unique()
+    _migrate_department_enum()
     _auto_seed_if_empty()
+
+
+def _migrate_department_enum() -> None:
+    """The Department enum gained 'hr'. If `department` is a native Postgres
+    enum type, add the value; on a VARCHAR column (how the ad-hoc migrations
+    created it) or on SQLite this is a harmless no-op. Runs in its own
+    AUTOCOMMIT connection so a failure can't poison the main migration tx."""
+    if not DATABASE_URL.startswith("postgres"):
+        return
+    try:
+        with engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
+            conn.execute(text("ALTER TYPE department ADD VALUE IF NOT EXISTS 'hr'"))
+    except Exception:
+        # Column is VARCHAR (no 'department' enum type) or the value already
+        # exists — nothing to do.
+        pass
 
 
 def _migrate_obligation_unique() -> None:

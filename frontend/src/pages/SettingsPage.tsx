@@ -874,10 +874,13 @@ function EditUserDialog({
               <option value="">— None —</option>
               <option value="compliance">Compliance</option>
               <option value="finance">Finance</option>
+              <option value="legal">Legal</option>
+              <option value="hr">HR</option>
             </select>
             <p className="text-[11px] text-muted-foreground">
-              Compliance prepares filings, finance logs payments. Pick
-              "None" for admins or non-team accounts.
+              The function this person owns — drives routing and the
+              Workspace's team filter. Pick "None" for admins or non-team
+              accounts.
             </p>
           </div>
           <div className="space-y-1">

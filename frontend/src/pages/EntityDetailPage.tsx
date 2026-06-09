@@ -1071,19 +1071,33 @@ function ComplianceRulesTab({
   // Entity-level discovery — driven by Nature of Operations + jurisdiction +
   // ALL licenses. Requires at least one license AND a nature of operations
   // (gated below + enforced by the backend with a 400).
-  const discover = useMutation<{ available: boolean; created: number; duplicates_removed?: number; notes?: string | null }>({
+  const discover = useMutation<{ available: boolean; created: number; added?: string[]; already_present?: number; duplicates_removed?: number; notes?: string | null }>({
     mutationFn: () => api.post(`/api/entities/${entity.id}/discover-regulations`),
     onSuccess: (r) => {
       refresh();
       if (r && r.available === false) {
         window.alert(r.notes || "AI is off in this deployment.");
       } else if (r) {
+        // Only NEW filings (not already in this entity's list) get added; show
+        // exactly which ones, plus how many were already present, so a second
+        // run — or a different function's owner — sees just what's missing.
+        const present = r.already_present
+          ? ` ${r.already_present} were already in your list.`
+          : "";
         const removed = r.duplicates_removed
           ? ` ${r.duplicates_removed} duplicate(s) removed.`
           : "";
-        window.alert(
-          `${r.created} regulation(s) discovered.${removed} Review them below, run "Activities" → "Find applicable regulations", then send the ones you want to Review & Assign.`,
-        );
+        if (r.created === 0) {
+          window.alert(
+            `Nothing new to add — everything discovered is already in your list.${present}${removed}`,
+          );
+        } else {
+          const names = (r.added ?? []).map((n) => `• ${n}`).join("\n");
+          window.alert(
+            `${r.created} new regulation(s) added:\n${names}\n${present}${removed}\n\n` +
+              `Review them below, run "Activities" → "Find applicable regulations", then send the ones you want to Review & Assign.`,
+          );
+        }
       }
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
