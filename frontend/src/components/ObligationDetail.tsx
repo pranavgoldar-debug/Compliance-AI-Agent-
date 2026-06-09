@@ -1161,7 +1161,7 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
         {isAdmin
           ? submissionHref
             ? "Everyone sees the regulation page. The green button is the e-filing portal where you submit + pay."
-            : "Everyone sees the regulation page. The green button opens it as the submission/payment portal (no separate portal URL set — add one on Compliance Rules → edit row)."
+            : "No regulator URL captured for this rule yet."
           : "Read the regulation and grab the template. Admin handles the actual submission + payment."}
       </div>
 
