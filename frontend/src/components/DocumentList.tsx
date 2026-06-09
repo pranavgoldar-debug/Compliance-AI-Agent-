@@ -58,6 +58,8 @@ interface Props {
   defaultCategory?: DocumentCategory;
   /** Free-text folder — filters the list to this folder and tags uploads with it. */
   folder?: string;
+  /** Optional case-insensitive filename filter (the page's search box). */
+  query?: string;
 }
 
 
@@ -117,6 +119,7 @@ export function DocumentList({
   showEntityColumn = false,
   defaultCategory,
   folder,
+  query,
 }: Props) {
   const queryClient = useQueryClient();
   // `defaultCategory` drives both the upload's tagged category AND the
@@ -130,9 +133,11 @@ export function DocumentList({
       api.get<DocumentOut[]>(buildListPath(scope, defaultCategory)),
   });
   // When a folder is set, filter the entity's docs to that folder client-side.
-  const documents = folder
-    ? rawDocuments.filter((d) => (d.folder || d.category) === folder)
-    : rawDocuments;
+  // Then apply the optional filename search from the page's search box.
+  const _q = (query ?? "").trim().toLowerCase();
+  const documents = rawDocuments
+    .filter((d) => (folder ? (d.folder || d.category) === folder : true))
+    .filter((d) => (_q ? (d.filename || "").toLowerCase().includes(_q) : true));
 
   // ----------------------------------------------------------------
   // Upload

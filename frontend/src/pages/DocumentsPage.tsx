@@ -100,6 +100,32 @@ export function DocumentsPage() {
     if (name) createFolder.mutate({ entity, name });
   };
 
+  // Delete a folder (admin). Only removes the folder label from the entity;
+  // refuses when the folder still holds documents so nothing is orphaned.
+  const deleteFolder = useMutation({
+    mutationFn: ({ entity, name }: { entity: Entity; name: string }) => {
+      const current = entity.document_folders?.length
+        ? entity.document_folders
+        : DEFAULT_FOLDERS;
+      return api.patch<Entity>(`/api/entities/${entity.id}`, {
+        document_folders: current.filter((f) => f !== name),
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entities"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const confirmDeleteFolder = (entity: Entity, name: string, count: number) => {
+    if (count > 0) {
+      window.alert(
+        `"${name}" still has ${count} document(s). Move or delete them first, then remove the folder.`,
+      );
+      return;
+    }
+    if (window.confirm(`Delete the empty folder "${name}"?`)) {
+      deleteFolder.mutate({ entity, name });
+    }
+  };
+
   // Apply optional name filter to whatever the right pane is showing.
   // The pane uses its own React Query under the hood; we just pass the q
   // through to the same endpoint. For "all" we filter client-side because
@@ -216,6 +242,7 @@ export function DocumentsPage() {
               entity={entities.find((e) => e.id === selection.entityId)}
               counts={countsByEntity.get(selection.entityId) ?? new Map()}
               isAdmin={isAdmin}
+              query={q}
               onPick={(folder) =>
                 setSelection({
                   kind: "entity-folder",
@@ -226,6 +253,10 @@ export function DocumentsPage() {
               onNewFolder={() => {
                 const e = entities.find((x) => x.id === selection.entityId);
                 if (e) promptNewFolder(e);
+              }}
+              onDeleteFolder={(folder, count) => {
+                const e = entities.find((x) => x.id === selection.entityId);
+                if (e) confirmDeleteFolder(e, folder, count);
               }}
             />
           ) : (
@@ -247,6 +278,7 @@ export function DocumentsPage() {
                 layout={layout}
                 showEntityColumn={false}
                 folder={selection.folder}
+                query={q}
                 title={selection.folder}
                 hint={`New uploads here go to the “${selection.folder}” folder.`}
               />
@@ -391,16 +423,22 @@ function FolderCards({
   entity,
   counts,
   isAdmin,
+  query,
   onPick,
   onNewFolder,
+  onDeleteFolder,
 }: {
   entity: Entity | undefined;
   counts: Map<string, number>;
   isAdmin: boolean;
+  query?: string;
   onPick: (folder: string) => void;
   onNewFolder: () => void;
+  onDeleteFolder: (folder: string, count: number) => void;
 }) {
-  const folders = foldersFor(entity, counts);
+  const all = foldersFor(entity, counts);
+  const q = (query ?? "").trim().toLowerCase();
+  const folders = q ? all.filter((f) => f.toLowerCase().includes(q)) : all;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -414,23 +452,51 @@ function FolderCards({
           </Button>
         )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {folders.map((folder) => {
-          const n = counts.get(folder) ?? 0;
-          return (
-            <button
-              key={folder}
-              type="button"
-              onClick={() => onPick(folder)}
-              className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-4 py-3 text-left transition-colors flex items-center gap-3"
-            >
-              <FolderClosed className="h-5 w-5 text-aspora-600 shrink-0" />
-              <span className="text-sm font-semibold flex-1 truncate">{folder}</span>
-              <span className="text-xs tabular-nums text-muted-foreground">{n}</span>
-            </button>
-          );
-        })}
-      </div>
+      {folders.length === 0 ? (
+        <p className="text-sm text-muted-foreground px-1 py-6">
+          {q ? `No folders match “${query}”.` : "No folders yet."}
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {folders.map((folder) => {
+            const n = counts.get(folder) ?? 0;
+            return (
+              <div
+                key={folder}
+                role="button"
+                tabIndex={0}
+                onClick={() => onPick(folder)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onPick(folder);
+                }}
+                className="group rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-4 py-3 text-left transition-colors flex items-center gap-3 cursor-pointer"
+              >
+                <FolderClosed className="h-5 w-5 text-aspora-600 shrink-0" />
+                <span className="text-sm font-semibold flex-1 truncate">{folder}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{n}</span>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    aria-label={`Delete folder ${folder}`}
+                    title={
+                      n > 0
+                        ? "Folder has documents — move or delete them first"
+                        : "Delete folder"
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteFolder(folder, n);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
