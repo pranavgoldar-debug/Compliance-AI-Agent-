@@ -67,15 +67,43 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
             continue
         # Deadline anchored on THIS entity's fiscal year-end (per-entity).
         due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end))
-        exists = db.execute(
-            select(Obligation).where(
-                Obligation.rule_id == rule.id,
-                Obligation.entity_id == ent.id,
-                Obligation.due_date == due,
-                Obligation.department == Department.compliance,
+
+        # `due` is recomputed from today on every run. For rules whose
+        # due_date_rule isn't a parseable deadline, _next_due_for_rule falls
+        # back to today + interval, so the date DRIFTS day-to-day — and because
+        # obligation identity keyed on the exact due_date, re-running on a later
+        # day used to mint a near-duplicate obligation (e.g. an Annual Return on
+        # both 8-Jun and 9-Jun, one day apart). Fix: keep at most one active
+        # obligation per tight cluster — collapse active copies whose due dates
+        # fall within a week of each other (drift artifacts), keeping the
+        # earliest, while leaving genuinely-spaced recurrences (e.g. monthly,
+        # ~30 days apart) untouched. Only create when no active copy exists.
+        active = (
+            db.execute(
+                select(Obligation)
+                .where(
+                    Obligation.rule_id == rule.id,
+                    Obligation.entity_id == ent.id,
+                    Obligation.department == Department.compliance,
+                    Obligation.status.notin_(
+                        [ObligationStatus.completed, ObligationStatus.not_applicable]
+                    ),
+                )
+                .order_by(Obligation.due_date)
             )
-        ).scalar_one_or_none()
-        if exists is None:
+            .scalars()
+            .all()
+        )
+        kept: list[Obligation] = []
+        dupe_ids: list[int] = []
+        for o in active:
+            if kept and (o.due_date - kept[-1].due_date).days <= 7:
+                dupe_ids.append(o.id)
+            else:
+                kept.append(o)
+        if dupe_ids:
+            db.execute(sa_delete(Obligation).where(Obligation.id.in_(dupe_ids)))
+        if not kept:
             db.add(
                 Obligation(
                     rule_id=rule.id,
@@ -86,8 +114,8 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
                     assignee_id=rule.owner_id,
                 )
             )
-        elif rule.owner_id and exists.assignee_id != rule.owner_id:
-            exists.assignee_id = rule.owner_id
+        elif rule.owner_id and kept[0].assignee_id != rule.owner_id:
+            kept[0].assignee_id = rule.owner_id
 
 
 def _delete_pending_for_entity_rule(db: Session, rule_id: int, entity_id: int) -> None:

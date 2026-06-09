@@ -231,6 +231,14 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
           {items.length} item{items.length === 1 ? "" : "s"}
         </span>
       </div>
+      {/* Column headers — same grid template as TaskRow. */}
+      <div className="grid grid-cols-[1.4fr_2fr_120px_140px_60px] gap-4 px-4 py-2 items-center text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border bg-secondary/10">
+        <div>Entity / Authority</div>
+        <div>Obligation</div>
+        <div>Due</div>
+        <div>Status</div>
+        <div className="text-right">Assignee</div>
+      </div>
       <div className="divide-y divide-border">
         {items.map((ob) => (
           <TaskRow key={ob.id} ob={ob} />
