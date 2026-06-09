@@ -1079,10 +1079,25 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
 
   // AI assessment: read the entity's activity answers + discovered list and
   // classify each obligation as mandatory / conditional / not-applicable.
-  const assess = useMutation({
-    mutationFn: () => api.post<AssessResp>(`/api/entities/${entity.id}/assess-obligations`),
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  // Kept in the react-query cache (NOT ephemeral mutation state) keyed by entity
+  // so the result survives tab switches / navigating away and back — it used to
+  // vanish the moment this tab unmounted. The user re-runs it explicitly via
+  // "Find Regulations"; we never auto-refetch or evict it for the session.
+  const assess = useQuery({
+    queryKey: ["entity-assessment", entity.id],
+    queryFn: () => api.post<AssessResp>(`/api/entities/${entity.id}/assess-obligations`),
+    enabled: false, // only fires on an explicit Find Regulations click
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
   });
+  useEffect(() => {
+    if (assess.error) {
+      window.alert(
+        assess.error instanceof Error ? assess.error.message : String(assess.error),
+      );
+    }
+  }, [assess.error]);
   const result = assess.data;
   const items = result?.items ?? [];
   const group = (v: string) => items.filter((i) => i.verdict === v);
@@ -1204,8 +1219,8 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
                 Tick the ones to send to Review &amp; Assign.
               </p>
             </div>
-            <Button onClick={() => assess.mutate()} disabled={assess.isPending}>
-              {assess.isPending ? (
+            <Button onClick={() => assess.refetch()} disabled={assess.isFetching}>
+              {assess.isFetching ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Sparkles className="h-4 w-4" />
@@ -1214,7 +1229,7 @@ function RegistrationsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolea
             </Button>
           </div>
 
-          {assess.isPending ? (
+          {assess.isFetching ? (
             <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin text-aspora-600" />
               Assessing against your answers… (~15–25s)
