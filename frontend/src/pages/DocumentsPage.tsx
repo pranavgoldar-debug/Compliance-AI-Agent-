@@ -487,7 +487,7 @@ function FolderCards({
                       e.stopPropagation();
                       onDeleteFolder(folder, n);
                     }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                    className="shrink-0 p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
