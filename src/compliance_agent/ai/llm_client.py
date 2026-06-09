@@ -40,8 +40,11 @@ Limitations of the OpenRouter shim:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +97,86 @@ def resolve_model(model: str) -> str:
             "anthropic/claude-sonnet-4-5",
         )
     return model
+
+
+# ---------------------------------------------------------------------------
+# Per-run token-usage logging — so real spend is visible in the server logs.
+# ---------------------------------------------------------------------------
+# Anthropic list price, USD per 1M tokens (input, output). OpenRouter is
+# pass-through, so these are a close proxy for the OpenRouter path too. Cache
+# reads bill ~0.1x input and cache writes ~1.25x input (5-minute TTL).
+_PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-sonnet-4-5": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def _price_for(model: str) -> tuple[Optional[float], Optional[float]]:
+    """(input, output) USD per 1M tokens for `model`, or (None, None) if we
+    don't have a price for it. Strips an OpenRouter-style 'anthropic/' prefix
+    and any ':variant' suffix before matching."""
+    key = model.split("/")[-1].split(":")[0]
+    return _PRICING_PER_MTOK.get(key, (None, None))
+
+
+def log_usage(response: Any, *, model: str, label: str) -> None:
+    """Log token usage (plus a best-effort USD estimate) for one AI call.
+
+    Token counts come straight from the response and are exact. The dollar
+    figure is an ESTIMATE from Anthropic list prices for the model actually
+    billed (`resolve_model`, so the OpenRouter model is used on that path, not
+    the requested one); it's omitted when we have no price for that model.
+    No-op when the backend didn't return a usage object."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+
+    # Two shapes: Anthropic (input_tokens/output_tokens/cache_*) where
+    # input_tokens is the uncached remainder, or OpenAI-via-OpenRouter
+    # (prompt_tokens/completion_tokens) where prompt_tokens is the full input
+    # and any cached tokens are a subset reported in prompt_tokens_details.
+    if hasattr(usage, "input_tokens"):
+        uncached_in = int(getattr(usage, "input_tokens", 0) or 0)
+        out = int(getattr(usage, "output_tokens", 0) or 0)
+        cache_read = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+        cache_write = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+    else:
+        total_in = int(getattr(usage, "prompt_tokens", 0) or 0)
+        out = int(getattr(usage, "completion_tokens", 0) or 0)
+        details = getattr(usage, "prompt_tokens_details", None)
+        cache_read = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
+        cache_write = 0
+        uncached_in = total_in - cache_read
+
+    billed_model = resolve_model(model)
+    in_rate, out_rate = _price_for(billed_model)
+    if in_rate is not None and out_rate is not None:
+        cost = (
+            uncached_in * in_rate
+            + cache_read * in_rate * 0.10
+            + cache_write * in_rate * 1.25
+            + out * out_rate
+        ) / 1_000_000
+        cost_str = f"~${cost:.4f}"
+    else:
+        cost_str = "n/a"
+
+    logger.info(
+        "AI usage [%s] backend=%s model=%s in=%d out=%d cache_read=%d "
+        "cache_write=%d est_cost=%s",
+        label,
+        active_backend(),
+        billed_model,
+        uncached_in + cache_read + cache_write,
+        out,
+        cache_read,
+        cache_write,
+        cost_str,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -369,4 +452,5 @@ __all__ = [
     "active_backend",
     "make_client",
     "resolve_model",
+    "log_usage",
 ]

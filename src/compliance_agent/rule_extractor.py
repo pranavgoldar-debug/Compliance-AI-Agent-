@@ -14,7 +14,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from compliance_agent.ai.llm_client import ai_available, make_client
+from compliance_agent.ai.llm_client import ai_available, log_usage, make_client
 from compliance_agent.db import Applicability, TaxType
 
 logger = logging.getLogger(__name__)
@@ -367,6 +367,11 @@ def extract_rules_from_text(
             if not concise and _is_length_error(exc):
                 continue  # truncated — retry compact
             raise
+        log_usage(
+            response,
+            model=model,
+            label="discovery (compact retry)" if concise else "discovery",
+        )
         if (
             response.parsed_output is None
             and not concise
@@ -536,6 +541,7 @@ def generate_secondary_questions(
         messages=[{"role": "user", "content": context_block}],
         output_format=GeneratedQuestions,
     )
+    log_usage(response, model=model, label="secondary questions")
     if response.parsed_output is None:
         raise RuntimeError(
             f"Question generation failed — stop_reason={response.stop_reason}."
@@ -578,6 +584,7 @@ def assess_obligations(
         messages=[{"role": "user", "content": user_content}],
         output_format=AssessmentResult,
     )
+    log_usage(response, model=model, label="obligation assessment")
     if response.parsed_output is None:
         raise RuntimeError(
             f"Assessment failed — stop_reason={response.stop_reason}."
@@ -641,6 +648,7 @@ def extract_license_metadata(
         messages=[{"role": "user", "content": user_content}],
         output_format=LicenseMetadata,
     )
+    log_usage(response, model=model, label="license metadata")
     if response.parsed_output is None:
         raise RuntimeError(
             f"License metadata extraction failed — stop_reason={response.stop_reason}."
