@@ -283,6 +283,33 @@ def is_live() -> bool:
     return ai_available()
 
 
+# Appended to the system prompt on a length-cut-off retry: keep the structured
+# output compact so the full list fits the token budget without dropping items.
+CONCISE_SUFFIX = (
+    "\n\nOUTPUT BUDGET: keep the response COMPACT so the FULL list fits within "
+    "the token limit. Make plain_description ONE short sentence, keep "
+    "due_date_rule and applicability_note terse, and omit optional fields where "
+    "not essential. Do NOT drop any obligations — just make each entry concise."
+)
+
+
+def _is_length_error(exc: Exception) -> bool:
+    """True when an SDK call failed because the model hit its output limit
+    (the response was truncated and couldn't be parsed)."""
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    return (
+        "length" in name
+        or "length limit was reached" in msg
+        or "max_tokens" in msg
+        or "could not parse response content" in msg
+    )
+
+
+def _is_length_stop(stop_reason) -> bool:
+    return str(stop_reason).lower() in ("max_tokens", "length")
+
+
 def extract_rules_from_text(
     document_text: str,
     *,
@@ -313,28 +340,46 @@ def extract_rules_from_text(
             f"Jurisdiction hint: {jurisdiction_hint}\n\n---\n\n{document_text}"
         )
 
-    response = client.messages.parse(
-        model=model,
-        max_tokens=16000,
-        # Deterministic discovery: temperature 0 so the SAME entity yields the
-        # SAME obligation set on every Refresh. Otherwise each run (temp 1 +
-        # thinking) invents a slightly different set, and "add-only" refresh
-        # layers the run-to-run variation — including noise — onto the list.
-        temperature=0,
-        system=[
-            {
-                "type": "text",
-                "text": system_text,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[{"role": "user", "content": user_content}],
-        output_format=RuleExtractionResult,
-    )
+    # Generous output budget. If the model still runs out of room and the JSON
+    # is truncated (a "length" cut-off → unparseable), retry ONCE with a compact
+    # instruction so the full list fits without dropping obligations.
+    response = None
+    for concise in (False, True):
+        sys_text = system_text + (CONCISE_SUFFIX if concise else "")
+        try:
+            response = client.messages.parse(
+                model=model,
+                max_tokens=32000,
+                # Deterministic discovery: temperature 0 so the SAME entity
+                # yields the SAME obligation set on every Refresh.
+                temperature=0,
+                system=[
+                    {
+                        "type": "text",
+                        "text": sys_text,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": user_content}],
+                output_format=RuleExtractionResult,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if not concise and _is_length_error(exc):
+                continue  # truncated — retry compact
+            raise
+        if (
+            response.parsed_output is None
+            and not concise
+            and _is_length_stop(response.stop_reason)
+        ):
+            continue  # truncated — retry compact
+        break
 
-    if response.parsed_output is None:
+    if response is None or response.parsed_output is None:
         raise RuntimeError(
-            f"Rule extraction failed — stop_reason={response.stop_reason}."
+            "Rule extraction failed — the result exceeded the output budget "
+            "even after a compact retry. Try narrowing the entity's scope or "
+            "running discovery on fewer functions at a time."
         )
     result = response.parsed_output
 
