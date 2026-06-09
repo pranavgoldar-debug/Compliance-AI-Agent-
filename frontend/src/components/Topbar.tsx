@@ -399,7 +399,7 @@ function GlobalSearch() {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-start pt-[15vh]"
+          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid items-start justify-items-center pt-[15vh]"
           onClick={() => setOpen(false)}
         >
           <div
