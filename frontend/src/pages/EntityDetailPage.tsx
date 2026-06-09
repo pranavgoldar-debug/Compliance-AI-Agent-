@@ -45,7 +45,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, userInitials, JURISDICTIONS } from "@/lib/format";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, BankDetails, Entity, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
+import type { ActivityOut, BankDetails, DocumentOut, Entity, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
 
 
 function StatTile({
@@ -150,6 +150,7 @@ export function EntityDetailPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="compliance">Compliance</TabsTrigger>
+          <TabsTrigger value="documents">Documents</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -172,6 +173,10 @@ export function EntityDetailPage() {
 
         <TabsContent value="licenses">
           <LicensesTab entity={entity} isAdmin={isAdmin} />
+        </TabsContent>
+
+        <TabsContent value="documents">
+          <EntityDocumentsTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1804,7 +1809,14 @@ function fmtStake(role: string | undefined): string | null {
   return /^\d+(\.\d+)?$/.test(v) ? `${v}%` : v;
 }
 
-const BANK_FIELDS: { key: keyof BankDetails; label: string; placeholder: string }[] = [
+type BankField =
+  | "account_name"
+  | "bank_name"
+  | "account_number"
+  | "iban"
+  | "swift"
+  | "currency";
+const BANK_FIELDS: { key: BankField; label: string; placeholder: string }[] = [
   { key: "account_name", label: "Account name", placeholder: "Account holder" },
   { key: "bank_name", label: "Bank", placeholder: "Bank name" },
   { key: "account_number", label: "Account number", placeholder: "Account no." },
@@ -1813,54 +1825,97 @@ const BANK_FIELDS: { key: keyof BankDetails; label: string; placeholder: string 
   { key: "currency", label: "Currency", placeholder: "e.g. GBP" },
 ];
 
+// Normalise stored bank_details into a list of accounts. New shape is
+// { accounts: [...] }; a legacy single account is the flat fields.
+function bankAccountsOf(bd: BankDetails | null | undefined): BankDetails[] {
+  if (!bd) return [];
+  if (Array.isArray(bd.accounts)) return bd.accounts;
+  const flat: BankDetails = { ...bd };
+  delete flat.accounts;
+  return Object.values(flat).some((v) => v && String(v).trim()) ? [flat] : [];
+}
+
 function BankDetailsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<BankDetails>(entity.bank_details ?? {});
+  const [draft, setDraft] = useState<BankDetails[]>([]);
   const save = useMutation({
-    mutationFn: () =>
-      api.patch<Entity>(`/api/entities/${entity.id}`, { bank_details: draft }),
+    mutationFn: () => {
+      const accounts = draft
+        .map((a) => {
+          const { accounts: _drop, ...flat } = a;
+          return flat;
+        })
+        .filter((a) => Object.values(a).some((v) => v && String(v).trim()));
+      return api.patch<Entity>(`/api/entities/${entity.id}`, {
+        bank_details: { accounts },
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entity"] });
       setEditing(false);
     },
   });
-  const bd = entity.bank_details ?? {};
-  const hasAny = Object.values(bd).some((v) => v && String(v).trim());
+  const accounts = bankAccountsOf(entity.bank_details);
+
+  const startEdit = () => {
+    const existing = bankAccountsOf(entity.bank_details);
+    setDraft(existing.length ? existing : [{}]);
+    setEditing(true);
+  };
+  const setField = (i: number, key: BankField, value: string) =>
+    setDraft((rows) => rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
+  const addAccount = () => setDraft((rows) => [...rows, {}]);
+  const removeAccount = (i: number) =>
+    setDraft((rows) => rows.filter((_, idx) => idx !== i));
 
   return (
     <Card>
       <CardContent className="p-6 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Bank details
+            Bank accounts
           </h3>
           {isAdmin && !editing && (
-            <button
-              onClick={() => {
-                setDraft(entity.bank_details ?? {});
-                setEditing(true);
-              }}
-              className="text-xs text-aspora-700 hover:underline"
-            >
+            <button onClick={startEdit} className="text-xs text-aspora-700 hover:underline">
               Edit
             </button>
           )}
         </div>
 
         {editing ? (
-          <div className="space-y-2">
-            {BANK_FIELDS.map((f) => (
-              <div key={f.key} className="space-y-1">
-                <label className="text-[11px] text-muted-foreground">{f.label}</label>
-                <Input
-                  value={draft[f.key] ?? ""}
-                  placeholder={f.placeholder}
-                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-                  className="h-9"
-                />
+          <div className="space-y-3">
+            {draft.map((acct, i) => (
+              <div key={i} className="rounded-lg border border-border p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Account {i + 1}
+                  </span>
+                  <button
+                    onClick={() => removeAccount(i)}
+                    className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                    title="Remove account"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {BANK_FIELDS.map((f) => (
+                  <div key={f.key} className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground">{f.label}</label>
+                    <Input
+                      value={acct[f.key] ?? ""}
+                      placeholder={f.placeholder}
+                      onChange={(e) => setField(i, f.key, e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                ))}
               </div>
             ))}
+            <Button variant="outline" size="sm" onClick={addAccount}>
+              <Plus className="h-4 w-4" />
+              Add account
+            </Button>
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
                 Cancel
@@ -1871,19 +1926,30 @@ function BankDetailsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean
               </Button>
             </div>
           </div>
-        ) : !hasAny ? (
+        ) : accounts.length === 0 ? (
           <div className="text-sm text-muted-foreground italic">
-            No bank details recorded{isAdmin ? " — click Edit to add." : "."}
+            No bank accounts recorded{isAdmin ? " — click Edit to add." : "."}
           </div>
         ) : (
-          <dl className="grid grid-cols-3 gap-y-1.5 text-sm">
-            {BANK_FIELDS.filter((f) => bd[f.key]).map((f) => (
-              <div key={f.key} className="contents">
-                <dt className="text-muted-foreground col-span-1">{f.label}</dt>
-                <dd className="col-span-2 font-medium break-all">{bd[f.key]}</dd>
+          <div className="space-y-3">
+            {accounts.map((acct, i) => (
+              <div key={i} className="rounded-lg border border-border p-3">
+                {accounts.length > 1 && (
+                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">
+                    Account {i + 1}
+                  </div>
+                )}
+                <dl className="grid grid-cols-3 gap-y-1.5 text-sm">
+                  {BANK_FIELDS.filter((f) => acct[f.key]).map((f) => (
+                    <div key={f.key} className="contents">
+                      <dt className="text-muted-foreground col-span-1">{f.label}</dt>
+                      <dd className="col-span-2 font-medium break-all">{acct[f.key]}</dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
             ))}
-          </dl>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -2542,6 +2608,136 @@ function LicensesTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) 
           setUploadOpen(false);
         }}
       />
+    </Card>
+  );
+}
+
+// Folder-based documents view for the entity — mirrors the standalone
+// Documents page (folder cards → open a folder → upload/list), scoped here.
+const ENTITY_DEFAULT_FOLDERS = ["Filings", "Templates", "Incorporation Documents"];
+
+function EntityDocumentsTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const [folder, setFolder] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+
+  const { data: docs = [] } = useQuery({
+    queryKey: ["entity-docs", entity.id],
+    queryFn: () => api.get<DocumentOut[]>(`/api/documents?entity_id=${entity.id}`),
+  });
+
+  const counts = new Map<string, number>();
+  for (const d of docs) {
+    const f = d.folder || d.category;
+    counts.set(f, (counts.get(f) ?? 0) + 1);
+  }
+  const base = entity.document_folders?.length
+    ? entity.document_folders
+    : ENTITY_DEFAULT_FOLDERS;
+  const folders = Array.from(new Set([...base, ...counts.keys()]));
+  const shown = q.trim()
+    ? folders.filter((f) => f.toLowerCase().includes(q.trim().toLowerCase()))
+    : folders;
+
+  const patchFolders = (next: string[]) =>
+    api.patch<Entity>(`/api/entities/${entity.id}`, { document_folders: next });
+  const createFolder = useMutation({
+    mutationFn: (name: string) => patchFolders(Array.from(new Set([...base, name]))),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const deleteFolder = useMutation({
+    mutationFn: (name: string) => patchFolders(base.filter((f) => f !== name)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  if (folder) {
+    return (
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <button
+            onClick={() => setFolder(null)}
+            className="text-sm text-aspora-700 hover:underline"
+          >
+            ← All folders
+          </button>
+          <DocumentList
+            scope={{ kind: "entity", entityId: entity.id }}
+            folder={folder}
+            title={folder}
+            hint={`New uploads here go to the “${folder}” folder.`}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-sm font-medium">Open a folder to view / upload</div>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const name = window.prompt("New folder name")?.trim();
+                if (name) createFolder.mutate(name);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              New folder
+            </Button>
+          )}
+        </div>
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search folders…"
+          className="h-9 max-w-xs"
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {shown.map((f) => {
+            const n = counts.get(f) ?? 0;
+            return (
+              <div
+                key={f}
+                role="button"
+                tabIndex={0}
+                onClick={() => setFolder(f)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setFolder(f);
+                }}
+                className="rounded-lg border border-border bg-card hover:border-aspora-400 hover:bg-aspora-50/40 px-4 py-3 flex items-center gap-3 cursor-pointer"
+              >
+                <span className="text-sm font-semibold flex-1 truncate">{f}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{n}</span>
+                {isAdmin && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (n > 0) {
+                        window.alert(
+                          `"${f}" has ${n} document(s). Move or delete them first.`,
+                        );
+                        return;
+                      }
+                      if (window.confirm(`Delete the empty folder "${f}"?`))
+                        deleteFolder.mutate(f);
+                    }}
+                    className="shrink-0 p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                    title={n > 0 ? "Folder has documents — empty it first" : "Delete folder"}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
     </Card>
   );
 }

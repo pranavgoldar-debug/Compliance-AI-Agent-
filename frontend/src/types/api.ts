@@ -74,6 +74,8 @@ export interface BankDetails {
   iban?: string;
   swift?: string;
   currency?: string;
+  /** Multiple accounts live here; a legacy single account is the flat fields. */
+  accounts?: BankDetails[];
 }
 
 export interface Entity {
