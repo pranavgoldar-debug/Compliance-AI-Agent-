@@ -289,6 +289,7 @@ export function RulesPage() {
       />
       <ImportRulesDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
+      <div className="flex items-center justify-between gap-3 flex-wrap">
       <Tabs value={tab} onValueChange={(v) => setTab(v as RuleStatus)}>
         <TabsList>
           <TabsTrigger value="staging">
@@ -310,10 +311,7 @@ export function RulesPage() {
           <TabsTrigger value="archived">Archived</TabsTrigger>
         </TabsList>
       </Tabs>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-[260px] max-w-md">
+        <div className="relative w-full sm:w-auto sm:min-w-[280px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by form, authority, area…"
@@ -322,6 +320,22 @@ export function RulesPage() {
             className="pl-9"
           />
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <select
+          value={entityId}
+          onChange={(e) => setEntityId(e.target.value)}
+          className="h-10 min-w-[200px] rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          <option value="">All entities</option>
+          {entities.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.name}
+            </option>
+          ))}
+        </select>
         <select
           value={jurisdictionCode}
           onChange={(e) => setJurisdictionCode(e.target.value)}
@@ -371,18 +385,6 @@ export function RulesPage() {
           {freqOptions.map((f) => (
             <option key={f} value={f}>
               {f}
-            </option>
-          ))}
-        </select>
-        <select
-          value={entityId}
-          onChange={(e) => setEntityId(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
-        >
-          <option value="">All entities</option>
-          {entities.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
             </option>
           ))}
         </select>
