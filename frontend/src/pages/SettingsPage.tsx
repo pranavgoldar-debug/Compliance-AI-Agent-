@@ -67,8 +67,8 @@ type TabKey =
 
 const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.ComponentType<{ className?: string }> }[] = [
   // Everyone — how the workspace works + the rules for writing due dates.
-  { key: "playbook", label: "Playbook & Guide", icon: BookOpen },
   { key: "profile", label: "Profile", icon: Bell },
+  { key: "playbook", label: "Playbook & Guide", icon: BookOpen },
   { key: "users", label: "Users & Roles", adminOnly: true, icon: Building2 },
   { key: "integrations", label: "Integrations", adminOnly: true, icon: Slack },
   { key: "jurisdictions", label: "Jurisdictions", adminOnly: true, icon: Globe },
@@ -184,9 +184,9 @@ function PlaybookTab() {
   const lifecycle = [
     { n: 1, label: "Entities", desc: "Set up each company + its fiscal year-end. Due dates anchor on this." },
     { n: 2, label: "Find Regulations", desc: "AI discovers the finance filings for an entity's jurisdiction." },
-    { n: 3, label: "Staging", desc: "Discovered filings land here as drafts — nothing on the calendar yet." },
+    { n: 3, label: "For Action", desc: "Discovered filings wait in Review & Assign as drafts — nothing on the calendar yet." },
     { n: 4, label: "Review & Assign", desc: "An admin checks each filing, sets the owner, and approves it." },
-    { n: 5, label: "Production", desc: "Approved filings auto-appear on the Calendar for every attached entity." },
+    { n: 5, label: "Approved", desc: "Approved filings auto-appear on the Calendar for every attached entity." },
     { n: 6, label: "Track", desc: "Owners work obligations in Filings / Workspace; proofs go in Documents." },
   ];
 
@@ -243,19 +243,19 @@ function PlaybookTab() {
       {/* Rule lifecycle / statuses */}
       <PlaybookSection
         icon={<ShieldCheck className="h-5 w-5" />}
-        title="The rule lifecycle: Staging → Production"
-        subtitle="A filing only hits the calendar once it's Production."
+        title="The rule lifecycle: For Action → Approved"
+        subtitle="A filing only hits the calendar once it's Approved."
       >
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Badge variant="alert">Staging</Badge>
-          <span className="text-muted-foreground">draft — found by AI or just created, awaiting review</span>
+          <Badge variant="alert">For Action</Badge>
+          <span className="text-muted-foreground">draft — found by AI or just added, waiting in Review &amp; Assign</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Badge variant="completed">Production</Badge>
-          <span className="text-muted-foreground">approved — live on the calendar for every attached entity</span>
+          <Badge variant="neutral">Approved</Badge>
+          <span className="text-muted-foreground">live on the calendar for every attached entity</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Badge variant="neutral">Retired / Archived</Badge>
+          <Badge variant="neutral">Archived</Badge>
           <span className="text-muted-foreground">no longer required — drops off the calendar, kept for history</span>
         </div>
       </PlaybookSection>
@@ -311,21 +311,22 @@ function PlaybookTab() {
       <PlaybookSection
         icon={<PlusCircle className="h-5 w-5" />}
         title="Adding a regulation yourself"
-        subtitle="What happens when you create one manually (admins only)."
+        subtitle="Where to add one manually (admins only)."
       >
         <ul className="space-y-2 text-sm">
           <li className="flex items-start gap-2">
             <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
             <span>
-              A manually-added rule is created as <Badge variant="completed" className="align-middle">Production</Badge>{" "}
-              straight away — it <span className="font-medium">skips Staging and Review &amp; Assign</span>.
+              Add one from an <span className="font-medium">entity's page, under its Compliance section</span> — pick the
+              filings that apply to that company.
             </span>
           </li>
           <li className="flex items-start gap-2">
             <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
             <span>
-              It appears on the <span className="font-medium">Calendar</span> for each attached entity (subject to
-              that entity's activity applicability), once saved/approved.
+              Your picks land in <span className="font-medium">Review &amp; Assign</span> as{" "}
+              <Badge variant="alert" className="align-middle">For Action</Badge> — the same as AI-discovered filings.
+              Approve them to put them on the Calendar.
             </span>
           </li>
           <li className="flex items-start gap-2">
@@ -333,13 +334,6 @@ function PlaybookTab() {
             <span>
               The <span className="font-medium">due date you type is parsed by the same rules above</span> — so write it
               in one of the supported shapes, and set the matching Frequency.
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <ChevronRight className="h-4 w-4 text-aspora-500 shrink-0 mt-0.5" />
-            <span>
-              Only <span className="font-medium">Finance-function</span> filings are shown while the finance-only
-              switch is on — Compliance/Legal items are hidden, not deleted.
             </span>
           </li>
         </ul>
