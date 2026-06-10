@@ -815,43 +815,28 @@ _ACTIVITY_LABELS: dict[str, str] = {
 
 
 def _confirmed_activities_block(profile: Optional[dict]) -> str:
-    """Render the entity's primary-activity answers as discovery inputs:
-    - 'yes' → EXPANDS the obligation universe (each is a trigger; add the
-      filings it implies).
-    - 'no'  → EXCLUDES the activity-specific filings that exist ONLY because of
-      that activity (baseline obligations every company of this type/jurisdiction
-      owes still stay).
-    - 'tbc' / unanswered → left ambiguous (neither expanded nor excluded)."""
+    """Render the entity's CONFIRMED primary activities (answered 'yes') as an
+    additive discovery input. Positive-only: only confirmed activities are fed,
+    and only to EXPAND the obligation universe — never as a filter. 'no' answers
+    are NOT used to scope discovery; they only drive the mandatory/conditional/
+    not-applicable classification in the assessment step. This keeps discovery
+    broad so nothing is silently missed."""
     from compliance_agent.activity_gate import primary_only
 
     prof = primary_only(profile) or {}
-    yes = [
+    lines = [
         f"- The entity {_ACTIVITY_LABELS.get(k, k.replace('_', ' '))}."
         for k, v in prof.items()
         if str(v).strip().lower() == "yes"
     ]
-    no = [
-        f"- {_ACTIVITY_LABELS.get(k, k.replace('_', ' '))}"
-        for k, v in prof.items()
-        if str(v).strip().lower() == "no"
-    ]
-    block = ""
-    if yes:
-        block += (
-            "\n\nCONFIRMED ACTIVITIES (admin-verified — each EXPANDS the obligation "
-            "universe; treat each as a trigger and ADD every filing it implies in "
-            "this jurisdiction):\n"
-            + "\n".join(yes)
-        )
-    if no:
-        block += (
-            "\n\nEXCLUDED ACTIVITIES (admin-verified the entity does NOT do these — "
-            "OMIT any filing that exists ONLY because of one of these activities. "
-            "Do NOT drop baseline obligations every company of this legal type / "
-            "jurisdiction owes — only the activity-specific filings tied to these):\n"
-            + "\n".join(no)
-        )
-    return block
+    if not lines:
+        return ""
+    return (
+        "\n\nCONFIRMED ACTIVITIES (admin-verified — each EXPANDS the obligation "
+        "universe; treat each as a trigger and ADD every filing it implies in "
+        "this jurisdiction; never use these to remove anything):\n"
+        + "\n".join(lines)
+    )
 
 
 @router.post("/{entity_id}/discover-regulations")
@@ -861,10 +846,11 @@ def discover_entity_regulations(
     user: User = Depends(require_admin),
 ):
     """Entity-level discovery: from the entity's Nature of Operations,
-    jurisdiction, ALL its licenses, and its primary-activity answers, ask the AI
-    for the regulatory obligations that apply — EXPANDING on confirmed ('yes')
-    activities and EXCLUDING activity-specific filings for ones answered 'no'
-    (baseline obligations always stay). Persists new items as Staging.
+    jurisdiction and ALL its licenses, ask the AI for the MAXIMAL set of
+    regulatory obligations (all functions / item types, assume every activity
+    present). Confirmed ('yes') primary activities EXPAND the list; 'no' answers
+    do NOT scope discovery — they only drive the mandatory-vs-not classification
+    in the assessment step. Persists new items as Staging.
 
     HARD GATE: requires BOTH at least one uploaded license AND a stated nature
     of operations. Without them there's nothing entity-specific to ground on,
