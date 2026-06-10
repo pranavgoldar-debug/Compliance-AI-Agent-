@@ -274,6 +274,10 @@ export function RulesPage() {
               params={{
                 status: tab,
                 jurisdiction_code: jurisdictionCode || undefined,
+                // For Action shows only items sent to review — match that here,
+                // so the export excludes freshly-discovered drafts (otherwise it
+                // dumps the whole staging catalog instead of the visible rows).
+                in_review: tab === "staging" ? "true" : undefined,
               }}
             />
             <Button
