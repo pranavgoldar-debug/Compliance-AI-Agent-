@@ -198,8 +198,84 @@ def canonical_code(
     return None
 
 
+# ---------------------------------------------------------------------------
+# Acronym / spelling normalization (jurisdiction-agnostic)
+# ---------------------------------------------------------------------------
+# Acronym → full form. We expand the SHORT form to the LONG form (never the
+# reverse), whole-word only, so an acronym and its spelled-out name end up
+# sharing tokens — "PAYE RTI FPS", "PAYE Real Time Information Full Payment
+# Submission" and "Full Payment Submission (FPS)" all normalize alike. This is
+# ADDITIVE: an expansion only adds the words the long form already uses, so it
+# can never merge two genuinely different filings (the false merge we guard
+# against). High-signal finance/compliance acronyms only — no ambiguous words.
+_ACRONYM_EXPANSIONS: dict[str, str] = {
+    "fps": "full payment submission",
+    "rti": "real time information",
+    "eps": "employer payment summary",
+    "vat": "value added tax",
+    "gst": "goods and services tax",
+    "hst": "harmonized sales tax",
+    "aml": "anti money laundering",
+    "cft": "counter terrorist financing",
+    "ctf": "counter terrorist financing",
+    "kyc": "know your customer",
+    "cdd": "customer due diligence",
+    "edd": "enhanced due diligence",
+    "psc": "persons with significant control",
+    "boi": "beneficial ownership information",
+    "ubo": "ultimate beneficial owner",
+    "ctr": "currency transaction report",
+    "sar": "suspicious activity report",
+    "str": "suspicious transaction report",
+    "cmar": "client money and assets return",
+    "fbar": "foreign bank account report",
+    "ofac": "office of foreign assets control",
+    "ofsi": "office of financial sanctions implementation",
+    "ein": "employer identification number",
+    "tin": "taxpayer identification number",
+    "nic": "national insurance contributions",
+    "ers": "employment related securities",
+    "esr": "economic substance",
+    "cbcr": "country by country report",
+    "mtl": "money transmitter license",
+    "wps": "wage protection system",
+}
+
+# Spelling / regional variants → one canonical token. SAFE: pure spelling, not
+# meaning (so it never collapses semantically different words). We deliberately
+# do NOT fold the verb family return/report/filing/submission/declaration here —
+# that risks a false merge, so the AI dedupe pass judges those in context.
+_TERM_CANON: dict[str, str] = {
+    "licence": "license",
+    "licences": "license",
+    "programme": "program",
+    "programmes": "program",
+    "organisation": "organization",
+    "organisations": "organization",
+    "centre": "center",
+    "instalment": "installment",
+    "instalments": "installment",
+}
+
+
+def normalize_phrase(text: Optional[str]) -> str:
+    """Lowercase a filing name and normalize it for matching: expand known
+    acronyms to their full form and canonicalize spelling/regional variants,
+    reducing to space-separated alphanumeric words. Used by the dedupe keys so
+    acronym-vs-full-form and spelling variants collapse before token comparison.
+    Additive/spelling-only — never collapses semantically different words."""
+    s = re.sub(r"[^a-z0-9]+", " ", (text or "").lower())
+    out: list[str] = []
+    for w in s.split():
+        w = _TERM_CANON.get(w, w)
+        exp = _ACRONYM_EXPANSIONS.get(w)
+        out.extend(exp.split() if exp else [w])
+    return " ".join(out)
+
+
 __all__ = [
     "canonical_code",
+    "normalize_phrase",
     "CatalogEntry",
     "JURISDICTION_CATALOG",
 ]

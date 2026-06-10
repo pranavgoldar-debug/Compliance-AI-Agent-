@@ -506,8 +506,9 @@ def _dedupe_key(text: Optional[str]) -> str:
     variants like 'Notification of Significant Events' and 'Significant Events
     Notification' match). E.g. 'Client Money and Asset Return' and 'Client Money
     and Assets Return' collapse to the same key."""
-    s = re.sub(r"\([^)]*\)", " ", (text or "").lower())
-    s = re.sub(r"[^a-z0-9]+", " ", s)
+    from compliance_agent.rule_normalize import normalize_phrase
+
+    s = normalize_phrase(text)
     # Drop noise words that don't distinguish one filing from another.
     drop = {"the", "a", "an", "of", "for", "to", "and", "filing", "form"}
     toks = []
@@ -520,15 +521,18 @@ def _dedupe_key(text: Optional[str]) -> str:
         if len(w) >= 4 and w.endswith("s"):
             w = w[:-1]
         toks.append(w)
-    # Sort so word order doesn't create a false distinction.
-    return " ".join(sorted(toks)).strip()
+    # Sort so word order doesn't create a false distinction; dedupe tokens so an
+    # acronym expansion that repeats words already present (e.g. "Full Payment
+    # Submission (FPS)" → full/payment/submission twice) still yields one key.
+    return " ".join(sorted(set(toks))).strip()
 
 
 def _name_tokens_ordered(text: Optional[str]) -> list[str]:
     """The same normalized significant tokens as _dedupe_key but IN ORIGINAL
     ORDER (not sorted) — used to test acronym ↔ expansion matches."""
-    s = re.sub(r"\([^)]*\)", " ", (text or "").lower())
-    s = re.sub(r"[^a-z0-9]+", " ", s)
+    from compliance_agent.rule_normalize import normalize_phrase
+
+    s = normalize_phrase(text)
     drop = {"the", "a", "an", "of", "for", "to", "and", "filing", "form"}
     toks: list[str] = []
     for w in s.split():
@@ -838,6 +842,16 @@ def _run_ai_dedupe(db, entity, rules, removable, *, min_count: int = 3) -> int:
             if r is not keep and removable(r):
                 _remove_rule_from_entity(db, r, entity)
                 removed += 1
+    # Parent/child: drop the GENERIC parent obligations the model flagged as
+    # redundant because the SPECIFIC children are already in the list.
+    for x in getattr(res, "redundant_parents", None) or []:
+        if not (isinstance(x, int) and 1 <= x <= n) or x in seen:
+            continue
+        seen.add(x)
+        parent = rules[x - 1]
+        if removable(parent):
+            _remove_rule_from_entity(db, parent, entity)
+            removed += 1
     if removed:
         db.flush()
     return removed

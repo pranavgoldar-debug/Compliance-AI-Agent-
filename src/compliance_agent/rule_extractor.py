@@ -608,37 +608,59 @@ def assess_obligations(
 # Tax Estimated Payments"; "IRS" == "Internal Revenue Service"), so we ask the
 # model to cluster the genuine duplicates. CONSERVATIVE by design.
 # ---------------------------------------------------------------------------
-DEDUPE_PROMPT = """You de-duplicate a list of regulatory filing obligations for ONE company. The list was AI-generated and frequently contains the SAME real-world filing written several times under different names, wordings or authority spellings.
+DEDUPE_PROMPT = """You de-duplicate and canonicalize a list of regulatory obligations for ONE company. The list was AI-generated and frequently contains the SAME real-world obligation written several times under different names, wordings, acronyms or authority spellings. Work JURISDICTION-AGNOSTICALLY (UK, US, EU, APAC, …) and judge by MEANING, not by title.
 
-Return CLUSTERS. Each cluster names ONE entry to KEEP and the indices of the OTHER entries that are the SAME underlying statutory filing and should be removed. KEEP the entry with the clearest, most specific, correctly-spelled name.
+Decide whether two entries are the SAME obligation by comparing their SUBSTANCE, not their wording:
+- the regulator / authority (allow spelling + acronym variants: "IRS" = "Internal Revenue Service", "OFAC" = "Office of Foreign Assets Control", "OFSI", "FinCEN", "FCA", "HMRC", "Companies House", "ICO", "MAS", "ASIC", "HKMA");
+- the underlying legal requirement / governing rule;
+- the filing purpose and the information reported;
+- the trigger event and the frequency.
+Normalize acronyms, abbreviations, full forms, synonyms, plural/singular and regional terms before comparing — treat "FPS" = "Full Payment Submission", "RTI" = "Real Time Information", "CTR" = "Currency Transaction Report", "SAR" = "Suspicious Activity Report", "CMAR" = "Client Money and Assets Return", "VAT" = "Value Added Tax", "Licence" = "License", "Controller Report" = "Controllers Report", and "Filing"/"Return"/"Submission"/"Report"/"Declaration" as interchangeable where the substance matches.
 
-MERGE two entries ONLY when they are the same statutory filing — the same form / return / report / registration, to the same authority (allowing different spellings or acronyms of that authority, e.g. "IRS" = "Internal Revenue Service", "OFAC" = "Office of Foreign Assets Control"), at the same cadence. Examples that ARE the same filing:
+OUTPUT — two kinds of removal:
+1) clusters: each names ONE entry to KEEP and the indices of OTHER entries that are the SAME obligation and should be removed. KEEP the clearest, most specific, correctly-spelled, canonical name.
+2) redundant_parents: indices of GENERIC "parent" obligations to remove BECAUSE the list ALSO contains the SPECIFIC child obligations they summarise — so the inventory isn't double-counted. Only when the children are actually present.
+
+Examples that ARE the same obligation (cluster + keep one):
 - "Federal Estimated Tax Instalments", "Federal Estimated Tax Payments", "Federal Corporate Tax Estimated Payments" → one quarterly IRS estimated-tax payment.
-- "State Unemployment Insurance Tax Returns" and "State Unemployment Tax Returns (Multi-State)".
-- A GENERIC entry and a SPECIFIC one for the same thing: "State Money Transmitter License Renewal (Michigan)" and "Michigan Money Transmitter License Renewal".
+- "PAYE Real Time Information Full Payment Submission", "PAYE RTI FPS", "Full Payment Submission (FPS)".
+- "FCA Periodic Fee" and "FCA Periodic Fee and Tariff Data Return" (the same fee-tariff obligation) — keep the more complete name.
+- "Annual Safeguarding Audit", "Safeguarding Audit Report", "Independent Safeguarding Audit".
 
-Do NOT merge filings that are genuinely DIFFERENT, even when related. When in doubt, KEEP them separate:
-- Different states / jurisdictions (Maryland vs Michigan license renewals are SEPARATE filings).
+Parent/child (put the GENERIC parent in redundant_parents, keep the specifics):
+- Generic "State Money Transmitter License Renewal & Reporting" when specific "Michigan Money Transmitter License Renewal", "Maryland Money Transmitter License Renewal" are present.
+
+Do NOT merge obligations that are genuinely DIFFERENT, even when related — when in doubt, KEEP them separate:
+- Different states / jurisdictions (Maryland vs Michigan renewals are SEPARATE).
 - Different forms that merely support one another (Form W-2 vs Form W-3; Form 941 vs Form 940; 1099 vs W-2).
 - Different tax bases (corporate income vs withholding vs unemployment vs franchise/sales).
-- A return vs its separate payment, or a registration vs an ongoing return vs a renewal, when listed as distinct obligations.
-- Federal vs state versions of a similar filing.
+- A return vs its SEPARATE payment, or a registration vs an ongoing return vs a renewal, when listed as distinct obligations.
+- An ongoing COMPLIANCE CONTROL vs a distinct periodic FILING/REPORT, even on the same topic: e.g. the "AML Compliance Programme" (control) and the "REP-CRIM Financial Crime Report" (filing) are DIFFERENT obligations — do not merge a control into its related report. Only merge two phrasings of the SAME control, or two phrasings of the SAME filing.
 
-Indices are 1-based and refer to the numbered list provided. Only include an index in at most ONE cluster, and only include clusters that actually remove something."""
+Indices are 1-based and refer to the numbered list provided. Use each index at most ONCE across all clusters and redundant_parents, and only output entries that actually remove something."""
 
 
 class FilingDupeCluster(BaseModel):
     keep_index: int = Field(
-        description="1-based index of the filing to KEEP (clearest, most specific name)."
+        description="1-based index of the obligation to KEEP (clearest, most specific, canonical name)."
     )
     drop_indices: list[int] = Field(
         default_factory=list,
-        description="1-based indices of entries that are the SAME filing as keep_index and should be removed.",
+        description="1-based indices of entries that are the SAME obligation as keep_index and should be removed.",
     )
 
 
 class FilingDedupe(BaseModel):
     clusters: list[FilingDupeCluster] = Field(default_factory=list)
+    redundant_parents: list[int] = Field(
+        default_factory=list,
+        description=(
+            "1-based indices of GENERIC parent obligations to remove because the "
+            "list also contains the SPECIFIC child obligations they summarise "
+            "(e.g. a generic multi-state license renewal when the per-state "
+            "renewals are present). Only when the children are present."
+        ),
+    )
 
 
 def dedupe_filings(filings_block: str, *, model: str = "claude-opus-4-8") -> FilingDedupe:
