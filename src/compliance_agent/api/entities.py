@@ -1,8 +1,11 @@
 """Entity CRUD endpoints."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -1113,6 +1116,12 @@ def discover_entity_regulations(
     ]
     if cov:
         entity.qualification = {**(entity.qualification or {}), "coverage_notes": cov}
+    logger.info(
+        "DISCOVERY entity=%s (%s): model returned %d candidate(s) -> created %d, "
+        "already_present %d, duplicates_removed %d. notes=%r",
+        entity_id, entity.name, len(result.rules), len(created),
+        already_present, deduped, result.notes,
+    )
     log_activity(
         db, actor_id=user.id, action="entity.discovered_regulations",
         target_type="entity", target_id=entity_id,

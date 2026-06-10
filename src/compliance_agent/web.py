@@ -10,10 +10,24 @@ provide `ANTHROPIC_API_KEY` to switch to live Claude extraction.
 """
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from importlib.resources import files
 from pathlib import Path
 from typing import Optional
+
+# Make application logs (AI token usage, discovery debug, warnings) actually
+# visible in the server output. Uvicorn only configures its own loggers, so
+# without this our `compliance_agent.*` INFO logs are dropped. Attach a stdout
+# handler directly to the package logger so it works under uvicorn / Render.
+_app_logger = logging.getLogger("compliance_agent")
+_app_logger.setLevel(os.environ.get("LOG_LEVEL", "INFO").upper())
+if not _app_logger.handlers:
+    _h = logging.StreamHandler(sys.stdout)
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _app_logger.addHandler(_h)
+    _app_logger.propagate = False
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
