@@ -149,7 +149,6 @@ export function EntityDetailPage() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="primary">Primary Activities</TabsTrigger>
           <TabsTrigger value="compliance">Compliance</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
         </TabsList>
@@ -174,10 +173,6 @@ export function EntityDetailPage() {
 
         <TabsContent value="licenses">
           <LicensesTab entity={entity} isAdmin={isAdmin} />
-        </TabsContent>
-
-        <TabsContent value="primary">
-          <ActivityProfileTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="documents">
