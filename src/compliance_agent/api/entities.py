@@ -875,55 +875,57 @@ _DISCOVERY_SHARED = (
     "rather than omitting it. Never invent a filing.\n\n"
 )
 
-# Discovery runs as one FOCUSED call per domain (merged + deduped afterwards)
+# Discovery runs as one FOCUSED call per FUNCTION (merged + deduped afterwards)
 # instead of a single monolithic sweep — each call is exhaustive within its
-# slice with the full output budget, recovering niche named filings a single
-# pass drops. Each tuple is (short label, domain-specific recall detail).
+# function with the full output budget, recovering niche named filings a single
+# pass drops. The four functions mirror the app's owner-team taxonomy
+# (Finance / Compliance / HR / Legal), so coverage maps to how the obligations
+# are tagged + filtered. Each tuple is (function, what that function covers).
 _DISCOVERY_CHUNKS: list[tuple[str, str]] = [
     (
-        "Corporate, statutory & tax",
-        "company-registry filings (annual accounts; annual return / confirmation "
-        "statement; persons-with-significant-control / beneficial-ownership "
-        "register; statutory registers; changes of director / registered "
-        "office); corporate / income tax return AND its balance payment AND any "
-        "instalments; VAT / GST / sales-tax registration and periodic returns "
-        "(if registered); annual financial statements and audit / accounts "
-        "filing; transfer-pricing documentation and country-by-country report "
-        "where there are related-party / intra-group transactions.",
+        "Finance",
+        "tax and audited-numbers filings — corporate / income tax return AND its "
+        "balance payment AND any instalments; VAT / GST / sales-tax registration "
+        "and periodic returns; payroll withholding / PAYE / NIC remittances and "
+        "benefits-in-kind reporting with the associated employer NIC; "
+        "transfer-pricing documentation and country-by-country report; "
+        "FDI / central-bank statistical returns; and the annual financial "
+        "statements / audited accounts filed to the company registry.",
     ),
     (
-        "Payroll, people & pensions",
-        "payroll withholding / real-time payroll submissions each pay-run and any "
-        "employer summary returns; the periodic payroll-tax / social-security "
-        "remittance; year-end payroll returns; benefits-in-kind reporting and the "
-        "associated employer contributions; pension / auto-enrolment obligations "
-        "and re-declarations; employee share-scheme / equity returns where the "
-        "entity grants shares or options. Only if the entity employs staff / runs "
-        "payroll.",
+        "Compliance",
+        "filings to the financial-conduct / prudential regulator and "
+        "financial-crime duties (only if the entity holds a financial-services "
+        "licence or is AML-regulated) — capital-adequacy / own-funds returns; "
+        "safeguarding / client-money returns and the independent safeguarding "
+        "audit; prudential & financial-resilience returns; conduct returns "
+        "(payments fraud, operational & security risk, complaints); controllers "
+        "/ close-links returns; AML/CFT registration & renewal, the AML "
+        "programme, risk assessment & periodic effectiveness review; transaction "
+        "reports (large-cash, large-virtual-currency, cross-border / electronic "
+        "funds-transfer above the threshold, suspicious-transaction, "
+        "terrorist-property); sanctions screening and breach / frozen-asset "
+        "reporting; regulatory periodic fees; and change-in-control / breach / "
+        "material-business-change notifications.",
     ),
     (
-        "Financial-services regulatory returns",
-        "returns and notifications owed to the entity's financial-services / "
-        "prudential / conduct regulator under its licence — ONLY if it holds such "
-        "a licence. Include, by their real names where they exist: capital-"
-        "adequacy / own-funds returns; safeguarding / client-money returns and "
-        "the independent safeguarding audit; prudential & financial-resilience "
-        "returns; conduct returns (payments fraud, operational & security risk, "
-        "complaints); controllers / close-links / ownership returns; regulatory "
-        "periodic fees and fee-tariff / annual-income returns; and event-based "
-        "notifications (change in control, breach / regulatory concern, "
-        "significant business change). For money-services / payment / e-money "
-        "firms also include the periodic report(s) to the payments regulator.",
+        "HR",
+        "employee-facing filings (only if the entity employs staff) — employee "
+        "tax / earnings certificates; real-time payroll submissions reporting pay "
+        "& deductions; provident-fund / social-security / state-insurance "
+        "contributions; workplace-pension / auto-enrolment obligations and "
+        "periodic re-declarations; end-of-service / workplace-savings; and "
+        "employee share-scheme / equity (ERS-type) returns where the entity "
+        "grants shares or options to staff or directors.",
     ),
     (
-        "AML / financial crime & data protection",
-        "AML/CFT registration & renewal with the AML supervisor; the AML "
-        "compliance programme, risk assessment and periodic effectiveness review; "
-        "transaction reports to the financial-intelligence regulator (large-cash, "
-        "large virtual-currency, cross-border / electronic funds-transfer above "
-        "the threshold, suspicious-transaction, terrorist-property); sanctions "
-        "screening and sanctions breach / frozen-asset reporting; data-protection "
-        "registration / fee and personal-data breach notification.",
+        "Legal",
+        "corporate-registry, governance, ownership and data-protection filings — "
+        "annual return / confirmation statement; persons-with-significant-control "
+        "/ beneficial-ownership register; statutory registers; director KYC and "
+        "notifications of changes to directors / registered office; trade-licence "
+        "renewal; and data-protection registration / fee / personal-data breach "
+        "notification.",
     ),
 ]
 
@@ -1046,10 +1048,12 @@ def discover_entity_regulations(
     coverage: list = []
     for label, detail in _DISCOVERY_CHUNKS:
         focus = (
-            f"FOCUS DOMAIN: {label}.\n"
-            f"Return ONLY obligations in this domain — {detail}\n"
-            "Do NOT output obligations from other domains; they are discovered "
-            "separately.\n\n"
+            f"FOCUS — the {label} function.\n"
+            f"Return ONLY obligations whose responsible team is {label} (per the "
+            f"OWNER-TEAM rules): {detail}\n"
+            "Do NOT output obligations that belong to another team — they are "
+            f"discovered separately. Set owner_team = {label} for every item you "
+            "return here.\n\n"
         )
         chunk_ctx = (
             focus + _DISCOVERY_SHARED + uk_recall + "\n" + grounding
