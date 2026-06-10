@@ -149,6 +149,7 @@ export function EntityDetailPage() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="primary-activity">Primary Activity</TabsTrigger>
           <TabsTrigger value="compliance">Compliance</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
         </TabsList>
@@ -175,6 +176,10 @@ export function EntityDetailPage() {
           <LicensesTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
 
+        <TabsContent value="primary-activity">
+          <ActivityProfileTab entity={entity} isAdmin={isAdmin} />
+        </TabsContent>
+
         <TabsContent value="documents">
           <EntityDocumentsTab entity={entity} isAdmin={isAdmin} />
         </TabsContent>
@@ -185,7 +190,10 @@ export function EntityDetailPage() {
 
 
 // ---------------------------------------------------------------------------
-// Activity Profile — Yes / No / TBC flags (drives Find Regulations) + ownership
+// Primary Activity — Yes / No / TBC flags, each revealing its follow-ups on
+// "Yes". Every activity starts at "Yes"; the answers gate the follow-ups and
+// drive the mandatory-vs-conditional assessment. They do NOT change what
+// "Refresh Regulations" discovers — discovery always assumes every activity.
 // ---------------------------------------------------------------------------
 function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
   const queryClient = useQueryClient();
@@ -198,12 +206,32 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
       api.patch<Entity>(`/api/entities/${entity.id}`, { finance_profile: next }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
   });
-  const setFlag = (key: string, value: "yes" | "no" | "tbc") => {
-    const next = { ...profile };
-    if (value === "tbc") delete next[key];
-    else next[key] = value;
-    saveProfile.mutate(next);
-  };
+
+  // Initially assume EVERY primary activity is "Yes": when this entity has no
+  // primary answers yet, seed them all to "yes" once (admins only). This gates
+  // which follow-ups appear and feeds the mandatory-vs-not assessment — it
+  // never changes what "Refresh Regulations" discovers (discovery always
+  // assumes every activity is present, regardless of these answers).
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (gates.some((g) => profile[g.key])) return;
+    const seeded: Record<string, string> = { ...profile };
+    gates.forEach((g) => {
+      seeded[g.key] = "yes";
+    });
+    saveProfile.mutate(seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entity.id]);
+
+  // Default to "Yes" until an explicit answer is stored, matching the all-yes seed.
+  const flagOf = (key: string): "yes" | "no" | "tbc" =>
+    profile[key] === "no" ? "no" : profile[key] === "tbc" ? "tbc" : "yes";
+  // Store "tbc" explicitly (rather than clearing) so it survives the all-yes
+  // default; the backend treats a "tbc" string the same as unanswered.
+  const setFlag = (key: string, value: "yes" | "no" | "tbc") =>
+    saveProfile.mutate({ ...profile, [key]: value });
+  const setFollowup = (key: string, value: string) =>
+    saveProfile.mutate({ ...profile, [key]: value });
 
   const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
     { value: "yes", label: "Yes" },
@@ -218,53 +246,97 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
           <div>
             <h3 className="font-semibold">Primary activity</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              What this entity does. These answers drive which filings{" "}
-              <strong>Find Regulations</strong> marks mandatory vs conditional.
-              TBC = awaiting confirmation (doesn't switch anything on).
+              What this entity does. Every activity starts at <strong>Yes</strong>
+              {" "}— set those that don't apply to <strong>No</strong>. Your
+              answers decide which follow-up questions appear and, with them,
+              which discovered filings are mandatory vs conditional.
             </p>
-            <p className="text-xs text-amber-600 mt-1.5">
-              Answer carefully — changing an answer changes the regulations and
-              filings this entity is assessed against.
+            <p className="text-xs text-muted-foreground mt-1">
+              These answers do <strong>not</strong> change what{" "}
+              <strong>Refresh Regulations</strong> discovers — that list always
+              assumes every activity is present.
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="space-y-2">
             {gates.map((g) => {
-              const val = profile[g.key];
-              const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
+              const current = flagOf(g.key);
+              const fups = current === "yes" ? followupsForJurisdiction(g, juris) : [];
               return (
                 <div
                   key={g.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2"
+                  className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
                 >
-                  <div className="min-w-0">
-                    <div className="text-sm truncate">{g.question}</div>
-                    <div className="text-[11px] text-muted-foreground truncate">
-                      {g.drives}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm">{g.question}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {g.drives}
+                      </div>
+                    </div>
+                    <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
+                      {FLAG_OPTIONS.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          disabled={!isAdmin || saveProfile.isPending}
+                          onClick={() => setFlag(g.key, o.value)}
+                          className={cn(
+                            "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                            current === o.value
+                              ? o.value === "yes"
+                                ? "bg-emerald-500 text-white"
+                                : o.value === "no"
+                                  ? "bg-slate-700 text-white"
+                                  : "bg-secondary text-foreground"
+                              : "bg-background hover:bg-secondary text-muted-foreground",
+                            o.value !== "yes" && "border-l border-input",
+                          )}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
-                    {FLAG_OPTIONS.map((o) => (
-                      <button
-                        key={o.value}
-                        type="button"
-                        disabled={!isAdmin || saveProfile.isPending}
-                        onClick={() => setFlag(g.key, o.value)}
-                        className={cn(
-                          "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-                          current === o.value
-                            ? o.value === "yes"
-                              ? "bg-emerald-500 text-white"
-                              : o.value === "no"
-                                ? "bg-slate-700 text-white"
-                                : "bg-secondary text-foreground"
-                            : "bg-background hover:bg-secondary text-muted-foreground",
-                          o.value !== "yes" && "border-l border-input",
-                        )}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
+                  {fups.length > 0 && (
+                    <div className="mt-2.5 pl-3 border-l-2 border-aspora-100 space-y-2.5">
+                      {fups.map((f) => {
+                        const th = thresholdForJurisdiction(f, juris);
+                        return (
+                          <div
+                            key={f.key}
+                            className="flex items-center justify-between gap-3 flex-wrap"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm">{f.question}</div>
+                              {th && (
+                                <div className="text-[11px] text-muted-foreground">
+                                  {th}
+                                </div>
+                              )}
+                            </div>
+                            <div className="inline-flex flex-wrap gap-1">
+                              {f.options.map((o) => (
+                                <button
+                                  key={o.value}
+                                  type="button"
+                                  disabled={!isAdmin || saveProfile.isPending}
+                                  onClick={() => setFollowup(f.key, o.value)}
+                                  className={cn(
+                                    "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                                    profile[f.key] === o.value
+                                      ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+                                      : "border-input bg-background hover:bg-secondary text-muted-foreground",
+                                  )}
+                                >
+                                  {o.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

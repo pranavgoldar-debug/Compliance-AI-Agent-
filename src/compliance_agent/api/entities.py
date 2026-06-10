@@ -956,29 +956,19 @@ _UK_FCA_RECALL = (
 )
 
 
-def _confirmed_activities_block(profile: Optional[dict]) -> str:
-    """Render the entity's CONFIRMED primary activities (answered 'yes') as an
-    additive discovery input. Positive-only: only confirmed activities are fed,
-    and only to EXPAND the obligation universe — never as a filter. 'no' answers
-    are NOT used to scope discovery; they only drive the mandatory/conditional/
-    not-applicable classification in the assessment step. This keeps discovery
-    broad so nothing is silently missed."""
-    from compliance_agent.activity_gate import primary_only
-
-    prof = primary_only(profile) or {}
-    lines = [
-        f"- The entity {_ACTIVITY_LABELS.get(k, k.replace('_', ' '))}."
-        for k, v in prof.items()
-        if str(v).strip().lower() == "yes"
-    ]
-    if not lines:
-        return ""
-    return (
-        "\n\nCONFIRMED ACTIVITIES (admin-verified — each EXPANDS the obligation "
-        "universe; treat each as a trigger and ADD every filing it implies in "
-        "this jurisdiction; never use these to remove anything):\n"
-        + "\n".join(lines)
-    )
+# Discovery is INTENTIONALLY answer-independent. We always tell the model to
+# assume the entity performs EVERY primary activity, so "Refresh Regulations"
+# returns the SAME maximal universe of obligations no matter how the Primary
+# Activity questions are answered. The primary answers (and their follow-ups)
+# only drive the mandatory-vs-conditional-vs-not-applicable classification in
+# the assessment step — they never add or remove anything from discovery.
+_ALL_ACTIVITIES_BLOCK = (
+    "\n\nASSUME ALL ACTIVITIES PRESENT (fixed list — does NOT depend on the "
+    "entity's answers): treat the entity as if it performs EVERY one of the "
+    "following, and ADD every filing each implies in this jurisdiction. Never "
+    "use this list to remove or narrow anything:\n"
+    + "\n".join(f"- The entity {label}." for label in _ACTIVITY_LABELS.values())
+)
 
 
 @router.post("/{entity_id}/discover-regulations")
@@ -990,9 +980,11 @@ def discover_entity_regulations(
     """Entity-level discovery: from the entity's Nature of Operations,
     jurisdiction and ALL its licenses, ask the AI for the MAXIMAL set of
     regulatory obligations (all functions / item types, assume every activity
-    present). Confirmed ('yes') primary activities EXPAND the list; 'no' answers
-    do NOT scope discovery — they only drive the mandatory-vs-not classification
-    in the assessment step. Persists new items as Staging.
+    present). Discovery is ANSWER-INDEPENDENT: we always assume every primary
+    activity is present (see `_ALL_ACTIVITIES_BLOCK`), so the Primary Activity
+    answers never add or remove anything here — they only drive the
+    mandatory-vs-conditional-vs-not-applicable classification in the assessment
+    step. Persists new items as Staging.
 
     HARD GATE: requires BOTH at least one uploaded license AND a stated nature
     of operations. Without them there's nothing entity-specific to ground on,
@@ -1123,7 +1115,7 @@ def discover_entity_regulations(
         f"year-end-relative deadline (e.g. corporate tax, annual accounts) "
         f"relative to THIS date.\n"
         f"Nature of operations: {entity.nature_of_operation or '(not provided)'}"
-        + _confirmed_activities_block(entity.finance_profile)
+        + _ALL_ACTIVITIES_BLOCK
         + "\n\nLICENSES HELD:\n" + "\n".join(lic_lines) + "\n" + "".join(lic_texts)
     )[:_MAX_PROMPT_CHARS]
 
