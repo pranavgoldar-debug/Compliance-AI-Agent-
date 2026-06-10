@@ -567,12 +567,6 @@ function ApplicabilitySection({
       queryClient.invalidateQueries({ queryKey: ["gaps", entity.id] });
     },
   });
-  const setFlag = (key: string, value: "yes" | "no" | "tbc") => {
-    const next = { ...profile };
-    if (value === "tbc") delete next[key];
-    else next[key] = value;
-    savePrimary.mutate(next);
-  };
   const saveSecondary = useMutation({
     mutationFn: (next: Record<string, string>) =>
       api.patch<Entity>(`/api/entities/${entity.id}`, {
@@ -750,11 +744,14 @@ function ApplicabilitySection({
   }
   const generalToShow = generalQuestions.filter((q) => take(q.question));
 
-  const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
-    { value: "yes", label: "Yes" },
-    { value: "no", label: "No" },
-    { value: "tbc", label: "TBC" },
-  ];
+  // Primary answers are set in the Primary Activity tab — the popup asks ONLY
+  // the follow-ups (for activities marked "Yes" there) and the operation-
+  // specific questions. The verdict still reads BOTH primary and follow-up
+  // answers server-side.
+  const gatesWithFollowups = gates.filter((g) => {
+    const { staticFups, aiFups } = gateFollowups[g.key];
+    return staticFups.length > 0 || aiFups.length > 0;
+  });
 
   const openActivities = () => {
     if (questions.length === 0 && isAdmin) generate.mutate();
@@ -958,10 +955,11 @@ function ApplicabilitySection({
           </DialogHeader>
           <div className="p-6 space-y-3 max-h-[65vh] overflow-y-auto">
             <p className="text-xs text-muted-foreground">
-              Answer the primary questions; operation-specific follow-ups appear
-              beneath each as you answer <strong>Yes</strong>. These are tailored
-              to this entity's nature of operations and jurisdiction. Then click{" "}
-              <strong>Find applicable regulations</strong>.
+              Follow-up and operation-specific questions — tailored to this
+              entity's nature of operations and jurisdiction — that refine the
+              discovered list. Set the entity's activities under{" "}
+              <strong>Primary Activity</strong> first, then answer these and
+              click <strong>Find applicable regulations</strong>.
             </p>
             {generate.isPending ? (
               <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
@@ -970,64 +968,44 @@ function ApplicabilitySection({
               </div>
             ) : (
               <>
-                <div className="space-y-2">
-                  {gates.map((g) => {
-                    const val = profile[g.key];
-                    const current = val === "yes" ? "yes" : val === "no" ? "no" : "tbc";
-                    const { staticFups, aiFups: fups } = gateFollowups[g.key];
-                    return (
-                      <div
-                        key={g.id}
-                        className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm">{g.question}</div>
-                            <div className="text-[11px] text-muted-foreground truncate">
-                              {g.drives}
+                {gatesWithFollowups.length === 0 && generalToShow.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No follow-up questions yet. Mark the relevant activities{" "}
+                    <strong>Yes</strong> under <strong>Primary Activity</strong>{" "}
+                    and their follow-ups will appear here.
+                  </p>
+                ) : (
+                  <>
+                    {gatesWithFollowups.length > 0 && (
+                      <div className="space-y-2">
+                        {gatesWithFollowups.map((g) => {
+                          const { staticFups, aiFups: fups } = gateFollowups[g.key];
+                          return (
+                            <div
+                              key={g.id}
+                              className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                            >
+                              <div className="text-xs font-medium text-aspora-700 mb-2">
+                                {g.drives}
+                              </div>
+                              <div className="space-y-2.5">
+                                {staticFups.map(renderStaticFollowup)}
+                                {fups.map(renderQuestion)}
+                              </div>
                             </div>
-                          </div>
-                          <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
-                            {FLAG_OPTIONS.map((o) => (
-                              <button
-                                key={o.value}
-                                type="button"
-                                disabled={!isAdmin || savePrimary.isPending}
-                                onClick={() => setFlag(g.key, o.value)}
-                                className={cn(
-                                  "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-                                  current === o.value
-                                    ? o.value === "yes"
-                                      ? "bg-emerald-500 text-white"
-                                      : o.value === "no"
-                                        ? "bg-slate-700 text-white"
-                                        : "bg-secondary text-foreground"
-                                    : "bg-background hover:bg-secondary text-muted-foreground",
-                                  o.value !== "yes" && "border-l border-input",
-                                )}
-                              >
-                                {o.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        {(staticFups.length > 0 || fups.length > 0) && (
-                          <div className="mt-2.5 pl-3 border-l-2 border-aspora-100 space-y-2.5">
-                            {staticFups.map(renderStaticFollowup)}
-                            {fups.map(renderQuestion)}
-                          </div>
-                        )}
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-                {generalToShow.length > 0 && (
-                  <div className="space-y-2.5 pt-1">
-                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Operation-specific
-                    </div>
-                    {generalToShow.map(renderQuestion)}
-                  </div>
+                    )}
+                    {generalToShow.length > 0 && (
+                      <div className="space-y-2.5 pt-1">
+                        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Operation-specific
+                        </div>
+                        {generalToShow.map(renderQuestion)}
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
