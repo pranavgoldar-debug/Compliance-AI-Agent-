@@ -212,8 +212,9 @@ def is_finance(
 def keep_function(
     category: str = "", area: str = "", responsible_function: str | None = None
 ) -> bool:
-    """Filter predicate for the FINANCE_ONLY switch. When the switch is off
-    everything passes; when on, only Finance-function rules pass."""
-    if not FINANCE_ONLY:
-        return True
-    return is_finance(category, area, responsible_function)
+    """Show obligations from ALL FOUR functions — Finance, Compliance, HR, Legal.
+    The finance-only restriction has been removed per product decision: every
+    surface (discovered list, calendar, dashboard, obligations, tasks, exports,
+    licenses) now shows every function. Kept as a no-op predicate so the existing
+    call sites don't change."""
+    return True
