@@ -601,6 +601,74 @@ def assess_obligations(
 
 
 # ---------------------------------------------------------------------------
+# Filing de-duplication — the discovery model (run repeatedly, and told to
+# assume every activity) emits the SAME real-world filing several times under
+# different names and authority spellings. Regex/token heuristics miss the
+# semantic variants ("Federal Estimated Tax Instalments" == "Federal Corporate
+# Tax Estimated Payments"; "IRS" == "Internal Revenue Service"), so we ask the
+# model to cluster the genuine duplicates. CONSERVATIVE by design.
+# ---------------------------------------------------------------------------
+DEDUPE_PROMPT = """You de-duplicate a list of regulatory filing obligations for ONE company. The list was AI-generated and frequently contains the SAME real-world filing written several times under different names, wordings or authority spellings.
+
+Return CLUSTERS. Each cluster names ONE entry to KEEP and the indices of the OTHER entries that are the SAME underlying statutory filing and should be removed. KEEP the entry with the clearest, most specific, correctly-spelled name.
+
+MERGE two entries ONLY when they are the same statutory filing — the same form / return / report / registration, to the same authority (allowing different spellings or acronyms of that authority, e.g. "IRS" = "Internal Revenue Service", "OFAC" = "Office of Foreign Assets Control"), at the same cadence. Examples that ARE the same filing:
+- "Federal Estimated Tax Instalments", "Federal Estimated Tax Payments", "Federal Corporate Tax Estimated Payments" → one quarterly IRS estimated-tax payment.
+- "State Unemployment Insurance Tax Returns" and "State Unemployment Tax Returns (Multi-State)".
+- A GENERIC entry and a SPECIFIC one for the same thing: "State Money Transmitter License Renewal (Michigan)" and "Michigan Money Transmitter License Renewal".
+
+Do NOT merge filings that are genuinely DIFFERENT, even when related. When in doubt, KEEP them separate:
+- Different states / jurisdictions (Maryland vs Michigan license renewals are SEPARATE filings).
+- Different forms that merely support one another (Form W-2 vs Form W-3; Form 941 vs Form 940; 1099 vs W-2).
+- Different tax bases (corporate income vs withholding vs unemployment vs franchise/sales).
+- A return vs its separate payment, or a registration vs an ongoing return vs a renewal, when listed as distinct obligations.
+- Federal vs state versions of a similar filing.
+
+Indices are 1-based and refer to the numbered list provided. Only include an index in at most ONE cluster, and only include clusters that actually remove something."""
+
+
+class FilingDupeCluster(BaseModel):
+    keep_index: int = Field(
+        description="1-based index of the filing to KEEP (clearest, most specific name)."
+    )
+    drop_indices: list[int] = Field(
+        default_factory=list,
+        description="1-based indices of entries that are the SAME filing as keep_index and should be removed.",
+    )
+
+
+class FilingDedupe(BaseModel):
+    clusters: list[FilingDupeCluster] = Field(default_factory=list)
+
+
+def dedupe_filings(filings_block: str, *, model: str = "claude-opus-4-8") -> FilingDedupe:
+    """Cluster the duplicate filings in a numbered list. Returns the clusters of
+    indices that denote the same underlying filing (one kept, the rest dropped)."""
+    if not is_live():
+        raise RuleExtractorUnavailable(
+            "AI dedupe requires COMPLIANCE_AGENT_LIVE=1 plus an API key."
+        )
+    client = make_client()
+    response = client.messages.parse(
+        model=model,
+        max_tokens=4000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "medium"},
+        system=[
+            {
+                "type": "text",
+                "text": DEDUPE_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": "FILINGS:\n" + filings_block}],
+        output_format=FilingDedupe,
+    )
+    log_usage(response, model=model, label="filing dedupe")
+    return response.parsed_output or FilingDedupe()
+
+
+# ---------------------------------------------------------------------------
 # License metadata extraction — read a regulator's license/authorisation PDF
 # and pull out the fields needed to pre-fill the "Add license" form.
 # ---------------------------------------------------------------------------

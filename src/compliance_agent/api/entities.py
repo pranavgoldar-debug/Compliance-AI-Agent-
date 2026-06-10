@@ -789,6 +789,68 @@ def _collapse_vat_returns(db, entity) -> int:
     return removed
 
 
+def _ai_collapse_duplicates(db, entity) -> int:
+    """Second-pass de-dup using the AI: the deterministic signatures above miss
+    SEMANTIC duplicates the discovery model invents (synonymous names, different
+    authority spellings, generic-vs-specific phrasings). Ask the model to cluster
+    the genuine duplicates, then remove the redundant copies — but ONLY ever
+    remove a pure discovered draft (staging, not yet sent to review, no
+    obligations), so a confirmed/calendar filing is never deleted by a model
+    mistake. Best-effort: any failure leaves the deterministic result intact."""
+    from compliance_agent.db import RuleStatus
+    from compliance_agent.rule_extractor import dedupe_filings, is_live
+
+    if not is_live():
+        return 0
+    rules = sorted(_entity_rules_fresh(db, entity), key=lambda r: r.id or 0)
+    if len(rules) < 3:
+        return 0
+    lines = [
+        f"{i}. {(r.name or r.form_name or '(unnamed)')} | {r.authority or 'n/a'} "
+        f"| {r.category or 'n/a'} | {r.frequency or 'n/a'}"
+        for i, r in enumerate(rules, start=1)
+    ]
+    try:
+        res = dedupe_filings("\n".join(lines))
+    except Exception:  # noqa: BLE001 — dedupe is best-effort; never break discovery
+        return 0
+
+    def _removable(r) -> bool:
+        # Only delete a pure discovered draft — never a confirmed/sent/scheduled one.
+        return (
+            r.status == RuleStatus.staging
+            and not getattr(r, "sent_to_review", False)
+            and not r.obligations
+        )
+
+    def _safety(r):
+        return (
+            1 if r.obligations else 0,
+            1 if r.status == RuleStatus.production else 0,
+            1 if getattr(r, "sent_to_review", False) else 0,
+            -(r.id or 0),
+        )
+
+    n = len(rules)
+    seen: set = set()
+    removed = 0
+    for cl in res.clusters or []:
+        idxs = [cl.keep_index, *(cl.drop_indices or [])]
+        idxs = [x for x in idxs if isinstance(x, int) and 1 <= x <= n and x not in seen]
+        if len(idxs) < 2:
+            continue
+        seen.update(idxs)
+        members = [rules[x - 1] for x in idxs]
+        keep = max(members, key=_safety)  # never auto-remove the safest copy
+        for r in members:
+            if r is not keep and _removable(r):
+                _remove_rule_from_entity(db, r, entity)
+                removed += 1
+    if removed:
+        db.flush()
+    return removed
+
+
 def _reconcile_drafts(db, entity, keep_sigs: set) -> int:
     """Drop unreviewed AI drafts that the current (deterministic) discovery run no
     longer produces, so the discovered list reflects the LATEST run instead of
@@ -1184,6 +1246,12 @@ def discover_entity_regulations(
     # cadence (a return is filed at one cadence, so Monthly + Quarterly variants
     # are a duplicate). Runs after the add so it catches newly-created variants.
     deduped += _collapse_vat_returns(db, entity)
+    db.flush()
+    # Final pass — AI clustering catches the SEMANTIC duplicates the signature
+    # heuristics miss (synonymous names, different authority spellings,
+    # generic-vs-specific). Only ever removes pure discovered drafts. This also
+    # stops the additive refresh from accumulating naming variants across runs.
+    deduped += _ai_collapse_duplicates(db, entity)
     db.flush()
     # Refresh is ADDITIVE: a candidate that already exists is skipped (counted in
     # already_present), net-new ones are added, and genuine duplicate ROWS are
