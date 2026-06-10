@@ -861,75 +861,6 @@ _UK_FCA_RECALL = (
 )
 
 
-# Shared, domain-neutral output-quality preamble used by every discovery chunk.
-_DISCOVERY_SHARED = (
-    "Discover the regulatory obligations that GENUINELY APPLY to the entity "
-    "below, grounded in its ACTUAL nature of operations, the licences it holds, "
-    "its legal type and its jurisdiction. Do NOT assume activities it has not "
-    "stated; do NOT pad with obligations that only apply to other business "
-    "models. List each distinct filing / return / registration / report as its "
-    "OWN item (do not summarise). Be EXHAUSTIVE within the focus domain — "
-    "include the baseline obligations every company of this legal type owes in "
-    "this jurisdiction even when no specific activity triggers them, and when "
-    "unsure whether a real, named filing applies INCLUDE it marked Conditional "
-    "rather than omitting it. Never invent a filing.\n\n"
-)
-
-# Discovery runs as one FOCUSED call per FUNCTION (merged + deduped afterwards)
-# instead of a single monolithic sweep — each call is exhaustive within its
-# function with the full output budget, recovering niche named filings a single
-# pass drops. The four functions mirror the app's owner-team taxonomy
-# (Finance / Compliance / HR / Legal), so coverage maps to how the obligations
-# are tagged + filtered. Each tuple is (function, what that function covers).
-_DISCOVERY_CHUNKS: list[tuple[str, str]] = [
-    (
-        "Finance",
-        "tax and audited-numbers filings — corporate / income tax return AND its "
-        "balance payment AND any instalments; VAT / GST / sales-tax registration "
-        "and periodic returns; payroll withholding / PAYE / NIC remittances and "
-        "benefits-in-kind reporting with the associated employer NIC; "
-        "transfer-pricing documentation and country-by-country report; "
-        "FDI / central-bank statistical returns; and the annual financial "
-        "statements / audited accounts filed to the company registry.",
-    ),
-    (
-        "Compliance",
-        "filings to the financial-conduct / prudential regulator and "
-        "financial-crime duties (only if the entity holds a financial-services "
-        "licence or is AML-regulated) — capital-adequacy / own-funds returns; "
-        "safeguarding / client-money returns and the independent safeguarding "
-        "audit; prudential & financial-resilience returns; conduct returns "
-        "(payments fraud, operational & security risk, complaints); controllers "
-        "/ close-links returns; AML/CFT registration & renewal, the AML "
-        "programme, risk assessment & periodic effectiveness review; transaction "
-        "reports (large-cash, large-virtual-currency, cross-border / electronic "
-        "funds-transfer above the threshold, suspicious-transaction, "
-        "terrorist-property); sanctions screening and breach / frozen-asset "
-        "reporting; regulatory periodic fees; and change-in-control / breach / "
-        "material-business-change notifications.",
-    ),
-    (
-        "HR",
-        "employee-facing filings (only if the entity employs staff) — employee "
-        "tax / earnings certificates; real-time payroll submissions reporting pay "
-        "& deductions; provident-fund / social-security / state-insurance "
-        "contributions; workplace-pension / auto-enrolment obligations and "
-        "periodic re-declarations; end-of-service / workplace-savings; and "
-        "employee share-scheme / equity (ERS-type) returns where the entity "
-        "grants shares or options to staff or directors.",
-    ),
-    (
-        "Legal",
-        "corporate-registry, governance, ownership and data-protection filings — "
-        "annual return / confirmation statement; persons-with-significant-control "
-        "/ beneficial-ownership register; statutory registers; director KYC and "
-        "notifications of changes to directors / registered office; trade-licence "
-        "renewal; and data-protection registration / fee / personal-data breach "
-        "notification.",
-    ),
-]
-
-
 def _confirmed_activities_block(profile: Optional[dict]) -> str:
     """Render the entity's CONFIRMED primary activities (answered 'yes') as an
     additive discovery input. Positive-only: only confirmed activities are fed,
@@ -976,7 +907,6 @@ def discover_entity_regulations(
     from compliance_agent.rule_extractor import (
         extract_rules_from_text,
         is_live,
-        RuleExtractionResult,
         RuleExtractorUnavailable,
     )
     from compliance_agent.api.licenses import _read_license_text, _MAX_PROMPT_CHARS
@@ -1027,8 +957,71 @@ def discover_entity_regulations(
                 f"\n--- LICENSE DOCUMENT: {l.name} ---\n{t[:_MAX_PROMPT_CHARS]}"
             )
 
-    grounding = (
-        f"ENTITY: {entity.name}\n"
+    context = (
+        "Discover the regulatory obligations that GENUINELY APPLY to the entity "
+        "below, grounded in its ACTUAL nature of operations, the licenses it "
+        "holds, its legal type and its jurisdiction. Do NOT assume activities "
+        "the entity has not stated, and do NOT pad the list with obligations "
+        "that only apply to other business models. Return only items a "
+        "compliance officer for THIS entity would reasonably expect to file.\n"
+        "Cover all four functions WHERE RELEVANT — Finance/Tax, Legal/Corporate, "
+        "Compliance/AML, HR/Payroll — and the item types that actually apply: "
+        "filings, returns, licenses, permits, registrations and ongoing "
+        "reporting obligations.\n"
+        "Be EXHAUSTIVE on the BASELINE obligations every company of this legal "
+        "type owes in this jurisdiction — even when no specific activity "
+        "triggers them. List each as its OWN item (do not summarise), and when "
+        "unsure whether one applies, INCLUDE it marked Conditional rather than "
+        "omitting it:\n"
+        "- Finance / Tax: corporate / income tax return AND its balance payment "
+        "AND instalments; VAT / GST / sales-tax registration and periodic "
+        "returns; annual financial statements and audit / accounts filing; "
+        "payroll withholding remittances and year-end payroll returns; "
+        "social-security / pension contributions; transfer-pricing "
+        "documentation where there are related-party transactions.\n"
+        "- Legal / Corporate: company-registry annual return / confirmation "
+        "statement; persons-with-significant-control / beneficial-ownership "
+        "register; statutory registers; notifications of changes to directors "
+        "or registered office.\n"
+        "- Compliance / AML: registration / renewal with the AML supervisor; "
+        "AML compliance programme, risk assessment and periodic review; "
+        "suspicious-activity and threshold transaction reporting; sanctions "
+        "screening; data-protection registration / fee where the jurisdiction "
+        "requires it.\n"
+        "Then add ANY FURTHER activity-specific obligations the nature of "
+        "operations, a CONFIRMED ACTIVITY below, or a license triggers. Only "
+        "leave out items that clearly do NOT apply to this legal type / "
+        "jurisdiction. One entry per distinct item.\n\n"
+        # Recall guidance for regulated money-movement businesses. The model
+        # reliably lists the generic corporate/tax/payroll filings but forgets
+        # the transaction-level AML reports and the payments-regulator returns
+        # that are the CORE obligations of an MSB/PSP. This is type-level
+        # guidance only (no jurisdiction-specific form names) — it nudges recall
+        # without asserting any specific filing exists.
+        "REGULATED-ACTIVITY CHECKLIST — if the nature of operations or the "
+        "licences indicate the entity is a money-services business, money "
+        "transmitter, remittance provider, foreign-exchange dealer, "
+        "virtual-currency / crypto dealer, or payment service provider, do NOT "
+        "stop at the generic corporate/tax/payroll filings. Make sure you have "
+        "CONSIDERED and included (only where they genuinely apply to THIS "
+        "entity) the obligations these businesses characteristically owe:\n"
+        "- Transaction reports to the AML/financial-intelligence regulator: "
+        "large-cash transaction reports, large virtual-currency transaction "
+        "reports, electronic / cross-border funds-transfer reports above the "
+        "reporting threshold, suspicious-transaction reports, and "
+        "terrorist-property reports.\n"
+        "- AML programme duties: compliance programme + risk assessment, the "
+        "periodic effectiveness review, ongoing monitoring, customer "
+        "identification (KYC), PEP and sanctions screening, and record-keeping.\n"
+        "- Registration / renewal with the AML regulator.\n"
+        "- For payment service providers: any periodic or annual report to the "
+        "payments regulator under the applicable retail-payments / "
+        "payment-services regime.\n"
+        "These are frequently the MOST important obligations for such a business "
+        "and the easiest to overlook — include them when the entity clearly "
+        "performs these activities.\n\n"
+        + (_UK_FCA_RECALL if (juris or "").strip().lower() == "uk" else "")
+        + f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
         f"Fiscal year end: {entity.fiscal_year_end or '(not set)'} — express any "
@@ -1037,46 +1030,14 @@ def discover_entity_regulations(
         f"Nature of operations: {entity.nature_of_operation or '(not provided)'}"
         + _confirmed_activities_block(entity.finance_profile)
         + "\n\nLICENSES HELD:\n" + "\n".join(lic_lines) + "\n" + "".join(lic_texts)
-    )
-    uk_recall = _UK_FCA_RECALL if (juris or "").strip().lower() == "uk" else ""
+    )[:_MAX_PROMPT_CHARS]
 
-    # Chunked discovery: one FOCUSED call per domain (merged + deduped below).
-    # Each call is exhaustive within its slice with the full output budget, so
-    # the niche named filings a single monolithic sweep drops get recovered.
-    merged_rules: list = []
-    notes_parts: list[str] = []
-    coverage: list = []
-    for label, detail in _DISCOVERY_CHUNKS:
-        focus = (
-            f"FOCUS — the {label} function.\n"
-            f"Return ONLY obligations whose responsible team is {label} (per the "
-            f"OWNER-TEAM rules): {detail}\n"
-            "Do NOT output obligations that belong to another team — they are "
-            f"discovered separately. Set owner_team = {label} for every item you "
-            "return here.\n\n"
-        )
-        chunk_ctx = (
-            focus + _DISCOVERY_SHARED + uk_recall + "\n" + grounding
-        )[:_MAX_PROMPT_CHARS]
-        try:
-            chunk = extract_rules_from_text(chunk_ctx, jurisdiction_hint=juris)
-        except RuleExtractorUnavailable as exc:
-            return {"available": False, "created": 0, "notes": str(exc)}
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
-        merged_rules.extend(chunk.rules)
-        if chunk.notes:
-            notes_parts.append(f"[{label}] {chunk.notes}")
-        coverage.extend(getattr(chunk, "coverage_notes", []) or [])
-
-    # Merge the per-domain results into a single result; persistence below
-    # dedupes (canonical signatures) and reconciles drafts as before.
-    result = RuleExtractionResult(
-        jurisdiction_hint=juris,
-        rules=merged_rules,
-        coverage_notes=coverage,
-        notes=" | ".join(notes_parts) or None,
-    )
+    try:
+        result = extract_rules_from_text(context, jurisdiction_hint=juris)
+    except RuleExtractorUnavailable as exc:
+        return {"available": False, "created": 0, "notes": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
 
     # First collapse duplicates that earlier refreshes persisted, so the
     # discovered list stops showing repeats of the same filing. Then dedupe new
