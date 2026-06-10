@@ -191,7 +191,7 @@ export function EntityDetailPage() {
 
 // ---------------------------------------------------------------------------
 // Primary Activity — Yes / No / TBC flags, each revealing its follow-ups on
-// "Yes". Every activity starts at "Yes"; the answers gate the follow-ups and
+// "Yes". Questions start UNANSWERED; the answers only gate the follow-ups and
 // drive the mandatory-vs-conditional assessment. They do NOT change what
 // "Refresh Regulations" discovers — discovery always assumes every activity.
 // ---------------------------------------------------------------------------
@@ -207,29 +207,18 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
   });
 
-  // Initially assume EVERY primary activity is "Yes": when this entity has no
-  // primary answers yet, seed them all to "yes" once (admins only). This gates
-  // which follow-ups appear and feeds the mandatory-vs-not assessment — it
-  // never changes what "Refresh Regulations" discovers (discovery always
-  // assumes every activity is present, regardless of these answers).
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (gates.some((g) => profile[g.key])) return;
-    const seeded: Record<string, string> = { ...profile };
-    gates.forEach((g) => {
-      seeded[g.key] = "yes";
-    });
-    saveProfile.mutate(seeded);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity.id]);
-
-  // Default to "Yes" until an explicit answer is stored, matching the all-yes seed.
+  // Primary answers start UNANSWERED (TBC) — nothing is pre-selected. Clicking
+  // an answer only gates which follow-ups appear (and feeds the
+  // mandatory-vs-conditional assessment). It never changes what "Refresh
+  // Regulations" discovers — discovery always assumes every activity is present.
   const flagOf = (key: string): "yes" | "no" | "tbc" =>
-    profile[key] === "no" ? "no" : profile[key] === "tbc" ? "tbc" : "yes";
-  // Store "tbc" explicitly (rather than clearing) so it survives the all-yes
-  // default; the backend treats a "tbc" string the same as unanswered.
-  const setFlag = (key: string, value: "yes" | "no" | "tbc") =>
-    saveProfile.mutate({ ...profile, [key]: value });
+    profile[key] === "yes" ? "yes" : profile[key] === "no" ? "no" : "tbc";
+  const setFlag = (key: string, value: "yes" | "no" | "tbc") => {
+    const next = { ...profile };
+    if (value === "tbc") delete next[key];
+    else next[key] = value;
+    saveProfile.mutate(next);
+  };
   const setFollowup = (key: string, value: string) =>
     saveProfile.mutate({ ...profile, [key]: value });
 
@@ -246,10 +235,10 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
           <div>
             <h3 className="font-semibold">Primary activity</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              What this entity does. Every activity starts at <strong>Yes</strong>
-              {" "}— set those that don't apply to <strong>No</strong>. Your
-              answers decide which follow-up questions appear and, with them,
-              which discovered filings are mandatory vs conditional.
+              What this entity does. Answer <strong>Yes</strong> to the
+              activities that apply — each reveals its follow-up questions, and
+              those answers decide which discovered filings are mandatory vs
+              conditional.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               These answers do <strong>not</strong> change what{" "}
