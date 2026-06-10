@@ -39,14 +39,10 @@ router = APIRouter(prefix="/api/rules", tags=["rules"])
 def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
     """Create a calendar obligation for each attached entity on the computed
     due date (idempotent), and keep the assignee in sync with the rule's owner.
-    Runs for production rules and for staging rules a human has sent to Review &
-    Assign (sent_to_review=True) — so a freshly-discovered draft does NOT hit
-    the calendar until it's been picked, but lands there the moment it is."""
-    if rule.status not in (RuleStatus.staging, RuleStatus.production):
-        return
-    # Staging drafts that haven't been sent to Review & Assign stay off the
-    # calendar. Production rules are already approved, so they always qualify.
-    if rule.status == RuleStatus.staging and rule.sent_to_review is not True:
+    ONLY runs for APPROVED (production) rules — a rule sitting in Review & Assign
+    (staging, even sent_to_review) does NOT hit the calendar until it's approved,
+    and lands there the moment it is."""
+    if rule.status != RuleStatus.production:
         return
     if not rule.entities:
         return
@@ -154,10 +150,11 @@ def ensure_calendar(
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    """Make sure every rule that's in review (staging) or approved (production)
-    has its calendar obligation. Safe to call repeatedly — idempotent. Used so
-    For Action items auto-appear on the calendar even if they predate the
-    auto-generation logic."""
+    """Reconcile the calendar with rule status. Every APPROVED (production) rule
+    gets its calendar obligation; anything still in Review & Assign (staging) has
+    its pending obligations removed — so the calendar reflects ONLY approved
+    rules, and any in-review obligations left over from the old behaviour are
+    cleaned up. Safe to call repeatedly — idempotent."""
     rules = (
         db.execute(
             select(Rule).where(
@@ -170,7 +167,10 @@ def ensure_calendar(
     made = 0
     for rule in rules:
         try:
-            ensure_obligations_for_rule(db, rule)
+            if rule.status == RuleStatus.production:
+                ensure_obligations_for_rule(db, rule)
+            else:
+                remove_pending_obligations_for_rule(db, rule)
             made += 1
         except Exception:  # noqa: BLE001 — one bad rule shouldn't block the rest
             continue
@@ -385,13 +385,14 @@ def update_rule(
         if rule.approver_id is None:
             rule.approver_id = user.id
 
-    # Calendar sync: as soon as a rule is in review (staging) or approved
-    # (production) it gets a calendar obligation; when archived its pending
-    # obligations are removed so it drops off the calendar.
-    if rule.status == RuleStatus.archived:
-        remove_pending_obligations_for_rule(db, rule)
-    else:
+    # Calendar sync: a rule appears on the calendar ONLY once it's APPROVED
+    # (production). While it's in Review & Assign (staging / sent_to_review) or
+    # archived, any pending obligation is removed so it stays off the calendar
+    # until approval.
+    if rule.status == RuleStatus.production:
         ensure_obligations_for_rule(db, rule)
+    else:
+        remove_pending_obligations_for_rule(db, rule)
     log_activity(
         db,
         actor_id=user.id,

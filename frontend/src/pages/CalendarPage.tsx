@@ -176,6 +176,18 @@ export function CalendarPage() {
     refetchInterval: 60_000,
   });
 
+  // Reconcile the calendar with rule status on open: approved (production) rules
+  // get their obligations; anything still in Review & Assign has its pending
+  // obligations removed — so the calendar shows ONLY approved obligations, even
+  // if in-review entries lingered from the previous behaviour. Then refresh.
+  const calendarQc = useQueryClient();
+  useEffect(() => {
+    api
+      .post("/api/rules/ensure-calendar")
+      .then(() => calendarQc.invalidateQueries({ queryKey: ["calendar"] }))
+      .catch(() => {});
+  }, [calendarQc]);
+
   const activeFilterCount =
     filters.entityIds.length +
     filters.jurisdictions.length +

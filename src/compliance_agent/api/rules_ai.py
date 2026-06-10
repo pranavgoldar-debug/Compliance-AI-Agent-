@@ -170,7 +170,8 @@ def bulk_create_rules(
         created.append(rule)
     db.flush()
 
-    # As soon as obligations enter review (staging), put them on the calendar.
+    # Sync the calendar (a no-op while these are staging — a rule only gets a
+    # calendar obligation once it's APPROVED to production).
     from compliance_agent.api.rules import ensure_obligations_for_rule
 
     for rule in created:
