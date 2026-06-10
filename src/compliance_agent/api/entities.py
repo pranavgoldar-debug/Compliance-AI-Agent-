@@ -524,6 +524,47 @@ def _dedupe_key(text: Optional[str]) -> str:
     return " ".join(sorted(toks)).strip()
 
 
+def _name_tokens_ordered(text: Optional[str]) -> list[str]:
+    """The same normalized significant tokens as _dedupe_key but IN ORIGINAL
+    ORDER (not sorted) — used to test acronym ↔ expansion matches."""
+    s = re.sub(r"\([^)]*\)", " ", (text or "").lower())
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    drop = {"the", "a", "an", "of", "for", "to", "and", "filing", "form"}
+    toks: list[str] = []
+    for w in s.split():
+        if w in drop:
+            continue
+        if len(w) >= 4 and w.endswith("s"):
+            w = w[:-1]
+        toks.append(w)
+    return toks
+
+
+def _acronym_dupe(a, b) -> bool:
+    """True when two filings are the same one written as ACRONYM vs EXPANSION
+    (e.g. '… FPS' vs '… Full Payment Submission', 'VAT return' vs 'Value Added
+    Tax return'). Jurisdiction-agnostic: they must share context tokens, and one
+    side's single extra token must be an acronym spelled by the other side's
+    extra words (in order). The caller restricts to same authority + cadence."""
+    aw = _name_tokens_ordered(a.name) or _name_tokens_ordered(a.form_name)
+    bw = _name_tokens_ordered(b.name) or _name_tokens_ordered(b.form_name)
+    common = set(aw) & set(bw)
+    if not common:
+        return False
+    exa, exb = set(aw) - common, set(bw) - common
+
+    def spells(single: set, words: list, multi: set) -> bool:
+        if len(single) != 1 or len(multi) < 2:
+            return False
+        acro = next(iter(single))
+        if not (2 <= len(acro) <= 6 and acro.isalpha()):
+            return False
+        seq = [w for w in words if w in multi]
+        return "".join(w[0] for w in seq) == acro
+
+    return spells(exa, bw, exb) or spells(exb, aw, exa)
+
+
 def _norm_freq(freq: Optional[str]) -> str:
     """Normalize a frequency for duplicate signatures, so two rules count as the
     same filing only when their cadence also matches — this keeps genuinely
@@ -656,7 +697,9 @@ def _collapse_duplicate_rules(db, entity) -> int:
             used[i] = True
             for j in range(i + 1, len(items)):
                 if not used[j] and (
-                    items[j][1] <= items[i][1] or items[i][1] <= items[j][1]
+                    items[j][1] <= items[i][1]
+                    or items[i][1] <= items[j][1]
+                    or _acronym_dupe(items[i][0], items[j][0])
                 ):
                     cluster.append(items[j][0])
                     used[j] = True
