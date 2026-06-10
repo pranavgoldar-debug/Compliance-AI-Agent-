@@ -814,6 +814,53 @@ _ACTIVITY_LABELS: dict[str, str] = {
 }
 
 
+# UK-specific recall guidance — appended to the discovery context ONLY when the
+# entity's jurisdiction is UK. Type-level: it names real, well-known UK filings
+# as recall nudges (not jurisdiction guesses); the model still emits only the
+# ones that genuinely apply to THIS entity, and the anti-hallucination guard in
+# the system prompt still applies.
+_UK_FCA_RECALL = (
+    "UK RECALL (jurisdiction = UK) — CONSIDER and INCLUDE each of the following "
+    "WHERE IT GENUINELY APPLIES to this entity, naming the ACTUAL form/return "
+    "(not a generic description), each as its OWN item.\n"
+    "Every UK company:\n"
+    "- Companies House: annual accounts; confirmation statement; PSC / "
+    "beneficial-ownership register updates.\n"
+    "- HMRC: Company Tax Return (CT600) AND the corporation-tax payment; VAT "
+    "return (if VAT-registered); country-by-country report and transfer-pricing "
+    "master & local file (if in scope).\n"
+    "- HMRC payroll (if it employs staff / runs payroll) — each as its own item: "
+    "PAYE Real-Time-Information Full Payment Submission (FPS); Employer Payment "
+    "Summary (EPS); the monthly PAYE/NIC payment; P11D and P11D(b) for benefits "
+    "in kind AND the Class 1A NIC payment; Employment Related Securities (ERS) "
+    "annual return (if it grants shares/options to staff or directors).\n"
+    "- The Pensions Regulator: automatic-enrolment re-declaration of compliance "
+    "(every 3 years).\n"
+    "- ICO: data-protection fee / registration (annual).\n"
+    "- OFSI (HM Treasury): annual frozen-asset review (where frozen assets are "
+    "held) and sanctions-breach reporting (event-based).\n"
+    "If the entity is an FCA-AUTHORISED firm (payment institution, e-money "
+    "institution or investment firm) do NOT stop at a generic 'FCA return' — "
+    "include the SPECIFIC RegData returns it owes, BY NAME, where applicable:\n"
+    "- Capital adequacy: FSA056 (Authorised Payment Institution capital-adequacy "
+    "return), or the equivalent own-funds return for EMIs / investment firms.\n"
+    "- Safeguarding (if it safeguards customer funds): the monthly safeguarding "
+    "return (REP027) AND the annual safeguarding audit report by an independent "
+    "auditor.\n"
+    "- Financial resilience: FIN073 baseline financial resilience report.\n"
+    "- Financial crime: REP-CRIM annual financial crime report.\n"
+    "- Ownership: REP002 annual controllers report; REP001 annual close-links "
+    "report.\n"
+    "- Conduct & operations: payments fraud report (REP017); operational & "
+    "security risk report (REP018); complaints return (DISP 1.10B).\n"
+    "- Fees: the FCA periodic fee and the annual return of income / fee-tariff "
+    "data.\n"
+    "- Event-based: change-in-control prior approval / notification; "
+    "notification of a significant business change; notification of a breach or "
+    "regulatory concern.\n\n"
+)
+
+
 def _confirmed_activities_block(profile: Optional[dict]) -> str:
     """Render the entity's CONFIRMED primary activities (answered 'yes') as an
     additive discovery input. Positive-only: only confirmed activities are fed,
@@ -973,7 +1020,8 @@ def discover_entity_regulations(
         "These are frequently the MOST important obligations for such a business "
         "and the easiest to overlook — include them when the entity clearly "
         "performs these activities.\n\n"
-        f"ENTITY: {entity.name}\n"
+        + (_UK_FCA_RECALL if (juris or "").strip().lower() == "uk" else "")
+        + f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
         f"Fiscal year end: {entity.fiscal_year_end or '(not set)'} — express any "
