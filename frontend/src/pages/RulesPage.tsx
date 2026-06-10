@@ -167,6 +167,25 @@ export function RulesPage() {
   const [dateOrder, setDateOrder] = useState<"latest" | "oldest">("latest");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
+  // On-demand cleanup for duplicates that already reached For Action (the
+  // discovery-time pass leaves reviewed items alone). Dedupes per entity via AI.
+  const dedupe = useMutation({
+    mutationFn: () =>
+      api.post<{ removed: number }>("/api/rules/dedupe?status=staging&in_review=true"),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      window.alert(
+        r.removed
+          ? `Removed ${r.removed} duplicate${r.removed === 1 ? "" : "s"} from For Action.`
+          : "No duplicates found in For Action.",
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ["rules", tab, jurisdictionCode],
@@ -269,6 +288,21 @@ export function RulesPage() {
         description="AI-proposed obligations and regulatory changes awaiting your approval. Review, assign ownership, and confirm applicability before they become active compliance obligations."
         actions={
           <div className="flex items-center gap-2">
+            {isAdmin && tab === "staging" && (
+              <Button
+                variant="outline"
+                onClick={() => dedupe.mutate()}
+                disabled={dedupe.isPending}
+                title="Use AI to merge duplicate / near-duplicate filings in For Action"
+              >
+                {dedupe.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                Remove duplicates
+              </Button>
+            )}
             <ExportMenu
               kind="rules"
               params={{

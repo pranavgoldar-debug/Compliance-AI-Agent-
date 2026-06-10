@@ -789,21 +789,21 @@ def _collapse_vat_returns(db, entity) -> int:
     return removed
 
 
-def _ai_collapse_duplicates(db, entity) -> int:
-    """Second-pass de-dup using the AI: the deterministic signatures above miss
-    SEMANTIC duplicates the discovery model invents (synonymous names, different
-    authority spellings, generic-vs-specific phrasings). Ask the model to cluster
-    the genuine duplicates, then remove the redundant copies — but ONLY ever
-    remove a pure discovered draft (staging, not yet sent to review, no
-    obligations), so a confirmed/calendar filing is never deleted by a model
-    mistake. Best-effort: any failure leaves the deterministic result intact."""
+def _run_ai_dedupe(db, entity, rules, removable, *, min_count: int = 3) -> int:
+    """Core AI de-dup for ONE entity: ask the model to cluster the genuine
+    duplicates among `rules` (the deterministic signatures miss synonymous names,
+    different authority spellings and generic-vs-specific phrasings), then remove
+    the redundant copies — keeping the SAFEST in each cluster. `removable(rule)`
+    decides which non-keepers may actually be deleted (discovery uses pure drafts
+    only; the manual cleanup also collapses already-reviewed rows). Best-effort:
+    any AI failure removes nothing."""
     from compliance_agent.db import RuleStatus
     from compliance_agent.rule_extractor import dedupe_filings, is_live
 
     if not is_live():
         return 0
-    rules = sorted(_entity_rules_fresh(db, entity), key=lambda r: r.id or 0)
-    if len(rules) < 3:
+    rules = sorted(rules, key=lambda r: r.id or 0)
+    if len(rules) < min_count:
         return 0
     lines = [
         f"{i}. {(r.name or r.form_name or '(unnamed)')} | {r.authority or 'n/a'} "
@@ -812,16 +812,8 @@ def _ai_collapse_duplicates(db, entity) -> int:
     ]
     try:
         res = dedupe_filings("\n".join(lines))
-    except Exception:  # noqa: BLE001 — dedupe is best-effort; never break discovery
+    except Exception:  # noqa: BLE001 — dedupe is best-effort; never break the caller
         return 0
-
-    def _removable(r) -> bool:
-        # Only delete a pure discovered draft — never a confirmed/sent/scheduled one.
-        return (
-            r.status == RuleStatus.staging
-            and not getattr(r, "sent_to_review", False)
-            and not r.obligations
-        )
 
     def _safety(r):
         return (
@@ -843,12 +835,28 @@ def _ai_collapse_duplicates(db, entity) -> int:
         members = [rules[x - 1] for x in idxs]
         keep = max(members, key=_safety)  # never auto-remove the safest copy
         for r in members:
-            if r is not keep and _removable(r):
+            if r is not keep and removable(r):
                 _remove_rule_from_entity(db, r, entity)
                 removed += 1
     if removed:
         db.flush()
     return removed
+
+
+def _ai_collapse_duplicates(db, entity) -> int:
+    """Discovery-time dedup. Only ever removes a PURE discovered draft (staging,
+    not yet sent to review, no obligations), so a confirmed / calendar-scheduled /
+    in-review filing is never deleted by a model mistake on a background refresh."""
+    from compliance_agent.db import RuleStatus
+
+    def _removable(r) -> bool:
+        return (
+            r.status == RuleStatus.staging
+            and not getattr(r, "sent_to_review", False)
+            and not r.obligations
+        )
+
+    return _run_ai_dedupe(db, entity, _entity_rules_fresh(db, entity), _removable)
 
 
 def _reconcile_drafts(db, entity, keep_sigs: set) -> int:

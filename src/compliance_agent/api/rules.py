@@ -221,6 +221,52 @@ def _serialize_rule(rule: Rule, entity_applicability: Optional[str] = None) -> R
     )
 
 
+@router.post("/dedupe")
+def dedupe_rules(
+    status: Optional[RuleStatus] = Query(None),
+    in_review: Optional[bool] = Query(None),
+    db: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """On-demand AI de-dup for the Review & Assign list — for duplicates that
+    already reached the list (which the discovery-time pass deliberately leaves
+    alone). Groups the matching rules by entity and clusters each entity's set
+    with the model. Never removes an Approved (production) rule; collapses
+    redundant staging / archived copies (and their per-entity obligations),
+    always keeping the safest copy. Mirrors the For Action filter via in_review."""
+    from collections import defaultdict
+    from compliance_agent.api.entities import _run_ai_dedupe
+
+    stmt = select(Rule)
+    if status is not None:
+        stmt = stmt.where(Rule.status == status)
+    if in_review:
+        stmt = stmt.where(Rule.sent_to_review.is_(True))
+    rules = db.execute(stmt).scalars().all()
+
+    by_entity: dict = defaultdict(list)
+    for r in rules:
+        for e in r.entities:
+            by_entity[e].append(r)
+
+    removed = 0
+    for entity, ent_rules in by_entity.items():
+        removed += _run_ai_dedupe(
+            db,
+            entity,
+            ent_rules,
+            removable=lambda r: r.status != RuleStatus.production,
+            min_count=2,
+        )
+    if removed:
+        log_activity(
+            db, actor_id=user.id, action="rules.deduped",
+            target_type="rule", target_id=None, payload={"removed": removed},
+        )
+    db.commit()
+    return {"removed": removed}
+
+
 @router.get("", response_model=list[RuleOut])
 def list_rules(
     jurisdiction_code: Optional[str] = Query(None),
