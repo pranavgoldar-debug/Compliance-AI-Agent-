@@ -207,9 +207,10 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
   });
 
-  // Primary answers start UNANSWERED (TBC) — nothing is pre-selected. Clicking
-  // an answer only gates which follow-ups appear (and feeds the
-  // mandatory-vs-conditional assessment). It never changes what "Refresh
+  // Primary answers start UNANSWERED (TBC) — nothing is pre-selected. They only
+  // gate which follow-ups appear (those, plus the operation-specific questions,
+  // are asked in the Compliance tab under Activities) and feed the
+  // mandatory-vs-conditional assessment. They never change what "Refresh
   // Regulations" discovers — discovery always assumes every activity is present.
   const flagOf = (key: string): "yes" | "no" | "tbc" =>
     profile[key] === "yes" ? "yes" : profile[key] === "no" ? "no" : "tbc";
@@ -219,8 +220,6 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     else next[key] = value;
     saveProfile.mutate(next);
   };
-  const setFollowup = (key: string, value: string) =>
-    saveProfile.mutate({ ...profile, [key]: value });
 
   const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
     { value: "yes", label: "Yes" },
@@ -236,9 +235,9 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
             <h3 className="font-semibold">Primary activity</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               What this entity does. Answer <strong>Yes</strong> to the
-              activities that apply — each reveals its follow-up questions, and
-              those answers decide which discovered filings are mandatory vs
-              conditional.
+              activities that apply. The follow-up and operation-specific
+              questions are asked under <strong>Compliance → Activities</strong>{" "}
+              and decide which discovered filings are mandatory vs conditional.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               These answers do <strong>not</strong> change what{" "}
@@ -246,86 +245,43 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
               assumes every activity is present.
             </p>
           </div>
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {gates.map((g) => {
               const current = flagOf(g.key);
-              const fups = current === "yes" ? followupsForJurisdiction(g, juris) : [];
               return (
                 <div
                   key={g.id}
-                  className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm">{g.question}</div>
-                      <div className="text-[11px] text-muted-foreground truncate">
-                        {g.drives}
-                      </div>
-                    </div>
-                    <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
-                      {FLAG_OPTIONS.map((o) => (
-                        <button
-                          key={o.value}
-                          type="button"
-                          disabled={!isAdmin || saveProfile.isPending}
-                          onClick={() => setFlag(g.key, o.value)}
-                          className={cn(
-                            "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-                            current === o.value
-                              ? o.value === "yes"
-                                ? "bg-emerald-500 text-white"
-                                : o.value === "no"
-                                  ? "bg-slate-700 text-white"
-                                  : "bg-secondary text-foreground"
-                              : "bg-background hover:bg-secondary text-muted-foreground",
-                            o.value !== "yes" && "border-l border-input",
-                          )}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
+                  <div className="min-w-0">
+                    <div className="text-sm truncate">{g.question}</div>
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      {g.drives}
                     </div>
                   </div>
-                  {fups.length > 0 && (
-                    <div className="mt-2.5 pl-3 border-l-2 border-aspora-100 space-y-2.5">
-                      {fups.map((f) => {
-                        const th = thresholdForJurisdiction(f, juris);
-                        return (
-                          <div
-                            key={f.key}
-                            className="flex items-center justify-between gap-3 flex-wrap"
-                          >
-                            <div className="min-w-0">
-                              <div className="text-sm">{f.question}</div>
-                              {th && (
-                                <div className="text-[11px] text-muted-foreground">
-                                  {th}
-                                </div>
-                              )}
-                            </div>
-                            <div className="inline-flex flex-wrap gap-1">
-                              {f.options.map((o) => (
-                                <button
-                                  key={o.value}
-                                  type="button"
-                                  disabled={!isAdmin || saveProfile.isPending}
-                                  onClick={() => setFollowup(f.key, o.value)}
-                                  className={cn(
-                                    "rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
-                                    profile[f.key] === o.value
-                                      ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
-                                      : "border-input bg-background hover:bg-secondary text-muted-foreground",
-                                  )}
-                                >
-                                  {o.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <div className="inline-flex rounded-md border border-input overflow-hidden shrink-0">
+                    {FLAG_OPTIONS.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        disabled={!isAdmin || saveProfile.isPending}
+                        onClick={() => setFlag(g.key, o.value)}
+                        className={cn(
+                          "px-2.5 py-1 text-xs transition-colors disabled:opacity-60",
+                          current === o.value
+                            ? o.value === "yes"
+                              ? "bg-emerald-500 text-white"
+                              : o.value === "no"
+                                ? "bg-slate-700 text-white"
+                                : "bg-secondary text-foreground"
+                            : "bg-background hover:bg-secondary text-muted-foreground",
+                          o.value !== "yes" && "border-l border-input",
+                        )}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               );
             })}
