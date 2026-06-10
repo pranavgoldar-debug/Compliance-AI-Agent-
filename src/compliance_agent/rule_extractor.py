@@ -99,9 +99,13 @@ class ObligationDebug(BaseModel):
     why_discovered: str = Field(
         default="", description="One line: why this obligation was discovered."
     )
-    discovery_sources: list[DiscoverySource] = Field(
+    discovery_sources: list[str] = Field(
         default_factory=list,
-        description="Which discovery source(s) produced this obligation.",
+        description=(
+            "Which discovery source(s) produced this obligation — one or more of: "
+            "'License / Registration', 'Regulator', 'Nature of Operations', "
+            "'Jurisdiction', 'Generic Compliance Knowledge'."
+        ),
     )
     confidence_score: Optional[float] = Field(
         default=None,
@@ -258,14 +262,18 @@ def summarize_discovery(result: "RuleExtractionResult") -> dict:
     }
     for r in result.rules:
         srcs = (r.debug.discovery_sources if r.debug else None) or []
-        if "Regulator" in srcs:
+        # Match case-insensitively — the model sometimes varies the casing
+        # ('Nature Of Operations' vs 'Nature of Operations'); the field is a
+        # lenient str so it never breaks parsing, and we bucket loosely here.
+        low = {str(s).strip().lower() for s in srcs}
+        if "regulator" in low:
             counts["regulator_derived"] += 1
-        if "License / Registration" in srcs:
+        if "license / registration" in low or "licence / registration" in low:
             counts["license_derived"] += 1
-        if "Nature of Operations" in srcs:
+        if "nature of operations" in low:
             counts["operations_derived"] += 1
         # Jurisdiction + general regulatory knowledge both roll up to "generic".
-        if "Jurisdiction" in srcs or "Generic Compliance Knowledge" in srcs:
+        if "jurisdiction" in low or "generic compliance knowledge" in low:
             counts["generic_derived"] += 1
     return {
         "extracted_facts": result.audit.model_dump() if result.audit else None,

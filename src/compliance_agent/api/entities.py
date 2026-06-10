@@ -1098,14 +1098,11 @@ def discover_entity_regulations(
     # are a duplicate). Runs after the add so it catches newly-created variants.
     deduped += _collapse_vat_returns(db, entity)
     db.flush()
-    # Reconcile: drop leftover drafts the current run no longer produces, so the
-    # discovered list reflects the latest deterministic run rather than
-    # accumulating across refreshes. (No manual adds exist to protect.)
-    run_sigs: set = set()
-    for cand in result.rules:
-        run_sigs |= _dup_signatures(cand.name, cand.form_name, cand.frequency, juris)
-    deduped += _reconcile_drafts(db, entity, run_sigs)
-    db.flush()
+    # Refresh is ADDITIVE: a candidate that already exists is skipped (counted in
+    # already_present), net-new ones are added, and genuine duplicate ROWS are
+    # collapsed above. We deliberately do NOT drop previously-discovered drafts
+    # just because this (non-deterministic) run didn't reproduce them — that made
+    # the list churn/shrink across refreshes. Wrong drafts are removed manually.
     # Discovered rules are drafts (sent_to_review=False): they do NOT get a
     # calendar obligation here. That happens only when a human sends them to
     # Review & Assign (PATCH sets sent_to_review=True → ensure_obligations).
