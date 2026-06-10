@@ -1117,10 +1117,7 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
           Regulator portal
         </h3>
         <div className="text-sm text-muted-foreground italic">
-          No regulator URL captured for this rule yet. Admin can add one
-          on the Compliance Rules page (click the source cell on the
-          rule's row) so the team can see the regulation + template
-          straight from here.
+          No regulator URL captured for this rule yet.
         </div>
       </section>
     );
