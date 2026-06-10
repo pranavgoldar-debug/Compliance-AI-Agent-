@@ -626,6 +626,55 @@ def _collapse_duplicate_rules(db, entity) -> int:
         for r in rest:
             _remove_rule_from_entity(db, r, entity)
             removed += 1
+
+    # Pass 2 — full-form vs short-form: within the SAME authority + cadence,
+    # collapse rules whose significant-token set is a subset of another's (e.g.
+    # 'FCA periodic fee' vs 'FCA periodic fee and fee-tariff return', or 'PAYE
+    # ... FPS' phrasings). The authority + frequency guard and a 2-token minimum
+    # keep genuinely different filings apart. Re-read fresh so pass-1 removals
+    # are reflected.
+    db.flush()
+
+    def _toks(r) -> frozenset:
+        return frozenset((_dedupe_key(r.name) or _dedupe_key(r.form_name)).split())
+
+    buckets: dict = defaultdict(list)
+    for r in _entity_rules_fresh(db, entity):
+        t = _toks(r)
+        if len(t) >= 2:  # too-short names are unsafe to subset-match
+            buckets[(_dedupe_key(r.authority), _norm_freq(r.frequency))].append((r, t))
+
+    for items in buckets.values():
+        if len(items) < 2:
+            continue
+        items.sort(key=lambda it: len(it[1]), reverse=True)  # longest = cluster seed
+        used = [False] * len(items)
+        for i in range(len(items)):
+            if used[i]:
+                continue
+            cluster = [items[i][0]]
+            used[i] = True
+            for j in range(i + 1, len(items)):
+                if not used[j] and (
+                    items[j][1] <= items[i][1] or items[i][1] <= items[j][1]
+                ):
+                    cluster.append(items[j][0])
+                    used[j] = True
+            if len(cluster) < 2:
+                continue
+            keep, *rest = sorted(
+                cluster,
+                key=lambda r: (
+                    1 if r.obligations else 0,
+                    1 if r.status == RuleStatus.production else 0,
+                    1 if getattr(r, "sent_to_review", False) else 0,
+                    -(r.id or 0),
+                ),
+                reverse=True,
+            )
+            for r in rest:
+                _remove_rule_from_entity(db, r, entity)
+                removed += 1
     return removed
 
 
