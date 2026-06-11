@@ -18,7 +18,7 @@ import anthropic
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from compliance_agent.ai.llm_client import log_usage, make_client
+from compliance_agent.ai.llm_client import ai_available, log_usage, make_client
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -56,7 +56,10 @@ Rules:
 
 
 def _is_live() -> bool:
-    return os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
+    # Live AND a usable API key is configured — checking the key too means a
+    # half-configured server (LIVE=1 but no key) returns the graceful "off"
+    # message instead of 500-ing when the SDK client can't initialise.
+    return ai_available()
 
 
 # ---------------------------------------------------------------------------
