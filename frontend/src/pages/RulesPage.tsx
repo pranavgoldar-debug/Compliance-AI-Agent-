@@ -742,7 +742,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
               {tab === "production" && (
                 <>
                   <th className="px-3 py-2.5 text-left font-medium">Approved by</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Approved</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Approved on</th>
                 </>
               )}
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
