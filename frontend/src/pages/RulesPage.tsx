@@ -606,6 +606,10 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
     const u = users.find((x) => x.id === id);
     return u ? u.full_name || u.email : "—";
   };
+  const fmtApproved = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })
+      : "—";
 
   // Change the assignee on an approved rule — syncs onto its obligation too.
   const assignMutation = useMutation({
@@ -747,6 +751,12 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
               <th className="px-3 py-2.5 text-left font-medium">Frequency</th>
               <th className="px-3 py-2.5 text-left font-medium">Due-date rule</th>
               <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
+              {tab === "production" && (
+                <>
+                  <th className="px-3 py-2.5 text-left font-medium">Approved by</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Approved</th>
+                </>
+              )}
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
             </tr>
           </thead>
@@ -805,6 +815,19 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                     <span className="text-muted-foreground">{userName(r.owner_id)}</span>
                   )}
                 </td>
+                {tab === "production" && (
+                  <>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                      {userName(r.approver_id)}
+                    </td>
+                    <td
+                      className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap"
+                      title={r.approved_at ? new Date(r.approved_at).toLocaleString() : undefined}
+                    >
+                      {fmtApproved(r.approved_at)}
+                    </td>
+                  </>
+                )}
                 <td className="px-3 py-2.5 text-xs">
                   <button
                     type="button"
