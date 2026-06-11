@@ -1040,8 +1040,79 @@ _UK_FCA_RECALL = (
 )
 
 
-# Discovery is INTENTIONALLY answer-independent. We always tell the model to
-# assume the entity performs EVERY primary activity, so "Refresh Regulations"
+# Type-level recall for e-money / payment institutions, ANY jurisdiction.
+# Gated on an EMI/PI signal in the licences or nature of operations (see
+# `_emi_signal`). Like the UK block this is RECALL GUIDANCE — it nudges the
+# model to consider the prudential/supervisory returns that EMIs characteristically
+# owe; the model still generates the actual items (named for the real regulator)
+# and they still go through human review. No filing rows are hardcoded.
+_EMI_RECALL = (
+    "E-MONEY / PAYMENT-INSTITUTION RECALL — this entity holds an e-money or "
+    "payment-services authorisation, so beyond the generic corporate/tax/AML "
+    "filings it owes PRUDENTIAL and SUPERVISORY returns to its financial "
+    "supervisor that are easy to overlook. CONSIDER and INCLUDE each WHERE IT "
+    "GENUINELY APPLIES, as its OWN item, named for the actual regulator:\n"
+    "- Periodic prudential / own-funds report to the supervisor (commonly "
+    "QUARTERLY): own-funds / capital-adequacy calculation, capital-requirement "
+    "metrics, average outstanding e-money, and payment-transaction volumes.\n"
+    "- Annual prudential / audited supervisory report to the financial "
+    "supervisor — this is SEPARATE from filing the annual financial statements "
+    "with the company registry; include BOTH as distinct items.\n"
+    "- Safeguarding of customer / e-money funds: the periodic safeguarding "
+    "return and the independent safeguarding audit, where the regime requires "
+    "them.\n"
+    "- Periodic AML/CFT reporting to BOTH the financial supervisor AND the "
+    "financial-intelligence unit (statistical / questionnaire returns), in "
+    "ADDITION to event-based suspicious-transaction reports.\n"
+    "- Operational, security-risk, major-incident and fraud reporting under the "
+    "payment-services regime; change-in-control / qualifying-holding "
+    "notifications.\n\n"
+)
+
+
+# Jurisdiction recall for Lithuania, mirroring the UK block. Names the real
+# authorities (Bank of Lithuania, FCIS/FNTT, VMI, Sodra, Registru centras) so
+# the model doesn't fall back to generic descriptions; still recall guidance,
+# not seeded data. Payroll is described by FUNCTION (monthly withholding vs the
+# annual employee declaration are DISTINCT filings) rather than asserting a
+# specific GPM form number, since the exact codes are easy to mis-map.
+_LT_RECALL = (
+    "LITHUANIA RECALL (jurisdiction = Lithuania) — name the ACTUAL authority and "
+    "return for each, as its own item, where it applies:\n"
+    "- Bank of Lithuania: the EMI/PI periodic prudential & own-funds report "
+    "(quarterly) AND the annual prudential / supervisory report — both separate "
+    "from the registry financial statements.\n"
+    "- Bank of Lithuania AND the Financial Crime Investigation Service "
+    "(FCIS / FNTT): periodic AML/CFT reporting, in addition to "
+    "suspicious-transaction reports.\n"
+    "- State Tax Inspectorate (VMI): the MONTHLY payroll income-tax withholding "
+    "declaration AND the separate ANNUAL employee-by-employee income & "
+    "withholding declaration — these are DISTINCT GPM-series filings at "
+    "DIFFERENT cadences; list BOTH and match each statutory form code to its "
+    "correct cadence (do not reuse one code for both).\n"
+    "- VMI: corporate income tax and VAT returns. Registru centras: annual "
+    "financial statements. Sodra: social-insurance contribution reporting.\n\n"
+)
+
+
+def _emi_signal(nature: str, licenses) -> bool:
+    """True when the entity looks like an e-money / payment institution —
+    drives whether the EMI prudential-returns recall is injected. Reads the
+    nature of operations + each licence's name/type; jurisdiction-neutral."""
+    hay = (nature or "").lower() + " " + " ".join(
+        f"{l.name or ''} {l.license_type or ''}".lower() for l in licenses
+    )
+    return any(
+        k in hay
+        for k in (
+            "e-money", "emoney", "electronic money", "emi",
+            "payment institution", "payment service", "payment-service",
+            "payment service provider", "psp", "remittance", "money transmitt",
+        )
+    )
+
+
+
 # returns the SAME maximal universe of obligations no matter how the Primary
 # Activity questions are answered. The primary answers (and their follow-ups)
 # only drive the mandatory-vs-conditional-vs-not-applicable classification in
@@ -1147,7 +1218,9 @@ def discover_entity_regulations(
         "- Finance / Tax: corporate / income tax return AND its balance payment "
         "AND instalments; VAT / GST / sales-tax registration and periodic "
         "returns; annual financial statements and audit / accounts filing; "
-        "payroll withholding remittances and year-end payroll returns; "
+        "payroll withholding remittances AND the separate annual "
+        "employee-by-employee income / withholding declaration (these are "
+        "DISTINCT filings at different cadences — include both); "
         "social-security / pension contributions; transfer-pricing "
         "documentation where there are related-party transactions.\n"
         "- Legal / Corporate: company-registry annual return / confirmation "
@@ -1192,6 +1265,8 @@ def discover_entity_regulations(
         "and the easiest to overlook — include them when the entity clearly "
         "performs these activities.\n\n"
         + (_UK_FCA_RECALL if (juris or "").strip().lower() == "uk" else "")
+        + (_EMI_RECALL if _emi_signal(entity.nature_of_operation, licenses) else "")
+        + (_LT_RECALL if (juris or "").strip().lower() == "lithuania" else "")
         + f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
