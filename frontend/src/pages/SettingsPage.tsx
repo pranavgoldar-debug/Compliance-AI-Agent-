@@ -178,9 +178,11 @@ The due date field is free text, and the system parses it (together with the **F
 
 ### Adding a regulation yourself (admins)
 
-- Add one from an **entity's page, under its Compliance section** — pick the filings that apply to that company.
-- Your picks land in **Review & Assign** as **For Action** — the same as AI-discovered filings. Approve them to put them on the Calendar.
-- The **due date you type is parsed by the same rules above** — write it in a supported shape and set the matching Frequency.
+- Add one from an **entity's page, under its Compliance section** — the **Add regulation** dialog has two tabs:
+  - **Manual entry** — fill in the filing and build the due-date rule with the structured picker (frequency → basis → offset or fixed date). It shows a live **"Next due"** preview, so no free-text guessing. Pick a **suggested source link** for the jurisdiction where one is offered.
+  - **Import** — upload your obligations register as **Excel or CSV** (first row = headers). Columns are auto-mapped (adjustable), each row is validated, and deadline text is parsed into a structured rule where possible. A blank template is downloadable from the same tab.
+- Added filings land as **drafts on that entity's discovered list** — the same place AI-discovered filings start. Send them to **Review & Assign**, then approve to put them on the Calendar.
+- The free-text due-date shapes above still matter when **editing** a rule in the library or when your **import file's deadline column** is free text.
 
 ### Page-by-page quick reference
 
