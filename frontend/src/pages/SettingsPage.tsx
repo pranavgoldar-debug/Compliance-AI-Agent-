@@ -278,10 +278,14 @@ Most of the time you'll use the **visual due-date builder** in *Add regulation* 
 | Frequency | Meaning | Example |
 |---|---|---|
 | Annual | Once a year | Annual accounts |
+| Semi-annual | Twice a year | Half-yearly regulatory return |
 | Quarterly | Every quarter | VAT return |
 | Monthly | Every month | Payroll / RTI |
-| Event-based | Only when something happens | Change-in-control notification |
-| Continuous | Must be kept in place at all times | AML programme, sanctions screening |
+| One-time | Once, on a specific date | Initial registration |
+| Event-based | Only when something happens — no scheduled date | Change-in-control notification |
+| Continuous | Must be kept in place at all times — no scheduled date | AML programme, sanctions screening |
+
+> **Event-based** and **Continuous** filings don't get calendar dates — pick them in the due-date builder and the rule is tracked without a schedule.
 
 ---
 
