@@ -191,7 +191,7 @@ export function EntityDetailPage() {
 
 
 // ---------------------------------------------------------------------------
-// Primary Activity — Yes / No / TBC flags, each revealing its follow-ups on
+// Primary Activity — Yes / No / TBD flags, each revealing its follow-ups on
 // "Yes". Questions start UNANSWERED; the answers only gate the follow-ups and
 // drive the mandatory-vs-conditional assessment. They do NOT change what
 // "Refresh Regulations" discovers — discovery always assumes every activity.
@@ -208,7 +208,8 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
   });
 
-  // Primary answers start UNANSWERED (TBC) — nothing is pre-selected. They only
+  // Primary answers start UNANSWERED (TBD, "to be decided") — nothing is
+  // pre-selected. They only
   // gate which follow-ups appear (those, plus the operation-specific questions,
   // are asked in the Compliance tab under Activities) and feed the
   // mandatory-vs-conditional assessment. They never change what "Refresh
@@ -222,10 +223,10 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
     saveProfile.mutate(next);
   };
 
-  const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string }[] = [
+  const FLAG_OPTIONS: { value: "yes" | "no" | "tbc"; label: string; hint?: string }[] = [
     { value: "yes", label: "Yes" },
     { value: "no", label: "No" },
-    { value: "tbc", label: "TBC" },
+    { value: "tbc", label: "TBD", hint: "To be decided — not answered yet" },
   ];
 
   return (
@@ -236,9 +237,11 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
             <h3 className="font-semibold">Primary activity</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               What this entity does. Answer <strong>Yes</strong> to the
-              activities that apply. The follow-up and operation-specific
-              questions are asked under <strong>Compliance → Activities</strong>{" "}
-              and decide which discovered filings are mandatory vs conditional.
+              activities that apply; <strong>TBD</strong> ("to be decided")
+              means it hasn't been answered yet. The follow-up and
+              operation-specific questions are asked under{" "}
+              <strong>Compliance → Activities</strong> and decide which
+              discovered filings are mandatory vs conditional.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               These answers do <strong>not</strong> change what{" "}
@@ -265,6 +268,7 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
                       <button
                         key={o.value}
                         type="button"
+                        title={o.hint}
                         disabled={!isAdmin || saveProfile.isPending}
                         onClick={() => setFlag(g.key, o.value)}
                         className={cn(

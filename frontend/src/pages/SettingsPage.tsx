@@ -188,7 +188,7 @@ Open the **Licences** tab → **"Upload license"**. Attach the licence PDF (the 
 
 ### Step 3 — Set the Primary Activity
 
-Open the **Primary Activity** tab and answer each activity **Yes / No / TBC** (everything starts at TBC) — e.g. *"Does the entity trade cross-border?"*
+Open the **Primary Activity** tab and answer each activity **Yes / No / TBD** (TBD = *to be decided* — everything starts there until you answer) — e.g. *"Does the entity trade cross-border?"*
 
 - **What they do:** gate the follow-up questions, and decide whether a discovered filing ends up **mandatory** or **conditional** for this entity.
 - **What they don't do:** they **don't change what discovery finds.** Discovery always assumes every activity could apply; the assessment narrows it down afterwards.
