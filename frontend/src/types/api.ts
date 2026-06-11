@@ -115,6 +115,7 @@ export interface Rule {
   authority: string;
   frequency: string;
   due_date_rule: string;
+  due_date_spec: Record<string, unknown> | null;
   payment_rule: string | null;
   applicability: Applicability;
   applicability_note: string | null;

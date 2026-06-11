@@ -195,6 +195,7 @@ def _serialize_rule(rule: Rule, entity_applicability: Optional[str] = None) -> R
         authority=rule.authority,
         frequency=rule.frequency,
         due_date_rule=rule.due_date_rule,
+        due_date_spec=getattr(rule, "due_date_spec", None),
         payment_rule=rule.payment_rule,
         applicability=rule.applicability,
         applicability_note=rule.applicability_note,
@@ -372,6 +373,17 @@ def update_rule(
         setattr(rule, field, value)
     if entity_ids is not None:
         _attach_entities(rule, entity_ids, db)
+
+    # When the Due-Date Builder sets a structured spec, keep the human-readable
+    # frequency + due_date_rule columns in sync from it (they drive table/export
+    # display while the spec drives the calendar).
+    if "due_date_spec" in data and rule.due_date_spec:
+        from compliance_agent.due_date_spec import summarize, freq_label
+
+        rule.due_date_rule = summarize(rule.due_date_spec) or rule.due_date_rule
+        label = freq_label(rule.due_date_spec)
+        if label:
+            rule.frequency = label
 
     # A staging → production transition is a meaningful milestone — log it
     # distinctly so it shows clearly in the activity feed.

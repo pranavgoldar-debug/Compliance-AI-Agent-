@@ -1483,6 +1483,16 @@ def _next_due_for_rule(
     anchor on the entity's fiscal year-end when known (`fy_end` = (month, day)),
     falling back to a calendar (Dec-31) year-end. Falls back to an interval only
     when nothing parseable is found."""
+    # A structured Due-Date Builder spec, when present, is the source of truth —
+    # the calendar gets exactly the date the builder's preview showed.
+    spec = getattr(rule, "due_date_spec", None)
+    if spec:
+        from compliance_agent.due_date_spec import next_due_dates
+
+        dates = next_due_dates(spec, base, fy_end, count=1)
+        if dates:
+            return dates[0]
+
     low = (rule.due_date_rule or "").lower()
     freq = (rule.frequency or "").lower()
     fy_month, fy_day = fy_end or (12, 31)

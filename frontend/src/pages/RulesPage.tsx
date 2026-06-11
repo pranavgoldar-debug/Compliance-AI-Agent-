@@ -43,6 +43,8 @@ import {
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
+import { DueDateRuleBuilder } from "@/components/DueDateRuleBuilder";
+import type { DueDateSpec } from "@/lib/dueDateSpec";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtRelative, JURISDICTIONS, deriveFunction } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -900,6 +902,7 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
     area: rule.area,
     frequency: rule.frequency,
     due_date_rule: rule.due_date_rule ?? "",
+    due_date_spec: (rule.due_date_spec as unknown as DueDateSpec | null) ?? null,
     payment_rule: rule.payment_rule ?? "",
     applicability: rule.applicability as string,
     applicability_note: rule.applicability_note ?? "",
@@ -907,7 +910,8 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
   });
   const [draft, setDraft] = useState(initialDraft);
   const set = (k: keyof ReturnType<typeof initialDraft>, v: string) =>
-    setDraft((d) => ({ ...d, [k]: v }));
+    setDraft((d) => ({ ...d, [k]: v }) as ReturnType<typeof initialDraft>);
+  const setSpec = (spec: DueDateSpec) => setDraft((d) => ({ ...d, due_date_spec: spec }));
 
   // Owner / Reviewer / Approver assignment (Review & Assign workflow).
   const { data: users = [] } = useQuery({
@@ -1050,8 +1054,21 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
               <ExtractedField label="Authority" value={draft.authority} editing={editing} onChange={(v) => set("authority", v)} />
               <ExtractedField label="Category" value={draft.category} editing={editing} onChange={(v) => set("category", v)} />
               <ExtractedField label="Area / Sub-area" value={draft.area} editing={editing} onChange={(v) => set("area", v)} />
-              <ExtractedField label="Frequency" value={draft.frequency} editing={editing} onChange={(v) => set("frequency", v)} />
-              <ExtractedField label="Due-date rule" value={draft.due_date_rule} multiline editing={editing} onChange={(v) => set("due_date_rule", v)} />
+              {editing ? (
+                <div className="rounded-lg border border-border p-3">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    Schedule — frequency &amp; due date
+                  </div>
+                  <DueDateRuleBuilder value={draft.due_date_spec} onChange={setSpec} />
+                </div>
+              ) : (
+                <ExtractedField
+                  label="Schedule"
+                  value={`${draft.frequency}${draft.due_date_rule ? ` — ${draft.due_date_rule}` : ""}`}
+                  editing={false}
+                  onChange={() => {}}
+                />
+              )}
               <ExtractedField label="Payment rule" value={draft.payment_rule} multiline editing={editing} onChange={(v) => set("payment_rule", v)} />
               <ExtractedField label="Applicability" value={draft.applicability} options={APPLICABILITY_OPTIONS} editing={editing} onChange={(v) => set("applicability", v)} />
               <ExtractedField label="Applicability note" value={draft.applicability_note} multiline editing={editing} onChange={(v) => set("applicability_note", v)} />

@@ -307,6 +307,8 @@ def _add_missing_columns() -> None:
             ("anchor", varchar(255)),
             ("confidence", varchar(120)),
             ("sent_to_review", "BOOLEAN"),
+            # Due-Date Builder: structured schedule spec (frequency/basis/...).
+            ("due_date_spec", "JSON" if is_pg else text_type),
         ],
         # Phase 9: per-user notification prefs + Slack member id +
         # functional department (drives finance / compliance routing).

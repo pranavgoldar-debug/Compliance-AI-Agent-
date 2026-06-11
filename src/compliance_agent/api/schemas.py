@@ -131,6 +131,7 @@ class RuleCreate(BaseModel):
     authority: str
     frequency: str
     due_date_rule: str
+    due_date_spec: Optional[dict] = None
     payment_rule: Optional[str] = None
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
@@ -154,6 +155,7 @@ class RuleUpdate(BaseModel):
     authority: Optional[str] = None
     frequency: Optional[str] = None
     due_date_rule: Optional[str] = None
+    due_date_spec: Optional[dict] = None
     payment_rule: Optional[str] = None
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
@@ -181,6 +183,7 @@ class RuleOut(_Base):
     authority: str
     frequency: str
     due_date_rule: str
+    due_date_spec: Optional[dict] = None
     payment_rule: Optional[str] = None
     applicability: Applicability
     applicability_note: Optional[str] = None

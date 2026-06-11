@@ -237,6 +237,11 @@ class Rule(Base):
     authority: Mapped[str] = mapped_column(String(255), nullable=False)
     frequency: Mapped[str] = mapped_column(String(120), nullable=False)
     due_date_rule: Mapped[str] = mapped_column(Text, nullable=False)
+    # Structured due-date spec set by the Due-Date Builder (frequency + basis +
+    # day/month or offset/unit/snap, or a one-time date). When present it is the
+    # SOURCE OF TRUTH for the calendar's computed dates; due_date_rule holds the
+    # human summary. See compliance_agent.due_date_spec.
+    due_date_spec: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     payment_rule: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     applicability: Mapped[Applicability] = mapped_column(
         SAEnum(Applicability), nullable=False, default=Applicability.mandatory
