@@ -54,6 +54,32 @@ const SOURCE_SUGGESTIONS: Record<string, { label: string; url: string }[]> = {
     { label: "UK financial sanctions (OFSI)", url: "https://www.gov.uk/guidance/uk-financial-sanctions-guidance" },
     { label: "ICO data protection fee", url: "https://ico.org.uk/for-organisations/data-protection-fee/" },
   ],
+  canada: [
+    { label: "FINTRAC MSB registration", url: "https://fintrac-canafe.canada.ca/msb-esm/register-inscrire/respond-eng" },
+    { label: "FINTRAC reporting overview (FINS)", url: "https://fintrac-canafe.canada.ca/guidance-directives/overview-apercu/FINS/1-eng" },
+    { label: "Large cash transaction report (LCTR)", url: "https://fintrac-canafe.canada.ca/guidance-directives/transaction-operation/lctr-doie/lctr-doie-eng" },
+    { label: "Large virtual currency report (LVCTR)", url: "https://fintrac-canafe.canada.ca/guidance-directives/transaction-operation/lvctr/lvctr-eng" },
+    { label: "RPAA — PSP supervision (Bank of Canada)", url: "https://www.bankofcanada.ca/core-functions/retail-payments-supervision/information-for-payment-service-providers/frequently-asked-questions-about-retail-payments-supervision/" },
+    { label: "CBCA annual return (Corporations Canada)", url: "https://ised-isde.canada.ca/site/corporations-canada/en/business-corporations/policy-annual-filings-canada-business-corporations-act" },
+    { label: "T2 corporate income tax (CRA)", url: "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations.html" },
+    { label: "GST/HST return deadlines", url: "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/file-gst-hst-return/reporting-requirements-deadlines.html" },
+    { label: "T106 — non-arm's-length non-resident transactions", url: "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t106.html" },
+    { label: "Payroll remittances (CRA)", url: "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll.html" },
+  ],
+  us: [
+    { label: "Maryland money transmitter licence", url: "https://www.dllr.state.md.us/finance/industry/moneytran.shtml" },
+    { label: "NMLS state licensing (AL–SC)", url: "https://mortgage.nationwidelicensingsystem.org/slr/Pages/DynamicLicenses.aspx?StateID=AL-SC" },
+    { label: "NMLS state licensing (Delaware)", url: "https://mortgage.nationwidelicensingsystem.org/slr/Pages/DynamicLicenses.aspx?StateID=DE" },
+    { label: "Maryland annual report & personal property return", url: "https://dat.maryland.gov/businesses/Pages/Annual-Report-and-Personal-Property-Return.aspx" },
+    { label: "Delaware franchise tax", url: "https://corp.delaware.gov/paytaxes/" },
+  ],
+  lithuania: [
+    { label: "Register of Legal Entities (Registrų centras)", url: "https://www.registrucentras.lt/en/" },
+    { label: "Tax returns (VMI)", url: "https://www.vmi.lt/" },
+    { label: "Social insurance (Sodra)", url: "https://www.sodra.lt/en" },
+    { label: "EMI performance indicators (Bank of Lithuania)", url: "https://www.lb.lt/en/emi-performance-indicators" },
+    { label: "EMI reporting (Bank of Lithuania)", url: "https://www.lb.lt/en/fs-electronic-money-institutions" },
+  ],
 };
 
 const FREQUENCIES = [

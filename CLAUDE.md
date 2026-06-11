@@ -76,6 +76,24 @@ beats a clever one. Match the surrounding code's idiom, comment density, and nam
 - **Async writes**: react-query `useMutation` + `invalidateQueries` to refresh
   calendar / dashboard / obligations after writes.
 
+### Add-regulation modal (`frontend/src/components/AddRegulationModal.tsx`)
+- The **only** entry point for manually adding rules — entity Compliance tab.
+  Two tabs: **Manual entry** (structured due-date rule + live "Next due"
+  preview) and **Import** (`.xlsx/.xls/.csv` via the `xlsx` dep — auto column
+  mapping, per-row validation). There is no separate "Import template" button
+  on Review & Assign anymore; bulk import lives here.
+- Added items land as **drafts** on the entity's discovered list
+  (`status: "staging"`, `sent_to_review: false`) — never straight into Review
+  & Assign. The caller (`EntityDetailPage`) maps modal records → `/api/rules`
+  payloads, including structured due-rule → `due_date_spec`.
+- **Source suggestions**: `SOURCE_SUGGESTIONS` in the modal — authoritative
+  per-filing deep links keyed by `entity.jurisdiction_code` (codes: `uk`, `us`,
+  `canada`, `lithuania`, `india`, `eu`, `uae`, `singapore`). Extend by adding
+  to the map, deduped, with a filing-specific label. Distinct from
+  `src/compliance_agent/data/authority_urls.py` (authority → homepage backfill).
+- The modal keeps its self-contained inline-styled UI (prototype heritage) —
+  don't convert it to Tailwind piecemeal.
+
 ---
 
 ## How to work a change
