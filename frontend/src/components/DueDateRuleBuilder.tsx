@@ -1,19 +1,14 @@
 // Structured Due-Date Builder — pick a frequency + basis and the calendar
-// computes real dates from the resulting spec. The "Next due dates" preview is
-// computed by the same math the backend uses (lib/dueDateSpec), so what you see
-// here is exactly what lands on the calendar once the filing is approved.
+// computes real dates from the resulting spec (same math as the backend,
+// lib/dueDateSpec), shown as a one-line human summary.
 
 import { cn } from "@/lib/utils";
 import {
   type DueDateSpec,
   type DueFrequency,
   type DueBasis,
-  nextDueDates,
-  periodEndFor,
   summarizeSpec,
-  fmtDue,
 } from "@/lib/dueDateSpec";
-import { useState } from "react";
 
 const FREQUENCIES: { value: DueFrequency; label: string }[] = [
   { value: "annual", label: "Annual" },
@@ -26,7 +21,6 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
 function Seg<T extends string>({
@@ -78,9 +72,6 @@ export function DueDateRuleBuilder({
   disabled?: boolean;
 }) {
   const spec: DueDateSpec = value ?? { frequency: "annual", basis: "fixed", day: 1, month: 1 };
-  // Preview-only fiscal year-end (the real calendar uses each entity's FY end).
-  const [fyDay, setFyDay] = useState(31);
-  const [fyMonth, setFyMonth] = useState(3);
 
   const patch = (p: Partial<DueDateSpec>) => onChange({ ...spec, ...p });
 
@@ -108,7 +99,6 @@ export function DueDateRuleBuilder({
     { value: "after_period", label: isAnnual ? "After financial year end" : "After period end" },
   ];
 
-  const dates = nextDueDates(spec, new Date(), [fyMonth, fyDay], 3);
   const summary = summarizeSpec(spec);
 
   return (
@@ -222,51 +212,6 @@ export function DueDateRuleBuilder({
       {/* Human summary banner */}
       <div className="rounded-lg bg-aspora-50/60 border border-aspora-100 px-3 py-2.5 text-sm font-medium text-aspora-700">
         {summary || "Set the rule above to see the schedule"}
-      </div>
-
-      {/* Computed preview */}
-      <div className="rounded-lg border border-border bg-secondary/30 p-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-          <div className="text-sm font-medium">Next due dates (preview)</div>
-          {spec.frequency !== "onetime" && spec.basis === "after_period" && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              FY ends
-              <select className={cn(selectCls, "py-1")} value={fyDay} onChange={(e) => setFyDay(Number(e.target.value))}>
-                {DAYS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-              <select className={cn(selectCls, "py-1")} value={fyMonth} onChange={(e) => setFyMonth(Number(e.target.value))}>
-                {MONTHS_SHORT.map((m, i) => (
-                  <option key={m} value={i + 1}>{m}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-        {dates.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Set the rule above to see computed due dates.</p>
-        ) : (
-          <ul className="divide-y divide-border text-sm">
-            {dates.map((d, i) => {
-              const pe = periodEndFor(spec, d);
-              const label =
-                spec.frequency === "onetime"
-                  ? "Due"
-                  : pe
-                    ? `Period ending ${fmtDue(pe)}`
-                    : i === 0
-                      ? "Next"
-                      : "Then";
-              return (
-                <li key={d.toISOString()} className="flex items-center justify-between gap-3 py-2">
-                  <span className="text-muted-foreground">{label}</span>
-                  <span className={cn("font-medium", i === 0 && "text-emerald-700")}>{fmtDue(d)}</span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
       </div>
     </div>
   );
