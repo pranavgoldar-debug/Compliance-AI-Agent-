@@ -1057,13 +1057,13 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
               {editing ? (
                 <div className="rounded-lg border border-border p-3">
                   <div className="text-xs font-medium text-muted-foreground mb-2">
-                    Schedule — frequency &amp; due date
+                    Due date
                   </div>
                   <DueDateRuleBuilder value={draft.due_date_spec} onChange={setSpec} />
                 </div>
               ) : (
                 <ExtractedField
-                  label="Schedule"
+                  label="Due date"
                   value={`${draft.frequency}${draft.due_date_rule ? ` — ${draft.due_date_rule}` : ""}`}
                   editing={false}
                   onChange={() => {}}
