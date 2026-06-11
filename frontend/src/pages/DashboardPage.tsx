@@ -386,10 +386,10 @@ export function DashboardPage() {
       {!isLoading && data && <AlertBanners overdue={data.overdue} inAlert={data.in_alert_window} />}
 
       {/* Metric strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {isLoading || !data ? (
           <>
-            {Array.from({ length: 7 }).map((_, i) => (
+            {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-[70px]" />
             ))}
           </>
@@ -415,13 +415,6 @@ export function DashboardPage() {
               tone={data.awaiting_review > 0 ? "alert" : "muted"}
               icon={CheckCircle2}
               href="/tasks?status=pending_review"
-            />
-            <MetricCard
-              value={data.awaiting_payment}
-              label="Awaiting payment"
-              tone={data.awaiting_payment > 0 ? "alert" : "muted"}
-              icon={CheckCircle2}
-              href="/tasks?awaiting_payment=1"
             />
             <MetricCard
               value={data.unassigned}

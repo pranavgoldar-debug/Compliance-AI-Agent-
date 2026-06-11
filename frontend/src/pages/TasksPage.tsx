@@ -401,19 +401,6 @@ export function TasksPage({
     };
   }, [allTasksQuery.data, data, scope, userId]);
 
-  // Department + awaiting-payment chip counts, sliced by the CURRENT scope
-  // so they tell the user "if I click this chip, how many will I see?".
-  // Falls back to the active query's data while the all-fetch is pending.
-  const chipCounts = useMemo(() => {
-    const src = data ?? [];
-    return {
-      all: src.length,
-      compliance: src.filter((o) => o.department === "compliance").length,
-      finance: src.filter((o) => o.department === "finance").length,
-      awaitingPayment: src.filter((o) => o.is_awaiting_payment).length,
-    };
-  }, [data]);
-
   // Apply filters + sort.
   const visible = useMemo(() => {
     let arr = data ?? [];
@@ -450,8 +437,8 @@ export function TasksPage({
     (filters.dueWithinDays != null ? 1 : 0);
 
   // Header copy. The page is a single combined "Compliance & Finance"
-  // queue — the Awaiting payment chip + department chips are how teams
-  // slice their own work without us splitting them into separate pages.
+  // queue — scope tabs + filters are how teams slice their own work
+  // without us splitting them into separate pages.
   const pageTitle = "Filings";
   const pageDescription =
     "Your filing queue — every obligation generated from the licenses you track.";
@@ -517,20 +504,19 @@ export function TasksPage({
           value={filters.dueWithinDays}
           onChange={(v) => setFilters((f) => ({ ...f, dueWithinDays: v }))}
         />
-        <button
-          type="button"
-          onClick={() => setAwaitingPayment((v) => !v)}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border px-3 h-8 text-xs transition-colors",
-            awaitingPayment
-              ? "border-amber-300 bg-amber-50 text-amber-800 font-medium"
-              : "border-input bg-background text-muted-foreground hover:bg-secondary",
-          )}
-          title="Show only filings whose payment leg is still open"
-        >
-          Awaiting payment
-          <span className="tabular-nums">({chipCounts.awaitingPayment})</span>
-        </button>
+        {/* The Awaiting-payment chip is gone, but ?awaiting_payment=1 links
+            (legacy /finance redirect) still pre-filter; surface an off
+            switch only while that hidden filter is active. */}
+        {awaitingPayment && (
+          <button
+            type="button"
+            onClick={() => setAwaitingPayment(false)}
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 h-8 text-xs transition-colors border-amber-300 bg-amber-50 text-amber-800 font-medium"
+            title="Showing only filings whose payment leg is still open — click to clear"
+          >
+            Awaiting payment ✕
+          </button>
+        )}
         {activeFilterCount > 0 && (
           <button
             onClick={() => setFilters(emptyFilters())}
