@@ -144,62 +144,173 @@ export function SettingsPage() {
 // saved we render DEFAULT_PLAYBOOK_MD below, which is also what the editor
 // seeds from — so admins edit from the real guide, not a blank box.
 // ---------------------------------------------------------------------------
-const DEFAULT_PLAYBOOK_MD = `## Aspora Compliance OS — Playbook
+const DEFAULT_PLAYBOOK_MD = `## Aspora Compliance OS — Playbook & Guide
 
-How the workspace fits together, the rule lifecycle, and — most importantly — how to phrase a filing's due date so it lands on the calendar correctly. Read **Writing due dates** before you add or edit any regulation.
+New here? Read this once, top to bottom. It walks the whole journey — from adding a company to a filing being signed off — in the order you'll actually do it. **Admins** set everything up; **employees** work the filings assigned to them.
 
-### How a filing flows through the workspace
+### How it all fits together
 
-1. **Entities** — Set up each company + its fiscal year-end. Due dates anchor on this.
-2. **Find Regulations** — AI discovers the finance filings for an entity's jurisdiction.
-3. **For Action** — Discovered filings wait in Review & Assign as drafts; nothing on the calendar yet.
-4. **Review & Assign** — An admin checks each filing, sets the owner, and approves it.
-5. **Approved** — Approved filings auto-appear on the Calendar for every attached entity.
-6. **Track** — Owners work obligations in Filings / Workspace; proofs go in Documents.
+Everything flows in one direction — each step feeds the next:
 
-### The rule lifecycle: For Action → Approved
+\`\`\`
+Entity → Licence → Primary Activity → Compliance (discover) →
+Review & Assign (approve + owner) → Calendar → Filings (do the work) → Filed
+\`\`\`
 
-- **For Action** — draft found by AI or just added, waiting in Review & Assign.
-- **Approved** — live on the calendar for every attached entity.
-- **Archived** — no longer required; drops off the calendar, kept for history.
+- **Entity** — a company you manage (e.g. *Aspora UK Ltd*).
+- **Licence** — a permit/authorisation it holds. Helps the AI work out what it must file.
+- **Rule** — a recurring requirement (e.g. *VAT return, quarterly*).
+- **Obligation / Filing** — one real, due-dated instance of a rule (e.g. *that VAT return, due 7 Aug*). This is what people actually work on.
 
-### Writing due dates so they land correctly
+---
 
-The due date field is free text, and the system parses it (together with the **Frequency**) into a real calendar date — anchored on each entity's fiscal year-end where the rule is FY-relative. Use one of these shapes:
+### Step 1 — Add the entity (company)
+
+Go to **Entities → "Add entity"** (admin only). Fill in:
+
+- **Legal name** and **Jurisdiction** — required.
+- **Legal type**, **Short code**, **Registration number** — optional identifiers.
+- **Nature of operation** — one line on what the company does (e.g. *cross-border remittance & payments*). **The AI reads this to discover regulations**, so write it properly.
+- **Fiscal year end** — *important.* Many deadlines are "X months after financial year-end", so the calendar can't place them without it.
+- **Ownership** — optional parent → subsidiary chain.
+
+Save, then open the entity. You'll see five tabs: **Overview · Licences · Primary Activity · Compliance · Documents.**
+
+---
+
+### Step 2 — Add its licence(s)
+
+Open the **Licences** tab → **"Upload license"**. Attach the licence PDF (the AI can auto-fill the details) or type them in. A licence records the authority, number and expiry — and, with the nature of operations, tells discovery what this company is regulated to do.
+
+> You can run discovery with just the nature of operations set, but a licence makes the results much sharper.
+
+---
+
+### Step 3 — Set the Primary Activity
+
+Open the **Primary Activity** tab and answer each activity **Yes / No / TBC** (everything starts at TBC) — e.g. *"Does the entity trade cross-border?"*
+
+- **What they do:** gate the follow-up questions, and decide whether a discovered filing ends up **mandatory** or **conditional** for this entity.
+- **What they don't do:** they **don't change what discovery finds.** Discovery always assumes every activity could apply; the assessment narrows it down afterwards.
+
+---
+
+### Step 4 — Discover the regulations
+
+Open the **Compliance** tab → **"Refresh Regulations"** (the Sparkles button). The AI reads the nature of operations, jurisdiction and licences (~20–30s) and fills the **"Discovered (AI generated)"** list with every finance filing this company could owe. (Finance only — Legal / HR / governance are out of scope.)
+
+Missed something? Use **"Add regulation"** — a two-tab dialog:
+
+- **Manual entry** — type the filing and build its due date visually (frequency → rule) with a live **"Next due"** preview, so you don't guess. Where the app knows authoritative links for the jurisdiction, pick one under **Suggested sources**.
+- **Import** — upload your obligations register as **Excel or CSV**. Columns auto-map (adjustable), each row is validated, and a blank template is downloadable.
+
+Anything you add lands as a **draft on this entity's discovered list** — exactly like the AI's finds. Nothing is live yet.
+
+---
+
+### Step 5 — Find what actually applies
+
+Still in **Compliance**, click **"Activities"**. Answer the follow-up and operation-specific questions (they appear based on your Primary Activity answers), then click **"Find applicable regulations"** (~15–25s). The AI sorts the discovered list into three columns:
+
+- **Mandatory** — required for this entity now.
+- **Conditional** — applies only if a threshold or trigger is met.
+- **Not applicable** — ruled out by your activity answers; it won't be filed.
+
+Tick the ones you want (mandatory + conditional come pre-ticked) and click **"Add … to Review & Assign"**. That is the moment a draft leaves the entity and enters the shared **Review & Assign** queue.
+
+---
+
+### Step 6 — Review & Assign (approve + pick owners)
+
+Open **Review & Assign** in the sidebar (admin only). Two tabs:
+
+- **For Action** — everything waiting for you; each item carries an **"Awaiting review"** badge.
+- **Approved** — already live.
+
+Click a **For Action** card to expand it, then:
+
+1. **Check / fix the details** — hit **"Edit"** to correct the form name, authority, category, due-date rule, applicability, tax type, etc.
+2. **Assign ownership** — set an **Assignee** (the person who does the work) and an **Approver** (the admin who signs it off). The app may auto-suggest a team.
+3. Click **"Approve & assign"**.
+
+On approve, the rule moves to **Approved** and the app **automatically generates the dated obligation(s)** from its frequency + due-date rule — and they show up on the Calendar immediately. (You can still change the owner later from the Approved tab; it re-syncs to the calendar.)
+
+*Don't need it?* **Archive** (reversible, keeps history) or **Delete** (permanent).
+
+---
+
+### Step 7 — It's on the Calendar
+
+Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, tax type, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
+
+---
+
+### Step 8 — Do the work (Filings)
+
+**Filings** (sidebar) is each person's queue. Tabs: **Assigned to me · Completed · All**. Items are grouped **Overdue → In alert window → In progress → Upcoming → Completed**, each with a coloured **status pill**: *Not started · In progress · Pending review · Completed · N/A.*
+
+Open a filing and the buttons walk you through a **4-step handoff**:
+
+1. **Compliance prepares** — add the filing reference, upload proof, then **"Mark filing complete"**.
+2. **Admin verifies** — **"Approve & hand off to finance"** (if a payment is due), or close it; or **"Send back"** to fix.
+3. **Finance pays** — enter the amount + transaction reference, then **"Mark payment complete"**.
+4. **Admin signs off** — **"Approve & close"**. The filing is now **Filed** and moves to Completed.
+
+(No payment needed? The admin just closes it at step 2.)
+
+---
+
+### Writing due dates
+
+Most of the time you'll use the **visual due-date builder** in *Add regulation* — pick the frequency and the rule, and watch the **"Next due"** preview. You only type a due date as **free text** when editing a rule's deadline in Review & Assign, or in an **import file's deadline column**. When you do, use one of these shapes:
 
 | What you want | Type it like this | Frequency |
 |---|---|---|
 | Monthly, on a fixed day | \`by the 25th of the following month\` | Monthly |
 | Annual, fixed calendar date | \`by 30 Jun\` · \`31 Dec\` | Annually |
 | Within N months of FY-end | \`within 9 months of the financial year end\` | Annually |
-| Offset month + day after period end | \`15th day of the 6th month after the end of the tax period\` | Annually / Quarterly |
+| Month + day after period end | \`15th day of the 6th month after the end of the tax period\` | Annually / Quarterly |
 
-> **Avoid vague text** like \`annually\`, \`as required\`, or \`see regulation\`. When the parser can't read a real deadline it falls back to "today + interval", so the date drifts day-to-day instead of sitting on the true statutory deadline.
+> **Avoid vague text** like \`annually\`, \`as required\`, or \`see regulation\`. If the parser can't read a real deadline it falls back to "today + interval", so the date drifts day-to-day instead of sitting on the true statutory deadline.
 
-### Adding a regulation yourself (admins)
+**What the frequencies mean:**
 
-- Add one from an **entity's page, under its Compliance section** — the **Add regulation** dialog has two tabs:
-  - **Manual entry** — fill in the filing and build the due-date rule with the structured picker (frequency → basis → offset or fixed date). It shows a live **"Next due"** preview, so no free-text guessing. Pick a **suggested source link** for the jurisdiction where one is offered.
-  - **Import** — upload your obligations register as **Excel or CSV** (first row = headers). Columns are auto-mapped (adjustable), each row is validated, and deadline text is parsed into a structured rule where possible. A blank template is downloadable from the same tab.
-- Added filings land as **drafts on that entity's discovered list** — the same place AI-discovered filings start. Send them to **Review & Assign**, then approve to put them on the Calendar.
-- The free-text due-date shapes above still matter when **editing** a rule in the library or when your **import file's deadline column** is free text.
+| Frequency | Meaning | Example |
+|---|---|---|
+| Annual | Once a year | Annual accounts |
+| Quarterly | Every quarter | VAT return |
+| Monthly | Every month | Payroll / RTI |
+| Event-based | Only when something happens | Change-in-control notification |
+| Continuous | Must be kept in place at all times | AML programme, sanctions screening |
 
-### Page-by-page quick reference
+---
 
-- **Home** — At-a-glance overdue / upcoming / recently completed.
-- **Calendar** — Every due date across entities; the source of truth for deadlines.
-- **Filings** — Your obligations to work: assign, attach proof, mark complete.
-- **Documents** — Filed proofs and entity paperwork, organised in folders.
-- **Entities** — Companies + fiscal year-ends + bank accounts (admin).
-- **Review & Assign** — Approve filings and pick owners (admin).
-- **Regulation Library** — Browse the full catalog of finance filings.
-- **Audit Log** — Who did what, when (admin).
+### Reminders & Slack
 
-### Tips
+Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status without leaving Slack. Turn notifications on under your Profile.
 
-- Use the search in the top bar to jump to any entity, filing, or page.
-- Set each entity's fiscal year-end accurately — FY-relative deadlines depend on it.
-- Turn on Slack / email under Profile to get reminders before deadlines.
+---
+
+### Where everything lives
+
+| Page | What it's for |
+|---|---|
+| **Home** | Overdue / due-soon / awaiting-review at a glance. |
+| **Calendar** | Every due date across entities — the source of truth. |
+| **Filings** | Your work queue: prepare, attach proof, mark complete. |
+| **Documents** | Licence PDFs and proof-of-filing. |
+| **Entities** | Companies, fiscal year-ends, and licences (admin). |
+| **Review & Assign** | Approve discovered filings and set owners (admin). |
+| **Regulation Library** | Browse the full finance-filing catalogue. |
+| **Audit Log** | Who did what, when (admin). |
+
+---
+
+### In one breath
+
+Add the **entity** → upload its **licence** → set its **Primary Activity** → **Refresh Regulations** → **Find applicable regulations** → send them to **Review & Assign** → **Approve & assign** an owner → it lands on the **Calendar** and in that person's **Filings** → Compliance prepares, Admin verifies, Finance pays, Admin closes → **Filed.**
+
+Most days you live in **Calendar** and **Filings**; the setup steps (1–6) you only repeat when you add a company or a new licence.
 `;
 
 
