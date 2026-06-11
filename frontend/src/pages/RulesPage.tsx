@@ -19,10 +19,8 @@ import {
   Table2,
   Search,
   Sparkles,
-  Upload,
 } from "lucide-react";
 import { RuleChangeCheckDialog } from "@/components/RuleChangeCheckDialog";
-import { ImportRulesDialog } from "@/components/ImportRulesDialog";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -167,7 +165,6 @@ export function RulesPage() {
   const [freq, setFreq] = useState<string>("");
   const [entityId, setEntityId] = useState<string>("");
   const [dateOrder, setDateOrder] = useState<"latest" | "oldest">("latest");
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -316,18 +313,9 @@ export function RulesPage() {
                 in_review: tab === "staging" ? "true" : undefined,
               }}
             />
-            <Button
-              variant="outline"
-              onClick={() => setImportDialogOpen(true)}
-              title="Bulk import rules from a CSV or Excel file"
-            >
-              <Upload className="h-4 w-4" />
-              Import template
-            </Button>
           </div>
         }
       />
-      <ImportRulesDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
       <Tabs value={tab} onValueChange={(v) => setTab(v as RuleStatus)}>

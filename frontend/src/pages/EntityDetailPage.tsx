@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FiscalYearEndPicker } from "@/components/FiscalYearEndPicker";
+import { AddRegulationModal } from "@/components/AddRegulationModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -1405,123 +1406,76 @@ function AddRegulationDialog({
   onOpenChange: (v: boolean) => void;
   onAdded: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [authority, setAuthority] = useState("");
-  const [category, setCategory] = useState("");
-  const [frequency, setFrequency] = useState("Annual");
-  const [due, setDue] = useState("");
-  const [fn, setFn] = useState("Finance");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setName(""); setAuthority(""); setCategory(""); setFrequency("Annual");
-      setDue(""); setFn("Finance"); setError(null);
+  // Map the modal's frequency ids + structured due-rule onto the backend schema.
+  const FREQ_LABEL: Record<string, string> = {
+    ANNUAL: "Annual", SEMI_ANNUAL: "Semi-annual", QUARTERLY: "Quarterly",
+    MONTHLY: "Monthly", ONE_TIME: "One-time",
+  };
+  const FREQ_SPEC: Record<string, string> = {
+    ANNUAL: "annual", SEMI_ANNUAL: "semiannual", QUARTERLY: "quarterly",
+    MONTHLY: "monthly", ONE_TIME: "onetime",
+  };
+  const toSpec = (dr: any, freqId: string): Record<string, unknown> | null => {
+    const f = FREQ_SPEC[freqId] || "annual";
+    if (!dr) return null;
+    if (dr.type === "SPECIFIC_DATE") return dr.date ? { frequency: "onetime", date: dr.date } : null;
+    if (dr.type === "FIXED_DATE") return { frequency: f, basis: "fixed", day: dr.day, month: dr.month };
+    if (dr.type === "OFFSET_FROM_FY_END" || dr.type === "OFFSET_FROM_PERIOD_END") {
+      let unit = String(dr.offset_unit || "MONTHS").toLowerCase();
+      let offset = dr.offset_value || 0;
+      if (unit === "weeks") { unit = "days"; offset = offset * 7; }
+      if (unit !== "days") unit = "months";
+      return { frequency: f, basis: "after_period", offset, unit, snap_last: dr.day_anchor === "LAST_DAY_OF_MONTH" };
     }
-  }, [open]);
+    return null;
+  };
+  const mapTeam = (t: any): string | null => {
+    const v = String(t || "").trim();
+    if (v === "HR / Payroll") return "HR";
+    return ["Finance", "Compliance", "Legal", "HR"].includes(v) ? v : null;
+  };
+  const toPayload = (rec: any) => {
+    const nm = String(rec.filingName || "").trim() || "Untitled filing";
+    return {
+      name: nm,
+      jurisdiction_code: entity.jurisdiction_code,
+      category: String(rec.type || "").trim() || "Other",
+      area: String(rec.subtype || "").trim(),
+      form_name: nm,
+      authority: String(rec.regulator || "").trim() || "—",
+      frequency: FREQ_LABEL[rec.frequency as string] || String(rec.frequency || "Annual"),
+      due_date_rule: String(rec.deadlineRuleText || "").trim() || "—",
+      due_date_spec: toSpec(rec.dueRule, rec.frequency),
+      applicability: "Mandatory",
+      applicability_note: String(rec.applicability || "").trim() || null,
+      responsible_function: mapTeam(rec.ownerTeam),
+      plain_description: String(rec.description || "").trim() || null,
+      source_url: String(rec.sourceUrl || "").trim() || null,
+      status: "staging",
+      sent_to_review: false,
+      entity_ids: [entity.id],
+    };
+  };
 
-  const add = useMutation({
-    mutationFn: () =>
-      api.post("/api/rules", {
-        name: name.trim(),
-        jurisdiction_code: entity.jurisdiction_code,
-        category: category.trim() || "Other",
-        area: "",
-        form_name: name.trim(),
-        authority: authority.trim() || "—",
-        frequency: frequency.trim() || "Annual",
-        due_date_rule: due.trim() || "—",
-        responsible_function: fn,
-        status: "staging",
-        sent_to_review: false,
-        entity_ids: [entity.id],
-      }),
+  // Added regulations are DRAFTS on the discovered list (sent_to_review=false) —
+  // they don't go to Review & Assign until a human sends them.
+  const create = useMutation({
+    mutationFn: (payloads: ReturnType<typeof toPayload>[]) =>
+      Promise.all(payloads.map((p) => api.post("/api/rules", p))),
     onSuccess: () => {
       onAdded();
       onOpenChange(false);
     },
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md">
-        <DialogHeader>
-          <DialogTitle>Add regulation</DialogTitle>
-        </DialogHeader>
-        <div className="p-6 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Add a filing the AI missed. It joins this entity's discovered list as
-            a draft — send it to Review &amp; Assign with the rest.
-          </p>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Filing name *</label>
-            <Input value={name} autoFocus onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Authority</label>
-              <Input value={authority} placeholder="e.g. FTA" onChange={(e) => setAuthority(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Category</label>
-              <Input value={category} placeholder="e.g. VAT" onChange={(e) => setCategory(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Frequency</label>
-              <select
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
-              >
-                {[
-                  "Annual",
-                  "Half-Yearly",
-                  "Quarterly",
-                  "Monthly",
-                  "Bi-annual",
-                  "Event-based",
-                  "Continuous",
-                  "One-time",
-                ].map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Function</label>
-              <select
-                value={fn}
-                onChange={(e) => setFn(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
-              >
-                {["Finance", "Compliance", "Legal", "HR"].map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Due-date rule</label>
-              <Input value={due} placeholder="e.g. FYE + 9 months" onChange={(e) => setDue(e.target.value)} />
-            </div>
-          </div>
-          {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => add.mutate()} disabled={add.isPending || !name.trim()}>
-            {add.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Add regulation
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <AddRegulationModal
+      open={open}
+      onClose={() => onOpenChange(false)}
+      onSubmit={(rec) => create.mutate([toPayload(rec)])}
+      onImport={(recs) => create.mutate(recs.map(toPayload))}
+    />
   );
 }
 
