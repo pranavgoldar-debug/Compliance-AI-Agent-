@@ -16,6 +16,8 @@ const FREQUENCIES: { value: DueFrequency; label: string }[] = [
   { value: "quarterly", label: "Quarterly" },
   { value: "monthly", label: "Monthly" },
   { value: "onetime", label: "One-time" },
+  { value: "event", label: "Event-based" },
+  { value: "continuous", label: "Continuous" },
 ];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -80,6 +82,11 @@ export function DueDateRuleBuilder({
       onChange({ frequency, date: spec.date });
       return;
     }
+    // No schedule to configure — the summary banner explains the cadence.
+    if (frequency === "event" || frequency === "continuous") {
+      onChange({ frequency });
+      return;
+    }
     // Default a sensible basis + fields when switching frequency.
     const basis: DueBasis = spec.basis === "after_period" ? "after_period" : "fixed";
     onChange({
@@ -108,7 +115,7 @@ export function DueDateRuleBuilder({
         <Seg options={FREQUENCIES} value={spec.frequency} onChange={setFrequency} disabled={disabled} />
       </div>
 
-      {spec.frequency === "onetime" ? (
+      {spec.frequency === "event" || spec.frequency === "continuous" ? null : spec.frequency === "onetime" ? (
         <div>
           <FieldLabel>Due date</FieldLabel>
           <input

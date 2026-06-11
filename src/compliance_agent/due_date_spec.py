@@ -7,8 +7,9 @@ reviewer sees in the builder's preview is exactly what lands on the calendar.
 Spec shape (all keys optional unless noted)::
 
     {
-      "frequency": "annual"|"semiannual"|"quarterly"|"monthly"|"onetime",
-      "basis":     "fixed"|"after_period",     # ignored for onetime
+      "frequency": "annual"|"semiannual"|"quarterly"|"monthly"|"onetime"
+                   |"event"|"continuous",      # event/continuous: no dates
+      "basis":     "fixed"|"after_period",     # ignored for onetime/event/continuous
       "day":   1..31,                           # fixed basis
       "month": 1..12,                           # fixed basis (anchor month)
       "offset": int, "unit": "months"|"days",   # after_period basis
@@ -27,7 +28,13 @@ from datetime import date, timedelta
 from typing import Optional
 
 
-FREQUENCIES = ("annual", "semiannual", "quarterly", "monthly", "onetime")
+FREQUENCIES = (
+    "annual", "semiannual", "quarterly", "monthly", "onetime",
+    # Unscheduled cadences — no computable due dates: event-based filings
+    # happen when the trigger occurs; continuous obligations are maintained
+    # at all times. next_due_dates() returns [] for both.
+    "event", "continuous",
+)
 # Months between occurrences / period-ends for each recurring frequency.
 _INTERVAL_MONTHS = {"annual": 12, "semiannual": 6, "quarterly": 3, "monthly": 1}
 _FREQ_LABEL = {
@@ -36,6 +43,8 @@ _FREQ_LABEL = {
     "quarterly": "Quarterly",
     "monthly": "Monthly",
     "onetime": "One-time",
+    "event": "Event-based",
+    "continuous": "Continuous",
 }
 _MONTH_NAME = [
     "January", "February", "March", "April", "May", "June",
@@ -94,6 +103,8 @@ def next_due_dates(
     if freq == "onetime":
         d = _parse_iso(spec.get("date"))
         return [d] if d else []
+    if freq in ("event", "continuous"):
+        return []
 
     interval = _INTERVAL_MONTHS[freq]
     basis = str(spec.get("basis", "")).strip().lower()
@@ -164,6 +175,10 @@ def summarize(spec: Optional[dict]) -> str:
     if freq == "onetime":
         d = _parse_iso(spec.get("date"))
         return f"Due once on {d.isoformat()}" if d else "One-time (date not set)"
+    if freq == "event":
+        return "Event-based — due when the triggering event occurs"
+    if freq == "continuous":
+        return "Continuous — maintained at all times; no fixed due date"
     basis = str(spec.get("basis", "")).strip().lower()
     cadence = {
         "annual": "every year",

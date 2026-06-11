@@ -2,7 +2,10 @@
 // `compliance_agent.due_date_spec` so the builder's preview shows exactly the
 // dates the calendar will compute. Keep the two in lock-step.
 
-export type DueFrequency = "annual" | "semiannual" | "quarterly" | "monthly" | "onetime";
+// "event" / "continuous" are unscheduled cadences — no computable due dates.
+export type DueFrequency =
+  | "annual" | "semiannual" | "quarterly" | "monthly" | "onetime"
+  | "event" | "continuous";
 export type DueBasis = "fixed" | "after_period";
 
 export interface DueDateSpec {
@@ -23,6 +26,8 @@ export const FREQ_LABEL: Record<DueFrequency, string> = {
   quarterly: "Quarterly",
   monthly: "Monthly",
   onetime: "One-time",
+  event: "Event-based",
+  continuous: "Continuous",
 };
 const MONTH_NAME = [
   "January", "February", "March", "April", "May", "June",
@@ -68,6 +73,7 @@ export function nextDueDates(
     const d = parseIso(spec.date);
     return d ? [d] : [];
   }
+  if (spec.frequency === "event" || spec.frequency === "continuous") return [];
   const interval = INTERVAL[spec.frequency];
   if (!interval) return [];
   const steps = Math.floor(48 / interval) + count + 4;
@@ -132,6 +138,8 @@ export function summarizeSpec(spec: DueDateSpec | null | undefined): string {
     const d = parseIso(spec.date);
     return d ? `Due once on ${fmtDue(d)}` : "Pick a date";
   }
+  if (spec.frequency === "event") return "Event-based — due when the triggering event occurs";
+  if (spec.frequency === "continuous") return "Continuous — maintained at all times; no fixed due date";
   if (!spec.basis) return "";
   const cadence: Record<string, string> = {
     annual: "every year",
