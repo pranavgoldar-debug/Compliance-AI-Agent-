@@ -35,6 +35,27 @@ const COLUMNS = [
   { key: "comment", label: "Comment", aliases: ["comment", "comments", "notes"] },
 ];
 
+// Authoritative source links offered as one-click suggestions in the manual
+// Source URL field. Keyed by jurisdiction code; the caller passes the entity's
+// jurisdiction so only the relevant set shows. These are filing-specific deep
+// links (more specific than the authority→homepage backfill map).
+const SOURCE_SUGGESTIONS: Record<string, { label: string; url: string }[]> = {
+  uk: [
+    { label: "Annual accounts (Companies House)", url: "https://www.gov.uk/prepare-file-annual-accounts-for-limited-company" },
+    { label: "VAT return (HMRC)", url: "https://www.gov.uk/vat-returns" },
+    { label: "FCA reporting — payment institutions", url: "https://www.fca.org.uk/firms/reporting-requirements-payment-institutions" },
+    { label: "FCA financial crime return (REP-CRIM)", url: "https://www.fca.org.uk/data/financial-crime-analysis-firms-2017-2020" },
+    { label: "FCA baseline financial resilience return", url: "https://www.fca.org.uk/publications/policy-statements/ps23-3-creation-baseline-financial-resilience-regulatory-return-feedback-cp22-19-and-final-rules" },
+    { label: "Payroll / RTI (HMRC)", url: "https://www.gov.uk/running-payroll" },
+    { label: "Expenses & benefits (P11D)", url: "https://www.gov.uk/employer-reporting-expenses-benefits" },
+    { label: "Employment-related securities (ERS) return", url: "https://www.gov.uk/guidance/tell-hmrc-about-your-employment-related-securities-annual-returns" },
+    { label: "Pensions auto-enrolment (TPR)", url: "https://www.thepensionsregulator.gov.uk/en/employers" },
+    { label: "Transfer pricing documentation", url: "https://www.gov.uk/government/publications/transfer-pricing-documentation-requirements-for-uk-businesses" },
+    { label: "UK financial sanctions (OFSI)", url: "https://www.gov.uk/guidance/uk-financial-sanctions-guidance" },
+    { label: "ICO data protection fee", url: "https://ico.org.uk/for-organisations/data-protection-fee/" },
+  ],
+};
+
 const FREQUENCIES = [
   { id: "ANNUAL", label: "Annual" },
   { id: "SEMI_ANNUAL", label: "Semi-annual" },
@@ -278,7 +299,7 @@ function DueRuleEditor({ frequency, dueRule, onChange, anchorDate, setAnchorDate
 /* ---------------- manual entry tab ---------------- */
 const EMPTY: any = Object.fromEntries(COLUMNS.map((c) => [c.key, ""]));
 
-function ManualTab({ onSubmit, onClose }: any) {
+function ManualTab({ onSubmit, onClose, suggestions = [] }: any) {
   const [rec, setRec] = useState<any>({ ...EMPTY });
   const [frequency, setFrequency] = useState("ANNUAL");
   const [dueRule, setDueRule] = useState<any>({ type: "OFFSET_FROM_FY_END", offset_value: 6, offset_unit: "MONTHS", day_anchor: "SAME_DAY" });
@@ -365,6 +386,20 @@ function ManualTab({ onSubmit, onClose }: any) {
             <div style={S.field}><span style={S.label}>Source authority (doc + section)</span><Input value={rec.sourceAuthority} onChange={set("sourceAuthority")} /></div>
             <div style={S.field}><span style={S.label}>Source URL</span><Input value={rec.sourceUrl} onChange={set("sourceUrl")} placeholder="https://…" /></div>
           </div>
+          {suggestions.length > 0 && (
+            <div style={{ marginBottom: 4 }}>
+              <span style={{ ...S.label, color: C.sub }}>Suggested sources</span>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {suggestions.map((s: any) => (
+                  <button key={s.url} type="button" title={s.url}
+                    style={{ ...S.chipBtn, ...(rec.sourceUrl === s.url ? { borderColor: C.accent, color: C.accent, background: C.accentSoft } : {}) }}
+                    onClick={() => setRec({ ...rec, sourceUrl: s.url })}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -544,11 +579,14 @@ export interface AddRegulationModalProps {
   onClose: () => void;
   onSubmit: (record: any) => void;
   onImport: (records: any[]) => void;
+  /** Entity jurisdiction code — gates the suggested source links. */
+  jurisdiction?: string;
 }
 
-export function AddRegulationModal({ open, onClose, onSubmit, onImport }: AddRegulationModalProps) {
+export function AddRegulationModal({ open, onClose, onSubmit, onImport, jurisdiction }: AddRegulationModalProps) {
   const [tab, setTab] = useState("manual");
   if (!open) return null;
+  const suggestions = SOURCE_SUGGESTIONS[(jurisdiction || "").toLowerCase()] || [];
   return (
     <div style={S.overlay} onClick={onClose}>
       <div style={S.modal} onClick={(e) => e.stopPropagation()}>
@@ -564,10 +602,10 @@ export function AddRegulationModal({ open, onClose, onSubmit, onImport }: AddReg
           </div>
           <div style={S.tabs}>
             <button type="button" style={S.tab(tab === "manual")} onClick={() => setTab("manual")}>Manual entry</button>
-            <button type="button" style={S.tab(tab === "import")} onClick={() => setTab("import")}>Import from Excel</button>
+            <button type="button" style={S.tab(tab === "import")} onClick={() => setTab("import")}>Import</button>
           </div>
           {tab === "manual"
-            ? <ManualTab onSubmit={onSubmit} onClose={onClose} />
+            ? <ManualTab onSubmit={onSubmit} onClose={onClose} suggestions={suggestions} />
             : <ImportTab onImport={onImport} onClose={onClose} />}
         </div>
       </div>

@@ -1475,6 +1475,7 @@ function AddRegulationDialog({
       onClose={() => onOpenChange(false)}
       onSubmit={(rec) => create.mutate([toPayload(rec)])}
       onImport={(recs) => create.mutate(recs.map(toPayload))}
+      jurisdiction={entity.jurisdiction_code}
     />
   );
 }
