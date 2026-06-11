@@ -428,7 +428,7 @@ export function DashboardPage() {
               label="Unassigned"
               tone={data.unassigned > 0 ? "alert" : "muted"}
               icon={UserPlus}
-              href="/tasks"
+              href="/tasks?scope=unassigned"
             />
             <MetricCard
               value={data.entity_count}

@@ -32,14 +32,20 @@ import { fmtShortDate, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Entity, Obligation, ObligationStatus, UserBrief } from "@/types/api";
 
-type Scope = "assigned" | "watching" | "completed" | "all";
+type Scope = "assigned" | "unassigned" | "watching" | "completed" | "all";
 type SortKey = "due_date" | "recently_updated" | "priority";
 
 const SCOPES: { key: Scope; label: string }[] = [
   { key: "assigned", label: "Assigned to me" },
+  { key: "unassigned", label: "Unassigned" },
   { key: "completed", label: "Completed" },
   { key: "all", label: "All" },
 ];
+
+// Open work nobody owns yet — the slice the dashboard's Unassigned tile
+// deep-links to (/tasks?scope=unassigned). Derived client-side from scope=all.
+const isUnassigned = (o: Obligation) =>
+  !o.assignee && o.status !== "completed" && o.status !== "not_applicable";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "due_date", label: "Due date (default)" },
@@ -308,19 +314,27 @@ export function TasksPage({
       );
     return { ...base, statuses: seeded };
   })();
-  // When the user arrives with a URL pre-filter (status or awaiting-payment),
-  // default scope to "all" so they see every match, not just their own
-  // assignments (otherwise the Awaiting-payment tile lands on an empty list).
-  const [scope, setScope] = useState<Scope>(
-    initialFilters.statuses.length > 0 || initialAwaitingPayment ? "all" : "assigned",
-  );
+  // ?scope=unassigned deep-links straight to the Unassigned tab (dashboard
+  // Unassigned tile). Otherwise, when the user arrives with a URL pre-filter
+  // (status or awaiting-payment), default scope to "all" so they see every
+  // match, not just their own assignments.
+  const initialScope: Scope = (() => {
+    if (
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("scope") === "unassigned"
+    )
+      return "unassigned";
+    return initialFilters.statuses.length > 0 || initialAwaitingPayment ? "all" : "assigned";
+  })();
+  const [scope, setScope] = useState<Scope>(initialScope);
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data: rawData, isLoading, isFetching } = useQuery({
     queryKey: ["tasks", scope, department, awaitingPayment],
     queryFn: () => {
-      const qs = new URLSearchParams({ scope });
+      // The API has no unassigned scope — fetch everything and slice client-side.
+      const qs = new URLSearchParams({ scope: scope === "unassigned" ? "all" : scope });
       if (department !== "all") qs.set("department", department);
       if (awaitingPayment) qs.set("awaiting_payment", "1");
       return api.get<Obligation[]>(`/api/tasks?${qs.toString()}`);
@@ -335,6 +349,11 @@ export function TasksPage({
     // indicator instead.
     placeholderData: keepPreviousData,
   });
+  // Unassigned scope slices the all-fetch down to ownerless open work.
+  const data = useMemo(
+    () => (scope === "unassigned" ? rawData?.filter(isUnassigned) : rawData),
+    [rawData, scope],
+  );
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
     queryFn: () => api.get<Entity[]>("/api/entities"),
@@ -358,6 +377,7 @@ export function TasksPage({
       // one number immediately on first load.
       return {
         assigned: scope === "assigned" ? data?.length ?? null : null,
+        unassigned: scope === "unassigned" ? data?.length ?? null : null,
         watching: scope === "watching" ? data?.length ?? null : null,
         completed: scope === "completed" ? data?.length ?? null : null,
         all: scope === "all" ? data?.length ?? null : null,
@@ -371,6 +391,7 @@ export function TasksPage({
           o.status !== "completed" &&
           o.status !== "not_applicable",
       ).length,
+      unassigned: all.filter(isUnassigned).length,
       // Watching needs the comment-author list — we don't have that on
       // the client. Best approximation: items where I'm the assignee OR
       // I'm tagged in payment_reference (rare). Leave as the active fetch.
@@ -557,16 +578,20 @@ export function TasksPage({
               title={
                 scope === "assigned"
                   ? "Nothing on your plate"
-                  : scope === "completed"
-                    ? "No completed items yet"
-                    : "All caught up"
+                  : scope === "unassigned"
+                    ? "Everything has an owner"
+                    : scope === "completed"
+                      ? "No completed items yet"
+                      : "All caught up"
               }
               description={
                 scope === "assigned"
                   ? "All caught up. Time for a coffee."
-                  : scope === "watching"
-                    ? "Comment on or open an obligation to start watching it."
-                    : "No tasks match the current filters."
+                  : scope === "unassigned"
+                    ? "Every open filing is assigned to someone."
+                    : scope === "watching"
+                      ? "Comment on or open an obligation to start watching it."
+                      : "No tasks match the current filters."
               }
             />
           </div>
