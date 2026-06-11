@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -184,11 +185,7 @@ export function DocumentExtractDialog({ doc, obligationId, open, onOpenChange }:
                 </Field>
               </div>
               <Field label="Filed on (sets status to Completed)">
-                <Input
-                  type="date"
-                  value={completedAt}
-                  onChange={(e) => setCompletedAt(e.target.value)}
-                />
+                <DateField value={completedAt} onChange={setCompletedAt} />
               </Field>
               <Field label="Notes (suggestion)">
                 <textarea

@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { FiscalYearEndPicker } from "@/components/FiscalYearEndPicker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -347,11 +348,7 @@ function AddEntityDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium">Incorporation date</label>
-              <Input
-                type="date"
-                value={incDate}
-                onChange={(e) => setIncDate(e.target.value)}
-              />
+              <DateField value={incDate} onChange={setIncDate} />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Fiscal year end</label>

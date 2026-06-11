@@ -35,6 +35,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
@@ -593,18 +594,10 @@ export function UploadDialog({
               />
             </Field>
             <Field label="Issue date">
-              <Input
-                type="date"
-                value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
-              />
+              <DateField value={issueDate} onChange={setIssueDate} />
             </Field>
             <Field label="Expiry date">
-              <Input
-                type="date"
-                value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
-              />
+              <DateField value={expiryDate} onChange={setExpiryDate} />
             </Field>
           </div>
 
@@ -1579,8 +1572,8 @@ export function LicenseDetailBody({
                 <Field label="Authority"><Input {...fld("authority")} /></Field>
                 <Field label="Jurisdiction code"><Input {...fld("jurisdiction_code")} placeholder="uae / uk / us…" /></Field>
                 <Field label="License number"><Input {...fld("license_number")} /></Field>
-                <Field label="Issue date"><Input type="date" {...fld("issue_date")} /></Field>
-                <Field label="Expiry date"><Input type="date" {...fld("expiry_date")} /></Field>
+                <Field label="Issue date"><DateField value={form.issue_date} onChange={(v) => setForm((f) => ({ ...f, issue_date: v }))} /></Field>
+                <Field label="Expiry date"><DateField value={form.expiry_date} onChange={(v) => setForm((f) => ({ ...f, expiry_date: v }))} /></Field>
                 <Field label="Notes"><Input {...fld("notes")} /></Field>
               </div>
               <div className="flex justify-end gap-2">

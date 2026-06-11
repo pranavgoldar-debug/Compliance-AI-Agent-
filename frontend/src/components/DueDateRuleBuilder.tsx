@@ -3,6 +3,7 @@
 // lib/dueDateSpec), shown as a one-line human summary.
 
 import { cn } from "@/lib/utils";
+import { DateField } from "@/components/DateField";
 import {
   type DueDateSpec,
   type DueFrequency,
@@ -118,12 +119,10 @@ export function DueDateRuleBuilder({
       {spec.frequency === "event" || spec.frequency === "continuous" ? null : spec.frequency === "onetime" ? (
         <div>
           <FieldLabel>Due date</FieldLabel>
-          <input
-            type="date"
+          <DateField
             disabled={disabled}
             value={spec.date ?? ""}
-            onChange={(e) => patch({ date: e.target.value })}
-            className={selectCls}
+            onChange={(v) => patch({ date: v })}
           />
         </div>
       ) : (
