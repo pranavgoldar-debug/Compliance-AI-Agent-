@@ -14,11 +14,11 @@ services:
     # Deployed branch. Render reads this from the selected branch in the
     # dashboard, so also set Settings → Branch to match.
     branch: claude/upbeat-turing-DCFHF
-    # Pip is upgraded first (the bundled 24.0 resolver chokes where newer
-    # ones don't), and installs are pinned via constraints.txt so a new PyPI
-    # release or a stale cached build env can't flip the deploy into
-    # ResolutionImpossible. Refresh pins per the header in constraints.txt.
-    buildCommand: pip install --upgrade pip && pip install -c constraints.txt -e ".[postgres]" && cd frontend && npm ci && npm run build && mkdir -p ../src/compliance_agent/data/webapp && cp -r dist/. ../src/compliance_agent/data/webapp/
+    # Pip installs are pinned via constraints.txt (refresh per its header) and
+    # hardened against Render's flaky route to PyPI: long timeout, 10 retries,
+    # and one full re-attempt — read-timeouts on /simple/<pkg>/ otherwise
+    # surface as a bogus ResolutionImpossible.
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]") && cd frontend && npm ci && npm run build && mkdir -p ../src/compliance_agent/data/webapp && cp -r dist/. ../src/compliance_agent/data/webapp/
     startCommand: uvicorn compliance_agent.web:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/fintech/countries
     envVars:
@@ -59,7 +59,7 @@ services:
     region: oregon
     branch: claude/upbeat-turing-DCFHF
     schedule: "0 9 * * *"
-    buildCommand: pip install --upgrade pip && pip install -c constraints.txt -e ".[postgres]"
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]")
     startCommand: python -m compliance_agent.cli send-reminders
     envVars:
       - key: PYTHON_VERSION
@@ -80,7 +80,7 @@ services:
     region: oregon
     branch: claude/upbeat-turing-DCFHF
     schedule: "30 4 * * *"
-    buildCommand: pip install --upgrade pip && pip install -c constraints.txt -e ".[postgres]"
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]")
     startCommand: python -m compliance_agent.cli send-digest --kind employee_daily
     envVars:
       - key: PYTHON_VERSION
@@ -101,7 +101,7 @@ services:
     region: oregon
     branch: claude/upbeat-turing-DCFHF
     schedule: "30 4 * * 1"
-    buildCommand: pip install --upgrade pip && pip install -c constraints.txt -e ".[postgres]"
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]")
     startCommand: python -m compliance_agent.cli send-digest --kind admin_weekly
     envVars:
       - key: PYTHON_VERSION
