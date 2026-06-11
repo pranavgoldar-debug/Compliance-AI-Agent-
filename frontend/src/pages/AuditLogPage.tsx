@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -216,9 +217,9 @@ export function AuditLogPage() {
           </PopoverTrigger>
           <PopoverContent className="w-56 p-3 space-y-2">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Since</div>
-            <Input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+            <DateField value={since} onChange={setSince} />
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Until</div>
-            <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+            <DateField value={until} onChange={setUntil} />
             {(since || until) && (
               <button
                 onClick={() => {

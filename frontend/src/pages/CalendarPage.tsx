@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
@@ -472,22 +472,14 @@ function DateRangeControl({
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-muted-foreground">Start</label>
-                <Input
-                  type="date"
+                <DateField
                   value={format(customStart, "yyyy-MM-dd")}
-                  onChange={(e) =>
-                    e.target.value &&
-                    onCustomChange(parseISO(e.target.value), customEnd)
-                  }
+                  onChange={(v) => v && onCustomChange(parseISO(v), customEnd)}
                 />
                 <label className="text-xs text-muted-foreground mt-1">End</label>
-                <Input
-                  type="date"
+                <DateField
                   value={format(customEnd, "yyyy-MM-dd")}
-                  onChange={(e) =>
-                    e.target.value &&
-                    onCustomChange(customStart, parseISO(e.target.value))
-                  }
+                  onChange={(v) => v && onCustomChange(customStart, parseISO(v))}
                 />
               </div>
             </div>
