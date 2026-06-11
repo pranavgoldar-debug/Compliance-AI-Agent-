@@ -1066,7 +1066,14 @@ _EMI_RECALL = (
     "ADDITION to event-based suspicious-transaction reports.\n"
     "- Operational, security-risk, major-incident and fraud reporting under the "
     "payment-services regime; change-in-control / qualifying-holding "
-    "notifications.\n\n"
+    "notifications.\n"
+    "IMPORTANT — these obligation CATEGORIES are well-established for EVERY "
+    "e-money / payment institution. Do NOT drop them under the "
+    "'omit if unsure' rule just because you are uncertain of the exact local "
+    "form name: INCLUDE each that genuinely applies, with a descriptive name "
+    "and confidence 'Pending verification - official source check', and let the "
+    "human reviewer confirm the precise form. Omitting a known EMI prudential / "
+    "AML obligation is a worse error here than naming it provisionally.\n\n"
 )
 
 
@@ -1091,7 +1098,11 @@ _LT_RECALL = (
     "DIFFERENT cadences; list BOTH and match each statutory form code to its "
     "correct cadence (do not reuse one code for both).\n"
     "- VMI: corporate income tax and VAT returns. Registru centras: annual "
-    "financial statements. Sodra: social-insurance contribution reporting.\n\n"
+    "financial statements. Sodra: social-insurance contribution reporting.\n"
+    "These Lithuanian supervisory and tax filings are well-established — "
+    "INCLUDE each that applies even if you are unsure of the exact form code, "
+    "marking confidence 'Pending verification - official source check' rather "
+    "than omitting it.\n\n"
 )
 
 
