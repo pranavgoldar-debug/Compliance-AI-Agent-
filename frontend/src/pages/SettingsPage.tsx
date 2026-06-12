@@ -1785,11 +1785,6 @@ function GmailCard() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          <strong>Your own Gmail, no third party.</strong> We send over the Gmail HTTPS API
-          (port 443), so Render's SMTP-port block doesn't matter — no Brevo / Resend / SMTP needed.
-        </div>
-
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
           <div className="font-medium">Set up Gmail API (one-time)</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
