@@ -44,7 +44,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, userInitials, JURISDICTIONS } from "@/lib/format";
+import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
+import { CountrySelect } from "@/components/CountrySelect";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, BankDetails, DocumentOut, Entity, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
@@ -1673,18 +1674,7 @@ function EditEntityDialog({
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Jurisdiction</label>
-            <select
-              value={jurisdictionCode}
-              onChange={(e) => setJurisdictionCode(e.target.value)}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="">— Select —</option>
-              {Object.entries(JURISDICTIONS).map(([code, j]) => (
-                <option key={code} value={code}>
-                  {j.flag} {j.name}
-                </option>
-              ))}
-            </select>
+            <CountrySelect value={jurisdictionCode} onChange={setJurisdictionCode} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">

@@ -2,6 +2,7 @@
 
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import type { EffortBand, ObligationStatus } from "@/types/api";
+import { countryFor } from "@/lib/countries";
 
 // Country code → display name + ISO 3166-1 alpha-2 for the flag CDN.
 // `flag` (emoji) is kept for backwards compatibility with anything still
@@ -111,13 +112,16 @@ export function jurisdiction(code: string): {
   flag: string;
   iso2: string;
 } {
-  return (
-    JURISDICTIONS[code] ?? {
-      name: code.toUpperCase(),
-      flag: "🏳️",
-      iso2: "",
-    }
-  );
+  if (JURISDICTIONS[code]) return JURISDICTIONS[code];
+  // Any ISO country code (new jurisdictions stored by alpha-2) resolves to its
+  // name + flag; otherwise fall back to the raw code chip.
+  const c = countryFor(code);
+  if (c) return { name: c.name, flag: "", iso2: c.iso2 };
+  return {
+    name: code.toUpperCase(),
+    flag: "🏳️",
+    iso2: "",
+  };
 }
 
 export function fmtDate(iso: string | null | undefined, pattern = "d MMM yyyy"): string {

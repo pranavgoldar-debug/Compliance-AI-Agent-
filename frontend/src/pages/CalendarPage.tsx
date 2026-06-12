@@ -53,7 +53,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { InlineStatusMenu } from "@/components/InlineStatusMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { JURISDICTIONS, fmtDate, cleanFilingName } from "@/lib/format";
+import { fmtDate, cleanFilingName } from "@/lib/format";
+import { jurisdictionOptions } from "@/lib/countries";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
 import type {
@@ -314,12 +315,10 @@ export function CalendarPage() {
           />
           <MultiSelectFilter
             label="Jurisdiction"
-            options={Object.entries(JURISDICTIONS).map(([code, j]) => ({
-              value: code,
-              label: `${j.flag} ${j.name}`,
-            }))}
+            options={jurisdictionOptions().map((o) => ({ value: o.value, label: o.name }))}
             selected={filters.jurisdictions}
             onChange={(vals) => setFilters((f) => ({ ...f, jurisdictions: vals }))}
+            searchable
           />
           <MultiSelectFilter
             label="Tax type"

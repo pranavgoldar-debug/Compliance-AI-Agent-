@@ -35,7 +35,9 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, userInitials, JURISDICTIONS, jurisdiction } from "@/lib/format";
+import { fmtRelative, userInitials, jurisdiction } from "@/lib/format";
+import { jurisdictionOptions } from "@/lib/countries";
+import { CountrySelect } from "@/components/CountrySelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import type { Entity, OwnershipStage } from "@/types/api";
@@ -133,12 +135,10 @@ export function EntitiesPage() {
         </div>
         <FilterPopover
           label="Jurisdiction"
-          options={Object.entries(JURISDICTIONS).map(([code, j]) => ({
-            value: code,
-            label: `${j.flag} ${j.name}`,
-          }))}
+          options={jurisdictionOptions().map((o) => ({ value: o.value, label: o.name }))}
           selected={jurisdictions}
           onChange={setJurisdictions}
+          searchable
         />
         <FilterPopover
           label="Type"
@@ -299,18 +299,7 @@ function AddEntityDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium">Jurisdiction *</label>
-              <select
-                value={jurisdictionCode}
-                onChange={(e) => setJurisdictionCode(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">— Select —</option>
-                {Object.entries(JURISDICTIONS).map(([code, j]) => (
-                  <option key={code} value={code}>
-                    {j.flag} {j.name}
-                  </option>
-                ))}
-              </select>
+              <CountrySelect value={jurisdictionCode} onChange={setJurisdictionCode} />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Legal type</label>

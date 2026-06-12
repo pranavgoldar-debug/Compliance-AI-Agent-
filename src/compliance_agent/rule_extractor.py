@@ -701,7 +701,7 @@ Extract these fields (leave a field null if the document doesn't state it — ne
 - `name` — a short human title for the license (e.g. "FCA Authorisation", "MAS Major Payment Institution Licence", "CBUAE SVF Licence"). If a formal title exists, use it.
 - `license_type` — the category/type of licence if distinct from the name (e.g. "EMI", "Major Payment Institution", "Trade License").
 - `authority` — the issuing regulator (e.g. FCA, MAS, CBUAE, RBI, FinCEN, Bank of Lithuania).
-- `jurisdiction_code` — the country, mapped to EXACTLY one of: india, uk, us, uae, singapore, lithuania, canada, eu. Use null if it's none of these.
+- `jurisdiction_code` — the country as a short code. Prefer one of these existing slugs when it fits: india, uk, us, uae, singapore, lithuania, canada, eu. For ANY OTHER country use its ISO 3166-1 alpha-2 lowercase code (e.g. br, de, jp, za). Use null only if the country is genuinely unknown.
 - `license_number` — the licence / registration / reference number.
 - `issue_date` — the date granted/issued, as ISO YYYY-MM-DD.
 - `expiry_date` — the expiry / renewal-due date, as ISO YYYY-MM-DD. Null if the licence has no expiry.

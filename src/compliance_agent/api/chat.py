@@ -86,10 +86,12 @@ TOOLS = [
             "properties": {
                 "jurisdiction_code": {
                     "type": "string",
-                    "enum": [
-                        "india", "uk", "us", "eu", "uae", "singapore", "canada", "lithuania",
-                    ],
-                    "description": "Restrict to one jurisdiction.",
+                    "description": (
+                        "Restrict to one jurisdiction. Use the entity's stored code — a "
+                        "legacy slug (india, uk, us, eu, uae, singapore, canada, lithuania) "
+                        "or an ISO 3166-1 alpha-2 code for any other country (e.g. 'br', 'de'). "
+                        "Call list_entities first if unsure which codes exist."
+                    ),
                 }
             },
         },
@@ -111,9 +113,10 @@ TOOLS = [
                 },
                 "jurisdiction_code": {
                     "type": "string",
-                    "enum": [
-                        "india", "uk", "us", "eu", "uae", "singapore", "canada", "lithuania",
-                    ],
+                    "description": (
+                        "A legacy slug (india, uk, us, eu, uae, singapore, canada, "
+                        "lithuania) or an ISO 3166-1 alpha-2 code for any other country."
+                    ),
                 },
                 "status": {
                     "type": "string",
