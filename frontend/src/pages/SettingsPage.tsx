@@ -300,6 +300,20 @@ Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 
 
 Once set, alert cards mention you with a real blue **@name** (and your status-button clicks in Slack are credited to your user). Without it, cards just show your name in bold — no ping. Turn the email/Slack toggles on under **Settings → Profile**.
 
+### Google Calendar
+
+Every **assigned** filing is pushed automatically to the shared **"Aspora Compliance"** Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing.
+
+- **Assign / reassign** → the event appears or updates within seconds.
+- **Complete, mark N/A, or unassign** (in the app or via the Slack buttons) → the event disappears.
+- One filing = one event, no duplicates — the app keeps them in sync on its own.
+
+**Seeing the calendar (one-time, per person):** ask an admin to share the *Aspora Compliance* calendar with you ("See all event details"), then click **"Add this calendar"** in the invite email and make sure its checkbox is ticked in Google Calendar's sidebar. After that, every assignment shows up automatically — nothing to do per filing.
+
+> **The app is the source of truth.** Don't edit or delete these events inside Google Calendar — the app will overwrite manual changes on its next sync. To change a date or owner, change it on the filing.
+
+*(Admins: the connection itself is configured once under **Settings → Integrations → Google Calendar** — setup steps and a "Send test event" button live on that card.)*
+
 ---
 
 ### Where everything lives
