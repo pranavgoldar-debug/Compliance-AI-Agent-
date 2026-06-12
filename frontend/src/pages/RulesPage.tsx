@@ -206,14 +206,23 @@ export function RulesPage() {
     queryFn: () => api.get<Entity[]>("/api/entities"),
   });
 
-  // Counts for tab badges (kept cheap: separate small queries).
-  const { data: stagingCount } = useQuery({
-    queryKey: ["rules-staging-count"],
+  // Always-on counts for all three tab badges (For Action / Approved /
+  // Archived) — one consolidated query, refreshed by the same invalidation
+  // that mutations fire.
+  const { data: counts } = useQuery({
+    queryKey: ["rules-count"],
     queryFn: async () => {
-      const rs = await api.get<Rule[]>("/api/rules?status=staging&in_review=true");
-      return rs.length;
+      const [s, p, a] = await Promise.all([
+        api.get<Rule[]>("/api/rules?status=staging&in_review=true"),
+        api.get<Rule[]>("/api/rules?status=production"),
+        api.get<Rule[]>("/api/rules?status=archived"),
+      ]);
+      return { staging: s.length, production: p.length, archived: a.length };
     },
   });
+  const stagingCount = counts?.staging;
+  const productionCount = counts?.production;
+  const archivedCount = counts?.archived;
 
   // On open, make sure every For Action / Approved rule has its calendar
   // obligation — so items show on the calendar automatically.
@@ -322,21 +331,28 @@ export function RulesPage() {
         <TabsList>
           <TabsTrigger value="staging">
             For Action
-            {typeof stagingCount === "number" && stagingCount > 0 && (
-              <Badge variant="alert" className="ml-1">
+            {typeof stagingCount === "number" && (
+              <Badge variant={stagingCount > 0 ? "alert" : "neutral"} className="ml-1">
                 {stagingCount}
               </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="production">
             Approved
-            {tab === "production" && rules && (
+            {typeof productionCount === "number" && (
               <Badge variant="neutral" className="ml-1">
-                {rules.length}
+                {productionCount}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="archived">Archived</TabsTrigger>
+          <TabsTrigger value="archived">
+            Archived
+            {typeof archivedCount === "number" && (
+              <Badge variant="neutral" className="ml-1">
+                {archivedCount}
+              </Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
       </Tabs>
         <div className="relative w-full sm:w-auto sm:min-w-[280px]">
@@ -655,7 +671,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
       api.post<{ deleted: number }>("/api/rules/bulk-delete", { ids }),
     onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-count"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["obligations"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -944,7 +960,7 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
-    queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+    queryClient.invalidateQueries({ queryKey: ["rules-count"] });
     queryClient.invalidateQueries({ queryKey: ["calendar"] });
     queryClient.invalidateQueries({ queryKey: ["obligations"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -1204,7 +1220,7 @@ function StagingTable({ rules }: { rules: Rule[] }) {
   };
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
-    queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+    queryClient.invalidateQueries({ queryKey: ["rules-count"] });
     queryClient.invalidateQueries({ queryKey: ["calendar"] });
     queryClient.invalidateQueries({ queryKey: ["obligations"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
