@@ -41,6 +41,10 @@ beats a clever one. Match the surrounding code's idiom, comment density, and nam
 - Don't bypass this. New rules start Staging.
 
 ### Git / workflow
+- **Discuss first, build on "yes":** when the user requests a change, first
+  lay out the approach (what, where, trade-offs) and WAIT for explicit
+  confirmation before implementing, committing or pushing. Only skip the
+  discussion for trivial typo-level fixes or when the user says to just do it.
 - Develop on the designated feature branch only; **never** push elsewhere without
   permission.
 - Commit messages: clear, descriptive. **No PR unless explicitly asked.**
