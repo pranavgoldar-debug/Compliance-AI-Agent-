@@ -59,27 +59,37 @@ class ReminderResult:
     slack_sent: bool
 
 
-def _build_email_body(obligation: Obligation, days_remaining: int) -> tuple[str, str]:
+def _build_email_body(obligation: Obligation, days_remaining: int) -> tuple[str, str, str]:
+    """(subject, text, html) for the branded deadline-alert template."""
+    from compliance_agent.email_service import base_url
+    from compliance_agent.email_templates import deadline_alert_email
+
     rule = obligation.rule
     entity = obligation.entity
+    assignee = obligation.assignee
     form = rule.form_name if rule else "Compliance item"
-    authority = rule.authority if rule else "—"
-    entity_name = entity.name if entity else "—"
-    subject = f"[Aspora] Reminder: {form} due in {days_remaining}d ({entity_name})"
-    body = (
-        f"Hi,\n\n"
-        f"This is a deadline reminder from Aspora Compliance OS.\n\n"
-        f"Filing:     {form}\n"
-        f"Entity:     {entity_name}\n"
-        f"Authority:  {authority}\n"
-        f"Frequency:  {rule.frequency if rule else '—'}\n"
-        f"Due date:   {obligation.due_date.isoformat()}  ({days_remaining} days)\n"
-        f"Status:     {obligation.status.value if obligation.status else '—'}\n\n"
-        f"Open it: /obligations/{obligation.id}\n\n"
-        f"You're receiving this because you're the assignee. "
-        f"Toggle reminders in Settings → Notifications.\n"
+    status = (obligation.status.value if obligation.status else "—").replace("_", " ").title()
+    updated = getattr(obligation, "updated_at", None)
+    return deadline_alert_email(
+        owner_name=(
+            (assignee.full_name or assignee.email.split("@")[0]) if assignee else "there"
+        ),
+        obligation_name=form,
+        days_remaining=days_remaining,
+        due_date=obligation.due_date,
+        regulator_name=(rule.authority if rule else "—") or "—",
+        jurisdiction=(rule.jurisdiction_code if rule else "—").upper(),
+        form_code=form,
+        entity_name=entity.name if entity else "—",
+        entity_ref=(getattr(entity, "short_code", None) or f"#{entity.id}") if entity else "—",
+        obligation_type=(rule.category if rule else "—") or "—",
+        frequency=(rule.frequency if rule else "—") or "—",
+        period_covered=obligation.period_label or "—",
+        status=status,
+        last_action="status update",
+        last_action_date=updated.date().isoformat() if updated else "—",
+        open_url=f"{base_url().rstrip('/')}/obligations/{obligation.id}",
     )
-    return subject, body
 
 
 def _slack_text(obligation: Obligation, assignee: User, days_remaining: int) -> str:
@@ -205,7 +215,7 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
             if _already_reminded_at_offset(db, assignee.id, ob.id, offset):
                 continue
 
-            subject, body = _build_email_body(ob, days_left)
+            subject, body, body_html = _build_email_body(ob, days_left)
             email_sent = False
             slack_sent = False
 
@@ -227,6 +237,7 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                         to=assignee.email,
                         subject=subject,
                         body_text=body,
+                        body_html=body_html,
                     )
 
                 if (

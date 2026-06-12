@@ -367,6 +367,7 @@ def update_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found.")
     old_status = rule.status
+    old_owner_id = rule.owner_id
     data = payload.model_dump(exclude_unset=True)
     entity_ids = data.pop("entity_ids", None)
     for field, value in data.items():
@@ -403,6 +404,37 @@ def update_rule(
     # until approval.
     if rule.status == RuleStatus.production:
         ensure_obligations_for_rule(db, rule)
+        # Assigning an owner here ("Approve & assign" / the Approved-tab
+        # dropdown) syncs the obligations' assignee above — notify them
+        # directly (in-app + Slack + the branded assignment email), same as a
+        # direct assignment on the Filings page. emit_assignment itself skips
+        # self-assignments and is best-effort.
+        if rule.owner_id and rule.owner_id != old_owner_id:
+            from compliance_agent.api.notifications import emit_assignment
+            from compliance_agent.db import ObligationStatus
+
+            new_owner = db.get(User, rule.owner_id)
+            if new_owner is not None:
+                assigned_obs = (
+                    db.execute(
+                        select(Obligation)
+                        .where(
+                            Obligation.rule_id == rule.id,
+                            Obligation.assignee_id == rule.owner_id,
+                            Obligation.status.not_in(
+                                [ObligationStatus.completed, ObligationStatus.not_applicable]
+                            ),
+                        )
+                        .order_by(Obligation.due_date)
+                    )
+                    .scalars()
+                    .all()
+                )
+                for ob in assigned_obs:
+                    try:
+                        emit_assignment(db, assignee=new_owner, obligation=ob, actor=user)
+                    except Exception:  # noqa: BLE001 — never block the approval on notify
+                        pass
     else:
         remove_pending_obligations_for_rule(db, rule)
     log_activity(

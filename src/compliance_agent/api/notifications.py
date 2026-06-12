@@ -229,25 +229,51 @@ def emit_assignment(
         slack_service.post(msg["text"], blocks=msg["blocks"])
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
+    # Uses the branded assignment template (email_templates.assignment_email).
     if assignee.notify_email and smtp_configured():
+        from datetime import date as _date
+
+        from compliance_agent.email_templates import assignment_email
+
         link = f"{base_url().rstrip('/')}/obligations/{obligation.id}"
+        rule = obligation.rule
+        entity = obligation.entity
+        form = rule.form_name if rule else "Compliance item"
+        authority = (rule.authority if rule else "") or "the regulator"
+        juris = (rule.jurisdiction_code if rule else "—").upper()
         try:
-            send_email(
-                to=assignee.email,
-                subject=f"Assigned: {body}",
-                body_text=(
-                    f"{actor.full_name or actor.email} assigned you a compliance item.\n\n"
-                    f"{body}\n"
-                    f"Due: {obligation.due_date.isoformat()}\n\n"
-                    f"Open it: {link}"
+            subject, text, html = assignment_email(
+                assignee_name=(assignee.full_name or assignee.email.split("@")[0]),
+                assigned_by_name=actor.full_name or actor.email,
+                assigned_by_role=getattr(getattr(actor, "role", None), "value", "") or "admin",
+                assigned_by_email=actor.email,
+                task_title=form,
+                task_id=f"OBL-{obligation.id}",
+                task_description=(
+                    (rule.plain_description if rule else None)
+                    or (rule.due_date_rule if rule else None)
+                    or "See the obligation for details."
                 ),
-                body_html=(
-                    f"<p><strong>{actor.full_name or actor.email}</strong> assigned you "
-                    f"a compliance item.</p>"
-                    f"<p>{body}<br/>Due: {obligation.due_date.isoformat()}</p>"
-                    f'<p><a href="{link}">Open in Compliance OS</a></p>'
+                linked_obligation_name=body,
+                jurisdiction=juris,
+                form_code=form,
+                entity_name=entity.name if entity else "—",
+                evidence_required="Filing acknowledgement / proof of submission",
+                checklist=[
+                    f"Prepare {form}"
+                    + (f" ({obligation.period_label})" if obligation.period_label else ""),
+                    f"Submit to {authority}",
+                    "Upload proof and mark the filing complete",
+                ],
+                source_note=(
+                    f"{juris} · {form} for {entity.name if entity else '—'} — "
+                    f"assigned by {actor.full_name or actor.email} in Compliance OS"
                 ),
+                due_date=obligation.due_date,
+                assigned_at=_date.today(),
+                open_url=link,
             )
+            send_email(to=assignee.email, subject=subject, body_text=text, body_html=html)
         except Exception:  # noqa: BLE001 — never block the assignment on email
             pass
 
