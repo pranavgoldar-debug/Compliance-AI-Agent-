@@ -49,16 +49,12 @@ def _row(label: str, value: str, bold: bool = False) -> str:
     )
 
 
-def _buttons(primary_label: str, primary_url: str, secondary_label: str, secondary_url: str) -> str:
+def _button(label: str, url: str) -> str:
     return (
         f'<div style="text-align:center;margin:26px 0 14px">'
-        f'<a href="{primary_url}" style="display:inline-block;background:{NAVY};color:#ffffff;'
-        f'font-size:14px;font-weight:600;text-decoration:none;padding:12px 26px;border-radius:6px;'
-        f'margin:0 6px 8px">{primary_label}</a>'
-        f'<a href="{secondary_url}" style="display:inline-block;background:#ffffff;color:{NAVY};'
-        f'font-size:14px;font-weight:600;text-decoration:none;padding:11px 26px;border-radius:6px;'
-        f'border:1.5px solid {NAVY};margin:0 6px 8px">{secondary_label}</a>'
-        f"</div>"
+        f'<a href="{url}" style="display:inline-block;background:{NAVY};color:#ffffff;'
+        f'font-size:14px;font-weight:600;text-decoration:none;padding:12px 26px;border-radius:6px">'
+        f"{label}</a></div>"
     )
 
 
@@ -137,10 +133,7 @@ def assignment_email(
         # Why you
         + f'<div style="background:#eef1f5;border-radius:8px;padding:12px 16px;font-size:12.5px;'
         f'color:#3c4554;margin:18px 0 6px"><strong>Why you:</strong> {source_note}</div>'
-        + f'<div style="text-align:center;margin:26px 0 14px">'
-        f'<a href="{open_url}" style="display:inline-block;background:{NAVY};color:#ffffff;'
-        f'font-size:14px;font-weight:600;text-decoration:none;padding:12px 26px;border-radius:6px">'
-        f"View details</a></div>"
+        + _button("View details", open_url)
         + _footer_links(
             [
                 ("Can't take this on?", "Decline &amp; suggest owner", open_url),
@@ -219,7 +212,7 @@ def deadline_alert_email(
         f"{escalation_contact_name} is copied automatically; at <strong>T-1</strong> it moves to the "
         f"daily compliance stand-up; <strong>overdue</strong> items page compliance-leads."
         f"</div>"
-        + _buttons("Open in Compliance OS", open_url, "Mark as filed", open_url)
+        + _button("Open in Compliance OS", open_url)
         + _footer_links(
             [
                 ("Already handled outside the system?", "Log the filing", open_url),
