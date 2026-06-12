@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.orm import Session
 
-from compliance_agent.activity_gate import NOT_APPLICABLE, entity_applicability
+from compliance_agent.activity_gate import entity_applicability
 from compliance_agent.api._helpers import log_activity, serialize_user
 from compliance_agent.classification import (
     derive_function,
@@ -52,15 +52,13 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
 
     today = date.today()
     for ent in rule.entities:
-        # Respect Primary-Activity gating: don't put a filing on an entity's
-        # calendar if its activity answers make it not applicable.
-        if entity_applicability(
-            getattr(ent, "finance_profile", None),
-            name=rule.name, form_name=rule.form_name,
-            category=rule.category, area=rule.area,
-        ) == NOT_APPLICABLE:
-            _delete_pending_for_entity_rule(db, rule.id, ent.id)
-            continue
+        # NO Primary-Activity gating here: production rules are human-approved
+        # (Review & Assign), and that explicit decision outranks the keyword
+        # gate — an approved filing must reach the calendar/Filings with its
+        # assignee, never be silently skipped because an activity answer says
+        # "No". The gate still flags applicability on the display surfaces
+        # (entity Compliance list / rule serialization); if a filing truly
+        # doesn't apply, the reviewer archives it instead of approving.
         # Deadline anchored on THIS entity's fiscal year-end (per-entity).
         due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end))
 
