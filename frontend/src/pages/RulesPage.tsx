@@ -1114,7 +1114,13 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <AssignSelect label="Assignee" value={owner} users={users} onChange={setOwner} />
-                <AssignSelect label="Approver" value={approver} users={users} onChange={setApprover} />
+                {/* Approver = the admin who signs off — only admins are offered. */}
+                <AssignSelect
+                  label="Approver"
+                  value={approver}
+                  users={users.filter((u) => u.role === "admin")}
+                  onChange={setApprover}
+                />
               </div>
             </div>
           </div>
