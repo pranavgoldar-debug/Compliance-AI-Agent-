@@ -199,34 +199,35 @@ def emit_assignment(
     obligation: Obligation,
     actor: User,
 ) -> None:
-    """Persist an 'assigned' notification for the new assignee. No-op if the
-    assignee just self-assigned (the typical mark-it-mine flow). Also pings
-    Slack (channel-wide) when the workspace has a webhook and the assignee
-    has notify_slack enabled."""
-    if assignee.id == actor.id:
-        return
+    """Persist an 'assigned' notification for the new assignee and fan out to
+    Slack + email. Self-assignment (the mark-it-mine flow) skips the in-app
+    bell and the Slack ping — notifying yourself about your own click is
+    noise — but the EMAIL still sends, so every assignment leaves a mail
+    trail (admins approving-and-assigning to themselves expect it)."""
+    self_assigned = assignee.id == actor.id
     body = (
         f"{obligation.rule.form_name} — {obligation.entity.name}"
         if obligation.rule and obligation.entity
         else "Compliance item"
     )
-    db.add(
-        Notification(
-            user_id=assignee.id,
-            kind=NotificationKind.assigned,
-            title=f"{actor.full_name or actor.email} assigned you a compliance item",
-            body=body,
-            link_url=f"/obligations/{obligation.id}",
-            obligation_id=obligation.id,
-            actor_id=actor.id,
+    if not self_assigned:
+        db.add(
+            Notification(
+                user_id=assignee.id,
+                kind=NotificationKind.assigned,
+                title=f"{actor.full_name or actor.email} assigned you a compliance item",
+                body=body,
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=actor.id,
+            )
         )
-    )
-    # Side-channel fan-out (best-effort, never raises).
-    if assignee.notify_slack and slack_service.is_configured(db):
-        msg = slack_service.assignment_blocks(
-            obligation=obligation, assignee=assignee, actor=actor
-        )
-        slack_service.post(msg["text"], blocks=msg["blocks"])
+        # Side-channel fan-out (best-effort, never raises).
+        if assignee.notify_slack and slack_service.is_configured(db):
+            msg = slack_service.assignment_blocks(
+                obligation=obligation, assignee=assignee, actor=actor
+            )
+            slack_service.post(msg["text"], blocks=msg["blocks"])
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
     # Uses the branded assignment template (email_templates.assignment_email).
@@ -282,7 +283,8 @@ def emit_assignment(
     # clickup_task_id so we never create a duplicate (the payment-request flow
     # may already have made one).
     if (
-        assignee.department == Department.finance
+        not self_assigned
+        and assignee.department == Department.finance
         and not obligation.clickup_task_id
     ):
         from compliance_agent import clickup_service
