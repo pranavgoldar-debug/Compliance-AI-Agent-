@@ -163,20 +163,22 @@ def _days_word(days: int) -> str:
     return f"overdue by {abs(days)} day{'s' if days != -1 else ''}"
 
 
-def _ob_context_fields(obligation: Obligation) -> list[dict]:
-    """The 4 facts that go inside every obligation-related card —
-    rendered as a 2x2 grid of fields in Slack."""
+def _ob_context_fields(obligation: Obligation, *, include_assignee: bool = True) -> list[dict]:
+    """The facts that go inside every obligation-related card — rendered as a
+    2-col grid in Slack. Assignment cards skip the Assignee field (the first
+    line already mentions who's on the hook)."""
     entity = obligation.entity.name if obligation.entity else "—"
     from compliance_agent.api._helpers import days_remaining
 
     days = days_remaining(obligation.due_date)
-    # Slack <@id> mention renders the assignee's name highlighted (blue).
-    assignee = _mention(obligation.assignee)
-    return [
+    fields = [
         {"type": "mrkdwn", "text": f"*Entity*\n{entity}"},
         {"type": "mrkdwn", "text": f"*Due*\n{obligation.due_date.isoformat()} ({_days_word(days)})"},
-        {"type": "mrkdwn", "text": f"*Assignee*\n{assignee}"},
     ]
+    if include_assignee:
+        # Slack <@id> mention renders the assignee's name highlighted (blue).
+        fields.append({"type": "mrkdwn", "text": f"*Assignee*\n{_mention(obligation.assignee)}"})
+    return fields
 
 
 def _view_button(obligation: Obligation, label: str = "View in Aspora") -> dict:
@@ -305,7 +307,7 @@ def assignment_blocks(
                 ),
             },
         },
-        {"type": "section", "fields": _ob_context_fields(obligation)},
+        {"type": "section", "fields": _ob_context_fields(obligation, include_assignee=False)},
         _view_button(obligation, "Open the obligation →"),
         {"type": "divider"},
     ]
