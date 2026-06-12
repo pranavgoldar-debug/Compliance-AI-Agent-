@@ -1313,6 +1313,7 @@ function IntegrationsTab() {
       <SlackCard />
       <ClickUpCard />
       <GmailCard />
+      <GoogleCalendarCard />
       <ComingSoonGrid />
     </div>
   );
@@ -1935,13 +1936,123 @@ GMAIL_SENDER=you@aspora.com`}
 }
 
 
+interface GoogleCalendarConfig {
+  configured: boolean;
+  calendar_id: string | null;
+  has_oauth: boolean;
+}
+
+function GoogleCalendarCard() {
+  const { data: cfg } = useQuery({
+    queryKey: ["integrations", "gcal"],
+    queryFn: () => api.get<GoogleCalendarConfig>("/api/admin/integrations/google-calendar"),
+  });
+  const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
+  const testMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>(
+        "/api/admin/integrations/google-calendar/test",
+      ),
+    onSuccess: (r) => setResult(r),
+  });
+  if (!cfg) return null;
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
+            <CalendarIcon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold">Google Calendar</div>
+              {cfg.configured ? (
+                <Badge variant="completed">
+                  <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                  Connected
+                </Badge>
+              ) : (
+                <Badge variant="neutral">Not configured</Badge>
+              )}
+              <Badge variant="neutral">Config via .env</Badge>
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              Pushes every assigned filing onto a shared calendar the moment it's
+              assigned — titled "filing — entity (Assignee: name)". Reassign updates
+              the event; completing removes it.
+            </div>
+          </div>
+          {cfg.configured && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending}
+            >
+              {testMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CalendarIcon className="h-3.5 w-3.5" />
+              )}
+              Send test event
+            </Button>
+          )}
+        </div>
+
+        {cfg.configured && (
+          <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Calendar ID</span>
+            <span className="font-mono truncate">{cfg.calendar_id}</span>
+          </div>
+        )}
+
+        {result && (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              result.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-destructive/30 bg-destructive/5 text-destructive",
+            )}
+          >
+            {result.detail}
+          </div>
+        )}
+
+        {!cfg.configured && (
+          <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
+            <div className="font-medium">Set up (one-time — reuses the Gmail OAuth client)</div>
+            <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+              <li>
+                Google Cloud Console → same project → enable the <strong>Google Calendar API</strong>.
+              </li>
+              <li>
+                Re-mint the refresh token at developers.google.com/oauthplayground with BOTH scopes:{" "}
+                <code className="font-mono">…/auth/gmail.send</code> and{" "}
+                <code className="font-mono">…/auth/calendar.events</code> → update{" "}
+                <code className="font-mono">GMAIL_REFRESH_TOKEN</code>.
+              </li>
+              <li>
+                In Google Calendar: create an "Aspora Compliance" calendar → its settings →
+                "Integrate calendar" → copy the <strong>Calendar ID</strong> → share the calendar
+                with the team.
+              </li>
+              <li>
+                Render → Environment: set <code className="font-mono">GOOGLE_CALENDAR_ID</code> to
+                that ID → redeploy → use "Send test event".
+              </li>
+            </ol>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
 function ComingSoonGrid() {
   const items: { name: string; description: string; icon: React.ReactNode }[] = [
-    {
-      name: "Google Calendar",
-      description: "Per-user OAuth — drops events on each due date",
-      icon: <CalendarIcon className="h-5 w-5" />,
-    },
     {
       name: "Zoho Books",
       description: "Sync filed-payment amounts back to accounting",

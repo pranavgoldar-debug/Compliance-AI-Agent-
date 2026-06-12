@@ -455,6 +455,21 @@ def update_rule(
         else None,
     )
     db.commit()
+    # Google Calendar sync for this rule's open obligations (post-commit so
+    # the background thread sees the approved/assigned state).
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        from compliance_agent.db import ObligationStatus as _OS
+
+        ob_ids = db.execute(
+            select(Obligation.id).where(
+                Obligation.rule_id == rule.id,
+                Obligation.status.not_in([_OS.completed, _OS.not_applicable]),
+            )
+        ).scalars().all()
+        for oid in ob_ids:
+            calendar_service.sync_obligation(oid)
     db.refresh(rule)
     return _serialize_rule(rule)
 

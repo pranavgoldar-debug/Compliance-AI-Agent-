@@ -274,6 +274,12 @@ def update_obligation(
         payload={"changed_fields": list(data.keys())},
     )
     db.commit()
+    # Google Calendar sync — post-commit so the background thread reads the
+    # new state. Assignment / status / due-date changes update the shared event.
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        calendar_service.sync_obligation(obligation.id)
     obligation = db.execute(
         _base_query().where(Obligation.id == obligation.id)
     ).scalars().unique().one()
@@ -581,6 +587,7 @@ def bulk_update(
             raise HTTPException(status_code=400, detail="Assignee not found.")
 
     updated = 0
+    synced_ids: list[int] = []
     for o in obligations:
         changed_fields: list[str] = []
         prev_assignee_id = o.assignee_id
@@ -607,6 +614,7 @@ def bulk_update(
         if not changed_fields:
             continue
         updated += 1
+        synced_ids.append(o.id)
 
         if "assignee_id" in changed_fields and new_assignee is not None and prev_assignee_id != new_assignee.id:
             emit_assignment(db, assignee=new_assignee, obligation=o, actor=user)
@@ -632,6 +640,12 @@ def bulk_update(
         )
 
     db.commit()
+    # Google Calendar sync for every changed filing (post-commit).
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        for oid in synced_ids:
+            calendar_service.sync_obligation(oid)
     return BulkUpdateResult(updated=updated, skipped=missing)
 
 

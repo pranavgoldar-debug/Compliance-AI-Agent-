@@ -195,6 +195,52 @@ def test_slack(
 # ---------------------------------------------------------------------------
 # Email (SMTP test only — admin can't set creds at runtime; those live in env)
 # ---------------------------------------------------------------------------
+class GoogleCalendarConfigOut(BaseModel):
+    configured: bool
+    calendar_id: Optional[str] = None
+    has_oauth: bool = False
+
+
+@admin_router.get("/google-calendar", response_model=GoogleCalendarConfigOut)
+def get_google_calendar(
+    _: User = Depends(require_admin),
+) -> GoogleCalendarConfigOut:
+    from compliance_agent import calendar_service
+    from compliance_agent.email_service import _gmail_client_creds
+    import os as _os
+
+    cid, secret = _gmail_client_creds()
+    return GoogleCalendarConfigOut(
+        configured=calendar_service.is_configured(),
+        calendar_id=calendar_service.calendar_id(),
+        has_oauth=bool(cid and secret and _os.environ.get("GMAIL_REFRESH_TOKEN")),
+    )
+
+
+@admin_router.post("/google-calendar/test", response_model=TestResult)
+def test_google_calendar(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> TestResult:
+    from compliance_agent import calendar_service
+
+    ok, detail = calendar_service.create_test_event()
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="integration.gcal.test_sent",
+        target_type="integration",
+        payload={"ok": ok},
+    )
+    db.commit()
+    if ok:
+        return TestResult(
+            ok=True,
+            detail="Test event created and removed on the shared calendar — connection works.",
+        )
+    return TestResult(ok=False, detail=detail)
+
+
 class EmailTestRequest(BaseModel):
     to: Optional[str] = Field(
         None, description="Override the recipient. Defaults to the actor's own email."
@@ -557,6 +603,12 @@ async def slack_interactivity(request: Request) -> dict:
             payload={"status": status_s, "slack_user": slack_user},
         )
         form_name = ob.rule.form_name if ob.rule else "Compliance item"
+
+    # Status changed from Slack → keep the shared Google Calendar in step.
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        calendar_service.sync_obligation(oid)
 
     _slack_ack(response_url, f":white_check_mark: *{form_name}* → {status_s.replace('_', ' ')}")
     return {}

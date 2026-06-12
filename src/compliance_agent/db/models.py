@@ -686,3 +686,21 @@ class License(Base):
     )
 
     entity: Mapped[Entity] = relationship("Entity")
+
+
+class CalendarEvent(Base):
+    """Obligation → Google Calendar event mapping for the shared
+    'Aspora Compliance' calendar (calendar_service). One row per obligation
+    that currently has a pushed event; deleted when the event is removed."""
+
+    __tablename__ = "calendar_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    obligation_id: Mapped[int] = mapped_column(
+        ForeignKey("obligations.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    calendar_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
