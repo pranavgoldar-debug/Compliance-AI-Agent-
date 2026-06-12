@@ -114,3 +114,21 @@ pricing, economic-substance (ESR), audited financials. Jurisdiction-aware
 (UAE/DIFC, etc.). The discovery tool ("Find Regulations") is **exhaustive within
 finance** but excludes legal/HR/governance. Filings carry frequency, due-date
 rules, and mandatory/conditional status — and feed a calendar.
+
+---
+
+## Adding a new jurisdiction (recipe)
+
+Discovery is AI-generated and stamps rules with the entity's own code, so a new
+country mostly Just Works. Per-country commit, in priority order:
+
+1. **Required:** `frontend/src/lib/format.ts` → `JURISDICTIONS` (name/flag/iso2);
+   `src/compliance_agent/rule_extractor.py` jurisdiction enum line;
+   `src/compliance_agent/api/chat.py` tool enums.
+2. **Recommended:** a discovery recall block in `api/entities.py` (mirror
+   `_LT_RECALL` / `_UK_FCA_RECALL` — name the real regulators + the
+   easy-to-forget supervisory returns; recall guidance only, never seeded rows);
+   authority → homepage entries in `data/authority_urls.py`.
+3. **Optional:** jurisdiction-scoped gates in `frontend/src/lib/financeGates.ts`;
+   `SOURCE_SUGGESTIONS` in `AddRegulationModal.tsx`; a static catalog module in
+   `fintech/` (Library only — discovery doesn't need it).
