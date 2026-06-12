@@ -1268,7 +1268,18 @@ interface SlackConfig {
   webhook_url_masked: string | null;
   has_webhook: boolean;
   default_channel: string | null;
+  function_webhooks_masked: Record<string, string>;
 }
+
+// Owner teams that can have their own Slack channel (one incoming webhook is
+// bound to one channel, so per-team routing = one webhook per team).
+const SLACK_FUNCTIONS = ["finance", "compliance", "legal", "hr"] as const;
+const SLACK_FUNCTION_LABEL: Record<string, string> = {
+  finance: "Finance",
+  compliance: "Compliance",
+  legal: "Legal",
+  hr: "HR",
+};
 
 interface ClickUpConfig {
   configured: boolean;
@@ -1303,6 +1314,7 @@ function SlackCard() {
   const [editing, setEditing] = useState(false);
   const [webhook, setWebhook] = useState("");
   const [channel, setChannel] = useState("");
+  const [fnHooks, setFnHooks] = useState<Record<string, string>>({});
   const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
 
   useEffect(() => {
@@ -1310,12 +1322,17 @@ function SlackCard() {
   }, [cfg]);
 
   const saveMutation = useMutation({
-    mutationFn: (body: { webhook_url?: string; default_channel?: string; enabled?: boolean }) =>
-      api.post<SlackConfig>("/api/admin/integrations/slack", body),
+    mutationFn: (body: {
+      webhook_url?: string;
+      default_channel?: string;
+      enabled?: boolean;
+      function_webhooks?: Record<string, string>;
+    }) => api.post<SlackConfig>("/api/admin/integrations/slack", body),
     onSuccess: (fresh) => {
       queryClient.setQueryData(["integrations", "slack"], fresh);
       setEditing(false);
       setWebhook("");
+      setFnHooks({});
       setResult(null);
     },
   });
@@ -1379,6 +1396,22 @@ function SlackCard() {
               <span className="text-muted-foreground">Default channel</span>
               <span className="font-mono">{cfg.default_channel || "(webhook default)"}</span>
             </div>
+            {SLACK_FUNCTIONS.filter((fn) => cfg.function_webhooks_masked?.[fn]).map((fn) => (
+              <div key={fn} className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">{SLACK_FUNCTION_LABEL[fn]} channel</span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-mono truncate">{cfg.function_webhooks_masked[fn]}</span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-red-600"
+                    title={`Remove the ${SLACK_FUNCTION_LABEL[fn]} channel webhook`}
+                    onClick={() => saveMutation.mutate({ function_webhooks: { [fn]: "" } })}
+                  >
+                    ✕
+                  </button>
+                </span>
+              </div>
+            ))}
           </div>
         )}
 
@@ -1477,19 +1510,50 @@ function SlackCard() {
                 className="font-mono text-xs mt-1"
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Per-team channels (optional) — alerts route to the owner team's channel
+              </label>
+              <p className="text-[11px] text-muted-foreground mt-0.5 mb-1">
+                A webhook is bound to one channel, so paste one webhook per team
+                (same Slack app → "Add New Webhook to Workspace" → pick that
+                team's channel). Anything without a team webhook uses the default above.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {SLACK_FUNCTIONS.map((fn) => (
+                  <div key={fn}>
+                    <label className="text-[11px] text-muted-foreground">
+                      {SLACK_FUNCTION_LABEL[fn]}
+                      {cfg.function_webhooks_masked?.[fn] ? " (set — paste to replace)" : ""}
+                    </label>
+                    <Input
+                      value={fnHooks[fn] ?? ""}
+                      onChange={(e) => setFnHooks((h) => ({ ...h, [fn]: e.target.value }))}
+                      placeholder="https://hooks.slack.com/services/…"
+                      className="font-mono text-xs mt-0.5"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
                 Cancel
               </Button>
               <Button
                 size="sm"
-                onClick={() =>
+                onClick={() => {
+                  const fw: Record<string, string> = {};
+                  for (const fn of SLACK_FUNCTIONS) {
+                    if ((fnHooks[fn] ?? "").trim()) fw[fn] = fnHooks[fn].trim();
+                  }
                   saveMutation.mutate({
                     webhook_url: webhook.trim() || undefined,
                     default_channel: channel.trim() || undefined,
                     enabled: true,
-                  })
-                }
+                    ...(Object.keys(fw).length ? { function_webhooks: fw } : {}),
+                  });
+                }}
                 disabled={
                   saveMutation.isPending ||
                   (!webhook.trim() && !cfg.configured) ||

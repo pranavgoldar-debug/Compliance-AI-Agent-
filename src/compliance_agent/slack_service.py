@@ -64,10 +64,22 @@ def is_configured(db: Session) -> bool:
 # ---------------------------------------------------------------------------
 # Posting
 # ---------------------------------------------------------------------------
-def post(text: str, *, blocks: Optional[list] = None, sync: bool = False) -> Optional[bool]:
+def post(
+    text: str,
+    *,
+    blocks: Optional[list] = None,
+    sync: bool = False,
+    function: Optional[str] = None,
+) -> Optional[bool]:
     """Post to the configured workspace channel. Returns True/False on
     delivery when sync=True; otherwise schedules a background send and
     returns None.
+
+    ``function`` routes by owner team: when the config has a webhook saved
+    for that function (Finance / Compliance / Legal / HR — a Slack incoming
+    webhook is bound to one channel, so per-channel routing means one
+    webhook per channel), the message goes there; otherwise it falls back
+    to the default webhook.
 
     Never raises — Slack errors are logged but never bubble up to the API
     caller. The whole point is fire-and-forget alerting.
@@ -78,6 +90,10 @@ def post(text: str, *, blocks: Optional[list] = None, sync: bool = False) -> Opt
             with session_scope() as db:
                 cfg = get_config(db)
             url = (cfg or {}).get("webhook_url")
+            if function:
+                url = ((cfg or {}).get("function_webhooks") or {}).get(
+                    str(function).strip().lower()
+                ) or url
             if not url or not (cfg or {}).get("enabled", True):
                 return False
             import httpx
@@ -213,6 +229,50 @@ def verify_slack_signature(signing_secret: str, timestamp: str, raw_body: bytes,
     base = b"v0:" + timestamp.encode() + b":" + raw_body
     digest = "v0=" + _hmac.new(signing_secret.encode(), base, hashlib.sha256).hexdigest()
     return _hmac.compare_digest(digest, signature.strip())
+
+
+def deadline_blocks(
+    *, obligation: Obligation, assignee: Optional[User], days_remaining: int
+) -> dict:
+    """Deadline-alert card for the channel: urgency dot + due line, the
+    canonical key / entity / status context, Open + status buttons (wired to
+    the interactivity endpoint) and an Owner footer with the escalation note."""
+    rule = obligation.rule
+    form = rule.form_name if rule else "Compliance item"
+    entity = obligation.entity.name if obligation.entity else "—"
+    juris = (rule.jurisdiction_code if rule else "—").upper()
+    status = (obligation.status.value if obligation.status else "—").replace("_", " ").title()
+    due = obligation.due_date.strftime("%d-%b-%y")
+    dot = "🔴" if days_remaining <= 7 else "🟡" if days_remaining <= 15 else "🟢"
+    text = f"{dot} {form} due in {days_remaining} {_days_word(days_remaining)} — {due} ({entity})"
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"{dot} *{form}* due in *{days_remaining} "
+                    f"{_days_word(days_remaining)}* — {due}\n"
+                    f"`{juris}` · `{form}` · {entity} · status: *{status}*"
+                ),
+            },
+        },
+        _view_button(obligation, "Open"),
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"Owner: {_mention(assignee)} · T-7 copies the assigner, "
+                        "overdue pages compliance-leads"
+                    ),
+                }
+            ],
+        },
+        {"type": "divider"},
+    ]
+    return {"text": text, "blocks": blocks}
 
 
 def assignment_blocks(

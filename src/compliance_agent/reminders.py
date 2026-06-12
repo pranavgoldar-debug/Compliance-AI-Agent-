@@ -116,21 +116,6 @@ def _build_email_body(db: Session, obligation: Obligation, days_remaining: int) 
     )
 
 
-def _slack_text(obligation: Obligation, assignee: User, days_remaining: int) -> str:
-    form = obligation.rule.form_name if obligation.rule else "Compliance item"
-    entity = obligation.entity.name if obligation.entity else "—"
-    handle = (
-        f"<@{assignee.slack_user_id}>"
-        if getattr(assignee, "slack_user_id", None)
-        else (assignee.full_name or assignee.email)
-    )
-    return (
-        f":alarm_clock: Reminder — {handle} *{form}* ({entity}) "
-        f"is due `{obligation.due_date.isoformat()}` "
-        f"({days_remaining} day{'s' if days_remaining != 1 else ''} from now)."
-    )
-
-
 def _already_reminded_at_offset(
     db: Session,
     user_id: int,
@@ -269,9 +254,15 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                     and slack_on
                     and slack_service.is_configured(db)
                 ):
+                    msg = slack_service.deadline_blocks(
+                        obligation=ob, assignee=assignee, days_remaining=days_left
+                    )
                     slack_sent = bool(
                         slack_service.post(
-                            _slack_text(ob, assignee, days_left)
+                            msg["text"],
+                            blocks=msg["blocks"],
+                            sync=True,
+                            function=(ob.rule.responsible_function if ob.rule else None),
                         )
                     )
 

@@ -66,12 +66,19 @@ class SlackConfigOut(BaseModel):
     webhook_url_masked: Optional[str] = None
     has_webhook: bool = False
     default_channel: Optional[str] = None
+    # function (finance/compliance/legal/hr) -> masked webhook, for display.
+    function_webhooks_masked: dict[str, str] = {}
+
+
+SLACK_FUNCTIONS = ("finance", "compliance", "legal", "hr")
 
 
 class SlackConfigUpdate(BaseModel):
     webhook_url: Optional[str] = None  # pass empty string "" to clear
     default_channel: Optional[str] = None
     enabled: Optional[bool] = None
+    # Per-team channel routing: function -> webhook URL ("" clears that one).
+    function_webhooks: Optional[dict[str, str]] = None
 
 
 @admin_router.get("/slack", response_model=SlackConfigOut)
@@ -87,6 +94,11 @@ def get_slack(
         webhook_url_masked=_mask_webhook(url),
         has_webhook=bool(url),
         default_channel=cfg.get("default_channel"),
+        function_webhooks_masked={
+            fn: _mask_webhook(u) or ""
+            for fn, u in (cfg.get("function_webhooks") or {}).items()
+            if u
+        },
     )
 
 
@@ -111,6 +123,26 @@ def update_slack(
         cfg["default_channel"] = ch
     if payload.enabled is not None:
         cfg["enabled"] = bool(payload.enabled)
+    if payload.function_webhooks is not None:
+        existing = dict(cfg.get("function_webhooks") or {})
+        for fn, raw_url in payload.function_webhooks.items():
+            key = fn.strip().lower()
+            if key not in SLACK_FUNCTIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown function '{fn}' — use one of {', '.join(SLACK_FUNCTIONS)}.",
+                )
+            u = (raw_url or "").strip()
+            if u and not u.startswith("https://hooks.slack.com/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Webhook URL must start with https://hooks.slack.com/",
+                )
+            if u:
+                existing[key] = u
+            else:
+                existing.pop(key, None)
+        cfg["function_webhooks"] = existing
 
     slack_service.set_config(db, cfg, updated_by_id=actor.id)
     log_activity(

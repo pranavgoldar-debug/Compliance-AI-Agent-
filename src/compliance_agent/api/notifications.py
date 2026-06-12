@@ -222,12 +222,18 @@ def emit_assignment(
                 actor_id=actor.id,
             )
         )
-        # Side-channel fan-out (best-effort, never raises).
-        if assignee.notify_slack and slack_service.is_configured(db):
-            msg = slack_service.assignment_blocks(
-                obligation=obligation, assignee=assignee, actor=actor
-            )
-            slack_service.post(msg["text"], blocks=msg["blocks"])
+    # Slack ping fires for self-assignments too (like the email) — the channel
+    # is the team's shared record. Routed to the owner team's channel when a
+    # per-function webhook is configured.
+    if assignee.notify_slack and slack_service.is_configured(db):
+        msg = slack_service.assignment_blocks(
+            obligation=obligation, assignee=assignee, actor=actor
+        )
+        slack_service.post(
+            msg["text"],
+            blocks=msg["blocks"],
+            function=(obligation.rule.responsible_function if obligation.rule else None),
+        )
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
     # Uses the branded assignment template (email_templates.assignment_email).
