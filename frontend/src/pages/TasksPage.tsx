@@ -106,7 +106,7 @@ function TaskRow({ ob }: { ob: Obligation }) {
       onKeyDown={(e) => {
         if (e.key === "Enter") openObligation(ob.id);
       }}
-      className="group w-full grid grid-cols-[1.4fr_2fr_120px_140px_60px] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm cursor-pointer"
+      className="group w-full grid grid-cols-[1.4fr_2fr_120px_140px_minmax(150px,1fr)] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm cursor-pointer"
     >
       <div className="flex items-center gap-2 min-w-0">
         <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
@@ -129,8 +129,8 @@ function TaskRow({ ob }: { ob: Obligation }) {
         showDays
       />
 
-      <div className="flex items-center justify-end gap-1.5">
-        <AssigneeChip user={ob.assignee} size="sm" />
+      <div className="flex items-center justify-end gap-1.5 min-w-0">
+        <AssigneeChip user={ob.assignee} size="sm" showName />
         <RowQuickActions ob={ob} />
       </div>
     </div>
@@ -239,7 +239,7 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
         </span>
       </div>
       {/* Column headers — same grid template as TaskRow. */}
-      <div className="grid grid-cols-[1.4fr_2fr_120px_140px_60px] gap-4 px-4 py-2 items-center text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border bg-secondary/10">
+      <div className="grid grid-cols-[1.4fr_2fr_120px_140px_minmax(150px,1fr)] gap-4 px-4 py-2 items-center text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border bg-secondary/10">
         <div>Entity / Authority</div>
         <div>Obligation</div>
         <div>Due</div>

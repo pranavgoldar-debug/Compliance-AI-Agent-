@@ -42,7 +42,7 @@ export function AssigneeChip({ user, showName = false, size = "sm", className }:
       <Avatar className={s.av}>
         <AvatarFallback className={s.txt}>{userInitials(user.full_name || user.email)}</AvatarFallback>
       </Avatar>
-      {showName && <span className="truncate">{user.full_name?.split(" ")[0] || user.email}</span>}
+      {showName && <span className="truncate">{user.full_name || user.email}</span>}
     </span>
   );
 }
