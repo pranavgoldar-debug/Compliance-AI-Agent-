@@ -762,17 +762,10 @@ function UsersTab() {
     password: string;
   } | null>(null);
   const [editing, setEditing] = useState<UserOut | null>(null);
-  const [deactivating, setDeactivating] = useState<UserOut | null>(null);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users", "admin"],
     queryFn: () => api.get<UserOut[]>("/api/users/admin"),
-  });
-
-  const reactivate = useMutation({
-    mutationFn: (u: UserOut) =>
-      api.patch<UserOut>(`/api/users/admin/${u.id}`, { is_active: true }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
   });
 
   return (
@@ -863,27 +856,6 @@ function UsersTab() {
                       <Pencil className="h-3.5 w-3.5" />
                       Edit
                     </Button>
-                    {u.id !== me?.id &&
-                      (u.is_active ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600"
-                          onClick={() => setDeactivating(u)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Deactivate
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => reactivate.mutate(u)}
-                          disabled={reactivate.isPending}
-                        >
-                          Reactivate
-                        </Button>
-                      ))}
                   </td>
                 </tr>
               ))}
@@ -905,17 +877,9 @@ function UsersTab() {
         creds={createdCredentials}
         onClose={() => setCreatedCredentials(null)}
       />
-      <DeactivateUserDialog
-        user={deactivating}
-        candidates={users.filter((u) => u.is_active && u.id !== deactivating?.id)}
-        onClose={() => setDeactivating(null)}
-        onDone={() => {
-          queryClient.invalidateQueries({ queryKey: ["users"] });
-          queryClient.invalidateQueries({ queryKey: ["tasks"] });
-        }}
-      />
       <EditUserDialog
         user={editing}
+        candidates={users.filter((u) => u.is_active && u.id !== editing?.id)}
         onClose={() => setEditing(null)}
         meId={me?.id ?? null}
       />
@@ -1114,100 +1078,18 @@ function CredCopyRow({ label, value, mono }: { label: string; value: string; mon
 }
 
 
-// ---------------------------------------------------------------------------
-// Deactivate user dialog — hands off their open filings, then deactivates.
-// ---------------------------------------------------------------------------
-function DeactivateUserDialog({
-  user,
-  candidates,
-  onClose,
-  onDone,
-}: {
-  user: UserOut | null;
-  candidates: UserOut[];
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [reassignTo, setReassignTo] = useState("");
-  useEffect(() => {
-    setReassignTo("");
-  }, [user?.id]);
-
-  const mutation = useMutation({
-    mutationFn: () => {
-      const qs = reassignTo ? `?reassign_to=${reassignTo}` : "";
-      return api.delete<{ open_filings: number; reassigned_to: number | null }>(
-        `/api/users/admin/${user!.id}${qs}`,
-      );
-    },
-    onSuccess: () => {
-      onDone();
-      onClose();
-    },
-  });
-
-  if (!user) return null;
-  return (
-    <Dialog open={!!user} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="md">
-        <DialogHeader>
-          <DialogTitle>Deactivate {user.full_name || user.email}?</DialogTitle>
-        </DialogHeader>
-        <div className="p-6 space-y-4">
-          <p className="text-sm text-muted-foreground">
-            They lose access immediately. Their completed history is kept (and still
-            credited to them). Their <strong>open filings</strong> are handed over below
-            so nothing is stranded — and deadline reminders stop going to them.
-          </p>
-          <div className="space-y-1">
-            <label className="text-xs font-medium">Reassign their open filings to</label>
-            <select
-              value={reassignTo}
-              onChange={(e) => setReassignTo(e.target.value)}
-              className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
-            >
-              <option value="">— Leave unassigned (show in Filings → Unassigned) —</option>
-              {candidates.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name || u.email}
-                </option>
-              ))}
-            </select>
-          </div>
-          {mutation.error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {(mutation.error as Error).message}
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            className="bg-red-600 hover:bg-red-700"
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Deactivate
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 
 // ---------------------------------------------------------------------------
 // Edit user dialog
 // ---------------------------------------------------------------------------
 function EditUserDialog({
   user,
+  candidates,
   onClose,
   meId,
 }: {
   user: UserOut | null;
+  candidates: UserOut[];
   onClose: () => void;
   meId: number | null;
 }) {
@@ -1218,6 +1100,7 @@ function EditUserDialog({
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [reassignTo, setReassignTo] = useState("");
 
   // Reset state when the dialog opens with a new user.
   useEffect(() => {
@@ -1228,6 +1111,7 @@ function EditUserDialog({
       setNewPassword("");
       setError(null);
       setConfirmDeactivate(false);
+      setReassignTo("");
     }
   }, [user]);
 
@@ -1251,9 +1135,13 @@ function EditUserDialog({
   });
 
   const deactivateMutation = useMutation({
-    mutationFn: () => api.delete<void>(`/api/users/admin/${user!.id}`),
+    mutationFn: () => {
+      const qs = reassignTo ? `?reassign_to=${reassignTo}` : "";
+      return api.delete<{ open_filings: number }>(`/api/users/admin/${user!.id}${qs}`);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
       onClose();
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
@@ -1343,12 +1231,30 @@ function EditUserDialog({
             <div className="pt-3 border-t border-border">
               {user.is_active ? (
                 confirmDeactivate ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2">
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 space-y-2.5">
                     <div className="text-sm font-medium text-red-800">
                       Deactivate {user.full_name}?
                     </div>
                     <div className="text-xs text-red-700/80">
-                      They lose access immediately. Obligations they own keep referencing them.
+                      They lose access immediately. Completed history stays credited to
+                      them; deadline reminders stop. Hand their open filings over below.
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-red-800">
+                        Reassign their open filings to
+                      </label>
+                      <select
+                        value={reassignTo}
+                        onChange={(e) => setReassignTo(e.target.value)}
+                        className="h-9 w-full rounded-md border border-red-200 bg-white px-2 text-sm"
+                      >
+                        <option value="">— Leave unassigned (→ Filings → Unassigned) —</option>
+                        {candidates.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.full_name || c.email}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="flex gap-2">
                       <Button
