@@ -29,7 +29,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtShortDate } from "@/lib/format";
-import { jurisdictionOptions } from "@/lib/countries";
+import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { cn } from "@/lib/utils";
 import type { Entity, Obligation, ObligationStatus, UserBrief } from "@/types/api";
 
@@ -483,10 +483,11 @@ export function TasksPage({
         />
         <FilterPopover
           label="Jurisdiction"
-          options={jurisdictionOptions().map((o) => ({ value: o.value, label: o.name }))}
+          options={jurisdictionOptionsInUse(entities.map((e) => e.jurisdiction_code)).map(
+            (o) => ({ value: o.value, label: o.name }),
+          )}
           selected={filters.jurisdictions}
           onChange={(vals) => setFilters((f) => ({ ...f, jurisdictions: vals }))}
-          searchable
         />
         <FilterPopover
           label="Status"

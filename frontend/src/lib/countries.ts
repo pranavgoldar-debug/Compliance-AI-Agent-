@@ -163,6 +163,24 @@ export function jurisdictionOptions(): JurisdictionOption[] {
   return _options;
 }
 
+// Filter-dropdown source: ONLY the jurisdictions in use (live — derived from
+// the codes on the caller's loaded entities), deduped + alphabetical. The full
+// country list stays exclusive to the Add/Edit Entity picker.
+export function jurisdictionOptionsInUse(
+  codes: (string | null | undefined)[],
+): JurisdictionOption[] {
+  const seen = new Set<string>();
+  const out: JurisdictionOption[] = [];
+  for (const raw of codes) {
+    const code = (raw ?? "").toLowerCase();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    const match = jurisdictionOptions().find((o) => o.value === code);
+    out.push(match ?? { value: code, name: code.toUpperCase(), iso2: "" });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const _NAME_BY_CODE: Record<string, string> = Object.fromEntries(
   COUNTRIES.map((c) => [c.code, c.name]),
 );

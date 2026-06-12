@@ -45,7 +45,7 @@ import { DueDateRuleBuilder } from "@/components/DueDateRuleBuilder";
 import type { DueDateSpec } from "@/lib/dueDateSpec";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtRelative, deriveFunction } from "@/lib/format";
-import { jurisdictionOptions } from "@/lib/countries";
+import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { cn } from "@/lib/utils";
 import type { Rule, RuleStatus, UserBrief, Obligation, Entity } from "@/types/api";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
@@ -387,7 +387,7 @@ export function RulesPage() {
           className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All jurisdictions</option>
-          {jurisdictionOptions().map((o) => (
+          {jurisdictionOptionsInUse(entities.map((e) => e.jurisdiction_code)).map((o) => (
             <option key={o.value} value={o.value}>
               {o.name}
             </option>

@@ -36,7 +36,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtRelative, userInitials, jurisdiction } from "@/lib/format";
-import { jurisdictionOptions } from "@/lib/countries";
+import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { CountrySelect } from "@/components/CountrySelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -135,10 +135,11 @@ export function EntitiesPage() {
         </div>
         <FilterPopover
           label="Jurisdiction"
-          options={jurisdictionOptions().map((o) => ({ value: o.value, label: o.name }))}
+          options={jurisdictionOptionsInUse((data ?? []).map((e) => e.jurisdiction_code)).map(
+            (o) => ({ value: o.value, label: o.name }),
+          )}
           selected={jurisdictions}
           onChange={setJurisdictions}
-          searchable
         />
         <FilterPopover
           label="Type"
