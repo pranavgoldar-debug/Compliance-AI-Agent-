@@ -49,6 +49,10 @@ export function CountrySelect({
 
   return (
     <Popover
+      // modal: the picker sits inside the Add/Edit Entity dialog, whose
+      // scroll-lock otherwise swallows wheel events on the portaled list —
+      // making the popover modal lets the country list actually scroll.
+      modal
       open={open}
       onOpenChange={(o) => {
         setOpen(o);
