@@ -130,6 +130,10 @@ export const COUNTRIES: Country[] = [
   { code: "vg", name: "Virgin Islands (British)" }, { code: "vi", name: "Virgin Islands (US)" },
   { code: "ye", name: "Yemen" }, { code: "zm", name: "Zambia" },
   { code: "zw", name: "Zimbabwe" },
+  // Late additions (the picker sorts alphabetically at runtime).
+  { code: "kp", name: "North Korea" }, { code: "xk", name: "Kosovo" },
+  { code: "fo", name: "Faroe Islands" }, { code: "fk", name: "Falkland Islands" },
+  { code: "sx", name: "Sint Maarten" }, { code: "mp", name: "Northern Mariana Islands" },
 ];
 
 export interface JurisdictionOption {
