@@ -10,6 +10,9 @@ Config (env):
   GMAIL_CLIENT_ID      — Google OAuth client id. When the Gmail trio is set,
   GMAIL_CLIENT_SECRET    we send through Gmail's HTTPS API (gmail.send scope)
   GMAIL_REFRESH_TOKEN    over port 443 — works on Render, no third party.
+                         Client id/secret fall back to GOOGLE_CLIENT_ID /
+                         GOOGLE_CLIENT_SECRET (the Google-login client), so a
+                         shared OAuth client only needs the refresh token here.
   GMAIL_SENDER         — From address (your Gmail / Workspace, e.g. you@aspora.com).
   RESEND_API_KEY       — Resend API key (re_...). Used next when set.
   RESEND_FROM          — From for Resend. Needs a domain verified in Resend
@@ -44,12 +47,20 @@ def base_url() -> str:
     return os.environ.get("COMPLIANCE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
+def _gmail_client_creds() -> tuple[Optional[str], Optional[str]]:
+    """OAuth client id/secret for the Gmail send path. Falls back to the
+    Google-login client (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) since reusing
+    one OAuth client for both sign-in and gmail.send is the common setup. The
+    refresh token stays the explicit opt-in — without GMAIL_REFRESH_TOKEN the
+    Gmail path is off regardless of these."""
+    cid = os.environ.get("GMAIL_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID")
+    secret = os.environ.get("GMAIL_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
+    return cid, secret
+
+
 def _gmail_configured() -> bool:
-    return bool(
-        os.environ.get("GMAIL_CLIENT_ID")
-        and os.environ.get("GMAIL_CLIENT_SECRET")
-        and os.environ.get("GMAIL_REFRESH_TOKEN")
-    )
+    cid, secret = _gmail_client_creds()
+    return bool(cid and secret and os.environ.get("GMAIL_REFRESH_TOKEN"))
 
 
 def smtp_configured() -> bool:
@@ -79,11 +90,12 @@ def _gmail_access_token() -> Optional[str]:
     try:
         import httpx
 
+        cid, secret = _gmail_client_creds()
         r = httpx.post(
             "https://oauth2.googleapis.com/token",
             data={
-                "client_id": os.environ["GMAIL_CLIENT_ID"],
-                "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+                "client_id": cid,
+                "client_secret": secret,
                 "refresh_token": os.environ["GMAIL_REFRESH_TOKEN"],
                 "grant_type": "refresh_token",
             },
