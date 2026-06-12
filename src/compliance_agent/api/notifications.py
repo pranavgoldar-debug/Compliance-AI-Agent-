@@ -265,10 +265,6 @@ def emit_assignment(
                 form_code=form,
                 entity_name=entity.name if entity else "—",
                 evidence_required="Filing acknowledgement / proof of submission",
-                source_note=(
-                    f"{juris} · {form} for {entity.name if entity else '—'} — "
-                    f"assigned by {actor.full_name or actor.email} in Compliance OS"
-                ),
                 due_date=obligation.due_date,
                 assigned_at=_date.today(),
                 open_url=link,

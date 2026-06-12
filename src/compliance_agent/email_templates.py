@@ -83,7 +83,6 @@ def assignment_email(
     form_code: str,
     entity_name: str,
     evidence_required: str,
-    source_note: str,
     due_date: Optional[date],
     assigned_at: Optional[date],
     open_url: str,
@@ -101,7 +100,6 @@ def assignment_email(
         f"Linked obligation: {linked_obligation_name}\n"
         f"Canonical key · Entity: {jurisdiction} · {form_code} · {entity_name}\n"
         f"Evidence required: {evidence_required}\n\n"
-        f"Why you: {source_note}\n\n"
         f"Open it: {open_url}\n"
         f"Can't take this on? Reply to {assigned_by_email}.\n"
     )
@@ -130,9 +128,6 @@ def assignment_email(
         )
         + _row("Evidence required", evidence_required)
         + "</table></div></div>"
-        # Why you
-        + f'<div style="background:#eef1f5;border-radius:8px;padding:12px 16px;font-size:12.5px;'
-        f'color:#3c4554;margin:18px 0 6px"><strong>Why you:</strong> {source_note}</div>'
         + _button("View details", open_url)
         + _footer_links(
             [
