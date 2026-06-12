@@ -181,6 +181,7 @@ def deadline_alert_email(
     last_action: str,
     last_action_date: str,
     open_url: str,
+    escalation_contact_name: str = "your manager",
 ) -> tuple[str, str, str]:
     subject = f"[Aspora] {obligation_name} due in {days_remaining}d — {entity_name}"
     due_long = _fmt_long(due_date)
@@ -194,7 +195,7 @@ def deadline_alert_email(
         f"Type · Frequency: {obligation_type} · {frequency}\n"
         f"Period covered:  {period_covered}\n"
         f"Current status:  {status} — last action: {last_action} on {last_action_date}\n\n"
-        "Escalation: if this remains unfiled at T-7, your manager is copied "
+        f"Escalation: if this remains unfiled at T-7, {escalation_contact_name} is copied "
         "automatically; at T-1 it moves to the daily compliance stand-up; "
         "overdue items page compliance-leads.\n\n"
         f"Open it: {open_url}\n"
@@ -224,7 +225,7 @@ def deadline_alert_email(
         f'<div style="background:#fdf3e3;border:1px solid #f0d49b;border-radius:8px;'
         f'padding:12px 16px;font-size:12.5px;color:#7a5a17;margin-bottom:6px">'
         f"<strong>Escalation:</strong> if this remains unfiled at <strong>T-7</strong>, "
-        f"your manager is copied automatically; at <strong>T-1</strong> it moves to the "
+        f"{escalation_contact_name} is copied automatically; at <strong>T-1</strong> it moves to the "
         f"daily compliance stand-up; <strong>overdue</strong> items page compliance-leads."
         f"</div>"
         + _buttons("Open in Compliance OS", open_url, "Mark as filed", open_url)

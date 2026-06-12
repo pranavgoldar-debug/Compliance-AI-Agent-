@@ -59,7 +59,30 @@ class ReminderResult:
     slack_sent: bool
 
 
-def _build_email_body(obligation: Obligation, days_remaining: int) -> tuple[str, str, str]:
+def _assigner_name(db: Session, obligation: Obligation) -> str:
+    """Who assigned this filing — named in the escalation line ('… {name} is
+    copied automatically'). Resolved from the latest 'assigned' notification's
+    actor, falling back to the rule's approver, then a generic phrase."""
+    actor_id = db.execute(
+        select(Notification.actor_id)
+        .where(
+            Notification.obligation_id == obligation.id,
+            Notification.kind == NotificationKind.assigned,
+            Notification.actor_id.is_not(None),
+        )
+        .order_by(Notification.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if actor_id is None and obligation.rule is not None:
+        actor_id = obligation.rule.approver_id
+    if actor_id:
+        user = db.get(User, actor_id)
+        if user is not None:
+            return user.full_name or user.email
+    return "your manager"
+
+
+def _build_email_body(db: Session, obligation: Obligation, days_remaining: int) -> tuple[str, str, str]:
     """(subject, text, html) for the branded deadline-alert template."""
     from compliance_agent.email_service import base_url
     from compliance_agent.email_templates import deadline_alert_email
@@ -89,6 +112,7 @@ def _build_email_body(obligation: Obligation, days_remaining: int) -> tuple[str,
         last_action="status update",
         last_action_date=updated.date().isoformat() if updated else "—",
         open_url=f"{base_url().rstrip('/')}/obligations/{obligation.id}",
+        escalation_contact_name=_assigner_name(db, obligation),
     )
 
 
@@ -215,7 +239,7 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
             if _already_reminded_at_offset(db, assignee.id, ob.id, offset):
                 continue
 
-            subject, body, body_html = _build_email_body(ob, days_left)
+            subject, body, body_html = _build_email_body(db, ob, days_left)
             email_sent = False
             slack_sent = False
 
