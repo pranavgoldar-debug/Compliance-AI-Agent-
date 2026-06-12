@@ -411,6 +411,11 @@ def update_rule(
             from compliance_agent.api.notifications import emit_assignment
             from compliance_agent.db import ObligationStatus
 
+            # The session runs autoflush=False — flush so the obligations
+            # ensure_obligations_for_rule just created/re-assigned are visible
+            # to the query below (otherwise it reads the pre-approve DB state,
+            # finds nothing, and no assignment email ever goes out).
+            db.flush()
             new_owner = db.get(User, rule.owner_id)
             if new_owner is not None:
                 assigned_obs = (
@@ -432,7 +437,11 @@ def update_rule(
                     try:
                         emit_assignment(db, assignee=new_owner, obligation=ob, actor=user)
                     except Exception:  # noqa: BLE001 — never block the approval on notify
-                        pass
+                        import logging
+
+                        logging.getLogger(__name__).warning(
+                            "emit_assignment failed for obligation %s", ob.id, exc_info=True
+                        )
     else:
         remove_pending_obligations_for_rule(db, rule)
     log_activity(

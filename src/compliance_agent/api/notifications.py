@@ -276,7 +276,11 @@ def emit_assignment(
             )
             send_email(to=assignee.email, subject=subject, body_text=text, body_html=html)
         except Exception:  # noqa: BLE001 — never block the assignment on email
-            pass
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "assignment email to %s failed", assignee.email, exc_info=True
+            )
 
     # Finance hand-off via ClickUp: if the assignee is on the finance team and
     # ClickUp is connected, drop a task so they can action it there. Guarded on
