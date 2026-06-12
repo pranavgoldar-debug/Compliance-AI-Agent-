@@ -26,14 +26,20 @@ def _fmt_long(d: Optional[date]) -> str:
 
 
 def _shell(content: str) -> str:
-    """Masthead + bordered page wrapper shared by both templates."""
+    """Masthead + bordered page wrapper shared by both templates: the purple
+    aspora wordmark (served from the app's own /static/brand) next to the
+    FINANCE COMPLIANCE OS label, over a navy rule."""
+    from compliance_agent.email_service import base_url
+
+    logo = f"{base_url().rstrip('/')}/static/brand/aspora-wordmark.png"
     return (
         f'<div style="background:#ffffff;padding:24px 8px;font-family:{FONT};color:{TEXT}">'
         f'<div style="max-width:680px;margin:0 auto">'
         f'<div style="padding:14px 4px;border-bottom:3px solid {NAVY}">'
-        f'<span style="font-size:22px;font-weight:800;color:{NAVY};letter-spacing:0.5px">ASPORA'
-        f'<span style="color:{GOLD}">.</span></span>'
-        f'<span style="font-size:11px;font-weight:600;color:{NAVY};letter-spacing:3px;margin-left:10px">COMPLIANCE OS</span>'
+        f'<img src="{logo}" alt="aspora" height="24" '
+        f'style="height:24px;vertical-align:middle;border:0">'
+        f'<span style="font-size:11px;font-weight:600;color:{NAVY};letter-spacing:3px;'
+        f'margin-left:12px;vertical-align:middle">FINANCE COMPLIANCE OS</span>'
         f"</div>"
         f'<div style="padding:22px 4px 8px">{content}</div>'
         f"</div></div>"
