@@ -182,7 +182,7 @@ Save, then open the entity. You'll see five tabs: **Overview · Licences · Prim
 
 Open the **Licences** tab → **"Upload license"**. Attach the licence PDF (the AI can auto-fill the details) or type them in. A licence records the authority, number and expiry — and, with the nature of operations, tells discovery what this company is regulated to do.
 
-> You can run discovery with just the nature of operations set, but a licence makes the results much sharper.
+> **Required before discovery:** the **Refresh Regulations** button stays disabled until the entity has at least one licence uploaded *and* a nature of operations — the AI reads the licence text itself to ground what it finds.
 
 ---
 
@@ -291,7 +291,14 @@ Most of the time you'll use the **visual due-date builder** in *Add regulation* 
 
 ### Reminders & Slack
 
-Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status without leaving Slack. Turn notifications on under your Profile.
+Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status (**In progress / For review / Filed**) without leaving Slack — the website updates automatically.
+
+**Get @-mentioned in Slack (one-time, per person):** Slack only pings you when the app knows your Slack **member ID** — a display name isn't enough.
+
+1. In Slack: click your profile photo → **Profile** → **⋮ (three dots)** → **"Copy member ID"** (looks like \`U07ABC123\`).
+2. In the app: **Settings → Profile → "Your Slack member id"** → paste → **Save**.
+
+Once set, alert cards mention you with a real blue **@name** (and your status-button clicks in Slack are credited to your user). Without it, cards just show your name in bold — no ping. Turn the email/Slack toggles on under **Settings → Profile**.
 
 ---
 
@@ -447,7 +454,6 @@ function ProfileTab({ user }: { user: UserBrief }) {
     if (prefs?.slack_user_id !== undefined) setSlackId(prefs.slack_user_id ?? "");
   }, [prefs?.slack_user_id]);
 
-  const [calOn, setCalOn] = useState(false);  // cosmetic — calendar integration not yet wired
   return (
     <div className="space-y-4">
       <Card>
@@ -500,16 +506,9 @@ function ProfileTab({ user }: { user: UserBrief }) {
           <ToggleRow
             icon={<Mail className="h-4 w-4" />}
             label="Email"
-            description="Password resets + reminder pings to your inbox. Needs SMTP_HOST / SMTP_USER / SMTP_PASSWORD env vars on the server."
+            description="Assignment alerts, deadline reminders and password resets to your inbox — sent via the email integration configured under Settings → Integrations."
             checked={prefs?.notify_email ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_email: v })}
-          />
-          <ToggleRow
-            icon={<CalendarIcon className="h-4 w-4" />}
-            label="Google Calendar events"
-            description="Not yet wired. Use the Calendar tab in-app to see every due date for now."
-            checked={calOn}
-            onChange={setCalOn}
           />
 
           <div className="pt-3 border-t border-border">
