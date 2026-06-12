@@ -533,9 +533,25 @@ function ProfileTab({ user }: { user: UserBrief }) {
                 Save
               </Button>
             </div>
+            {slackId.trim() !== "" &&
+              !/\b[UW][A-Za-z0-9]{5,}\b/.test(slackId.trim().toUpperCase()) && (
+                <div className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 max-w-md">
+                  That doesn't look like a member ID — it starts with{" "}
+                  <span className="font-mono">U</span> (e.g.{" "}
+                  <span className="font-mono">U07ABC123</span>). Your display name
+                  won't work: in Slack click your profile photo → <strong>Profile</strong>{" "}
+                  → <strong>⋮</strong> → <strong>"Copy member ID"</strong>.
+                </div>
+              )}
+            {patchPrefs.error && (
+              <div className="mt-1 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5 max-w-md">
+                {(patchPrefs.error as Error).message}
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground mt-1">
               When set, Slack alerts ping you with a real <code className="font-mono">@</code>{" "}
-              mention. Find it in Slack → your profile → "Copy member ID".
+              mention — and your status-button clicks in Slack are credited to you.
+              Find it in Slack → your profile → ⋮ → "Copy member ID".
             </p>
           </div>
         </CardContent>

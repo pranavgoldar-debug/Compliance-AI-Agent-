@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from typing import Optional
 
@@ -133,8 +134,12 @@ def post(
 def _mention(user: Optional[User]) -> str:
     if user is None:
         return "*unassigned*"
-    if user.slack_user_id:
-        return f"<@{user.slack_user_id}>"
+    # Only a real member ID produces a working <@…> mention — anything else
+    # (a display name saved before validation existed) falls back to the
+    # plain name instead of rendering as broken markup.
+    sid = (user.slack_user_id or "").strip().upper()
+    if sid and re.fullmatch(r"[UW][A-Z0-9]{5,}", sid):
+        return f"<@{sid}>"
     return f"*{(user.full_name or user.email).strip()}*"
 
 

@@ -651,6 +651,24 @@ def update_my_prefs(
         user.notify_slack = bool(data["notify_slack"])
     if "slack_user_id" in data:
         s = (data["slack_user_id"] or "").strip()
+        if s:
+            # Accept the raw ID, "@U…", or a pasted profile URL — extract and
+            # validate the member ID so a display name can't be saved (Slack
+            # mentions only work with the real <@U…> id; a bad value would
+            # silently render as plain text).
+            import re as _re
+
+            m = _re.search(r"\b([UW][A-Z0-9]{5,})\b", s.upper())
+            if not m:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "That doesn't look like a Slack member ID. It starts with "
+                        "'U' (e.g. U07ABC123) — in Slack: your profile → ⋮ → "
+                        "'Copy member ID'. A display name won't work."
+                    ),
+                )
+            s = m.group(1)
         user.slack_user_id = s or None
     db.commit()
     db.refresh(user)
