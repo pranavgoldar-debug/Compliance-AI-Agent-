@@ -219,7 +219,7 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                 continue
 
             assignee: Optional[User] = ob.assignee
-            if assignee is None:
+            if assignee is None or not assignee.is_active:
                 continue
             if _already_reminded_at_offset(db, assignee.id, ob.id, offset):
                 continue

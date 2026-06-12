@@ -153,18 +153,47 @@ def update_user(
     return UserOut.model_validate(user)
 
 
-@router.delete("/admin/{user_id}", status_code=204)
+@router.delete("/admin/{user_id}")
 def deactivate_user(
     user_id: int,
+    reassign_to: int | None = None,
     db: Session = Depends(get_session),
     actor: User = Depends(require_admin),
-) -> None:
-    """Soft delete — sets is_active=False so existing references stay intact."""
+) -> dict:
+    """Deactivate a user (audit-safe soft delete — is_active=False, history
+    kept) AND clear their workload so it doesn't strand: their OPEN filings are
+    handed to ``reassign_to`` if given, otherwise unassigned (so they surface in
+    Filings → Unassigned). Pending Google Calendar events follow; reminders stop
+    (the reminder job skips inactive assignees)."""
+    from compliance_agent.db import Obligation, ObligationStatus
+    from compliance_agent.api.notifications import emit_assignment
+    from compliance_agent import calendar_service
+
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found.")
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="You can't deactivate your own account.")
+
+    new_owner: User | None = None
+    if reassign_to is not None:
+        new_owner = db.get(User, reassign_to)
+        if new_owner is None or not new_owner.is_active:
+            raise HTTPException(status_code=400, detail="Reassignee must be an active user.")
+        if new_owner.id == user.id:
+            raise HTTPException(status_code=400, detail="Can't reassign to the user being deactivated.")
+
+    open_obs = db.execute(
+        select(Obligation).where(
+            Obligation.assignee_id == user.id,
+            Obligation.status.not_in(
+                [ObligationStatus.completed, ObligationStatus.not_applicable]
+            ),
+        )
+    ).scalars().all()
+    for ob in open_obs:
+        ob.assignee_id = new_owner.id if new_owner else None
+
     user.is_active = False
     log_activity(
         db,
@@ -172,5 +201,28 @@ def deactivate_user(
         action="user.deactivated",
         target_type="user",
         target_id=user.id,
+        payload={
+            "open_filings": len(open_obs),
+            "reassigned_to": new_owner.id if new_owner else None,
+        },
     )
     db.commit()
+
+    # Post-commit fan-out: notify the new owner of each handed-over filing, and
+    # keep the shared Google Calendar in step (reassign → update, unassign → remove).
+    if new_owner:
+        for ob in open_obs:
+            try:
+                emit_assignment(db, assignee=new_owner, obligation=ob, actor=actor)
+            except Exception:  # noqa: BLE001
+                pass
+    if calendar_service.is_configured():
+        for ob in open_obs:
+            calendar_service.sync_obligation(ob.id)
+
+    return {
+        "deactivated": True,
+        "open_filings": len(open_obs),
+        "reassigned_to": new_owner.id if new_owner else None,
+    }
+
