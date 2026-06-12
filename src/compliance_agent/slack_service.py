@@ -135,7 +135,7 @@ def _mention(user: Optional[User]) -> str:
         return "*unassigned*"
     if user.slack_user_id:
         return f"<@{user.slack_user_id}>"
-    return f"*{user.full_name or user.email}*"
+    return f"*{(user.full_name or user.email).strip()}*"
 
 
 def _app_base_url() -> str:
@@ -296,7 +296,7 @@ def assignment_blocks(
                 "type": "mrkdwn",
                 "text": (
                     f"{_mention(assignee)} you're now on the hook for *{form}*.\n"
-                    f"Assigned by {actor.full_name or actor.email}."
+                    f"Assigned by {(actor.full_name or actor.email).strip()}."
                 ),
             },
         },
@@ -320,7 +320,7 @@ def mention_blocks(
         snippet = snippet[:237] + "…"
     text = (
         f":speech_balloon: {mentioned.full_name or mentioned.email} mentioned by "
-        f"{actor.full_name or actor.email} on {form}."
+        f"{(actor.full_name or actor.email).strip()} on {form}."
     )
     blocks = [
         {
@@ -332,7 +332,7 @@ def mention_blocks(
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"{_mention(mentioned)} — *{actor.full_name or actor.email}* "
+                    f"{_mention(mentioned)} — *{(actor.full_name or actor.email).strip()}* "
                     f"tagged you on *{form}*:\n"
                     f">>> {snippet}"
                 ),
@@ -375,7 +375,7 @@ def overdue_blocks(*, obligation: Obligation, days_late: int) -> dict:
 def filed_blocks(*, obligation: Obligation, actor: User) -> dict:
     form = obligation.rule.form_name if obligation.rule else "Compliance item"
     entity = obligation.entity.name if obligation.entity else "—"
-    text = f":white_check_mark: {form} for {entity} filed by {actor.full_name or actor.email}."
+    text = f":white_check_mark: {form} for {entity} filed by {(actor.full_name or actor.email).strip()}."
     blocks = [
         {
             "type": "header",
@@ -387,7 +387,7 @@ def filed_blocks(*, obligation: Obligation, actor: User) -> dict:
                 "type": "mrkdwn",
                 "text": (
                     f"*{form}* for *{entity}* was just filed by "
-                    f"*{actor.full_name or actor.email}*."
+                    f"*{(actor.full_name or actor.email).strip()}*."
                 ),
             },
         },
@@ -415,7 +415,7 @@ def payment_request_blocks(*, obligation: Obligation, actor: User) -> dict:
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"*Filing approved* by *{actor.full_name or actor.email}*. "
+                    f"*Filing approved* by *{(actor.full_name or actor.email).strip()}*. "
                     f"Finance — please log the payment amount + UTR to close it out."
                     + (f"\n\n*Payment rule:* _{amount_hint}_" if amount_hint else "")
                 ),
@@ -434,7 +434,7 @@ def submit_for_review_blocks(*, obligation: Obligation, actor: User) -> dict:
     entity = obligation.entity.name if obligation.entity else "—"
     dept = (obligation.department or "compliance").value if hasattr(obligation.department, "value") else "compliance"
     submitter_label = "payment" if dept == "finance" else "filing"
-    text = f":eyes: {form} ({entity}) — {submitter_label} submitted for review by {actor.full_name or actor.email}."
+    text = f":eyes: {form} ({entity}) — {submitter_label} submitted for review by {(actor.full_name or actor.email).strip()}."
     blocks = [
         {
             "type": "header",
@@ -448,7 +448,7 @@ def submit_for_review_blocks(*, obligation: Obligation, actor: User) -> dict:
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"*{actor.full_name or actor.email}* submitted "
+                    f"*{(actor.full_name or actor.email).strip()}* submitted "
                     f"*{submitter_label}* on *{form}* for admin review."
                 ),
             },
