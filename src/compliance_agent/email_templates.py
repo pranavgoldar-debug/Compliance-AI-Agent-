@@ -87,7 +87,6 @@ def assignment_email(
     form_code: str,
     entity_name: str,
     evidence_required: str,
-    checklist: list[str],
     source_note: str,
     due_date: Optional[date],
     assigned_at: Optional[date],
@@ -106,18 +105,11 @@ def assignment_email(
         f"Linked obligation: {linked_obligation_name}\n"
         f"Canonical key · Entity: {jurisdiction} · {form_code} · {entity_name}\n"
         f"Evidence required: {evidence_required}\n\n"
-        "Checklist:\n" + "\n".join(f"  [ ] {c}" for c in checklist) + "\n\n"
         f"Why you: {source_note}\n\n"
         f"Open it: {open_url}\n"
         f"Can't take this on? Reply to {assigned_by_email}.\n"
     )
 
-    checklist_html = "".join(
-        f'<div style="padding:9px 2px;border-bottom:1px solid #e8eaee;font-size:13px">'
-        f'<span style="display:inline-block;width:12px;height:12px;border:1.5px solid {GOLD};'
-        f'border-radius:2px;margin-right:10px;vertical-align:-1px"></span>{c}</div>'
-        for c in checklist
-    )
 
     content = (
         f'<p style="font-size:14px;margin:0 0 6px">Hi {assignee_name},</p>'
@@ -142,14 +134,13 @@ def assignment_email(
         )
         + _row("Evidence required", evidence_required)
         + "</table></div></div>"
-        # Checklist
-        f'<div style="font-size:11px;font-weight:700;letter-spacing:2px;color:{MUTED};'
-        f'margin:18px 0 6px">CHECKLIST</div>'
-        + checklist_html
         # Why you
         + f'<div style="background:#eef1f5;border-radius:8px;padding:12px 16px;font-size:12.5px;'
         f'color:#3c4554;margin:18px 0 6px"><strong>Why you:</strong> {source_note}</div>'
-        + _buttons("Accept task", open_url, "View details", open_url)
+        + f'<div style="text-align:center;margin:26px 0 14px">'
+        f'<a href="{open_url}" style="display:inline-block;background:{NAVY};color:#ffffff;'
+        f'font-size:14px;font-weight:600;text-decoration:none;padding:12px 26px;border-radius:6px">'
+        f"View details</a></div>"
         + _footer_links(
             [
                 ("Can't take this on?", "Decline &amp; suggest owner", open_url),

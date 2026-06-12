@@ -240,7 +240,6 @@ def emit_assignment(
         rule = obligation.rule
         entity = obligation.entity
         form = rule.form_name if rule else "Compliance item"
-        authority = (rule.authority if rule else "") or "the regulator"
         juris = (rule.jurisdiction_code if rule else "—").upper()
         try:
             subject, text, html = assignment_email(
@@ -260,12 +259,6 @@ def emit_assignment(
                 form_code=form,
                 entity_name=entity.name if entity else "—",
                 evidence_required="Filing acknowledgement / proof of submission",
-                checklist=[
-                    f"Prepare {form}"
-                    + (f" ({obligation.period_label})" if obligation.period_label else ""),
-                    f"Submit to {authority}",
-                    "Upload proof and mark the filing complete",
-                ],
                 source_note=(
                     f"{juris} · {form} for {entity.name if entity else '—'} — "
                     f"assigned by {actor.full_name or actor.email} in Compliance OS"
