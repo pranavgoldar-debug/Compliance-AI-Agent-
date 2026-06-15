@@ -1111,6 +1111,42 @@ _LT_RECALL = (
 )
 
 
+# Jurisdiction recall for India. Names the must-not-forget MCA / Income-tax /
+# GST / RBI-FEMA / payroll filings — the GST trio is pinned explicitly because
+# the model tends to emit GSTR-3B but drop GSTR-1. Recall guidance only.
+_IN_RECALL = (
+    "INDIA RECALL (jurisdiction = India) — name the ACTUAL authority + statutory "
+    "form for each, as its own item, where it applies:\n"
+    "- MCA / Registrar of Companies: AOC-4 (annual financial statements); MGT-7 "
+    "(annual return); DPT-3 (annual return of deposits); DIR-3 KYC (director KYC, "
+    "annual); ADT-1 (auditor appointment, event); MSME-1 (half-yearly dues "
+    "return); BEN-2 (significant beneficial ownership, event); DIR-12, INC-22, "
+    "PAS-3 (director / registered-office / allotment change filings, event).\n"
+    "- Income Tax (CBDT): ITR-6 (annual return); ADVANCE TAX instalments "
+    "(QUARTERLY); self-assessment balance payment; Tax Audit Report "
+    "(Form 3CA/3CB-3CD); Form 3CEB transfer-pricing accountant's report; Master "
+    "File (3CEAA) and CbCR (3CEAD) where the group thresholds are met. TDS "
+    "returns, each its OWN quarterly item: 24Q (salary), 26Q (non-salary), 27Q "
+    "(payments to non-residents); plus Form 16 / 16A issuance.\n"
+    "- GST (GSTN / CBIC) — list ALL of these as DISTINCT items, do NOT collapse "
+    "to one: GSTR-1 (outward supplies, MONTHLY or QRMP-quarterly); GSTR-3B "
+    "(summary return, MONTHLY); GSTR-9 (annual return) AND GSTR-9C "
+    "(reconciliation statement, annual). GSTR-1 is the most commonly missed — "
+    "always include it for a GST-registered entity. LUT for zero-rated exports "
+    "where services are exported.\n"
+    "- RBI / FEMA: Foreign Liabilities & Assets (FLA) return (annual); FC-GPR "
+    "(FDI allotment, event); Softex (software/service export, via STPI) where "
+    "the entity exports services; ECB / ODI returns where relevant.\n"
+    "- Payroll & social security: EPFO PF Electronic Challan cum Return (ECR, "
+    "monthly); ESIC contribution (monthly); state Professional Tax return "
+    "(monthly/annual — name the state, e.g. Karnataka / Maharashtra); ESOP "
+    "perquisite withholding.\n"
+    "These Indian filings are well-established — INCLUDE each that applies even "
+    "if unsure of the exact form code, marking confidence 'Pending verification "
+    "- official source check' rather than omitting it.\n\n"
+)
+
+
 def _emi_signal(nature: str, licenses) -> bool:
     """True when the entity looks like an e-money / payment institution —
     drives whether the EMI prudential-returns recall is injected. Reads the
@@ -1283,6 +1319,7 @@ def discover_entity_regulations(
         + (_UK_FCA_RECALL if (juris or "").strip().lower() == "uk" else "")
         + (_EMI_RECALL if _emi_signal(entity.nature_of_operation, licenses) else "")
         + (_LT_RECALL if (juris or "").strip().lower() == "lithuania" else "")
+        + (_IN_RECALL if (juris or "").strip().lower() == "india" else "")
         + f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
