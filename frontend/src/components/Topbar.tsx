@@ -130,7 +130,7 @@ function ModeBadge() {
         {live
           ? data.backend === "openrouter"
             ? "AI features call Claude via OpenRouter. Override the model with OPENROUTER_MODEL env var."
-            : "Ask Aspora + Add Rule from text use the real Claude API."
+            : "Ask Aida + Add Rule from text use the real Claude API."
           : "AI features run from curated mocks. Set COMPLIANCE_AGENT_LIVE=1 + ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) to switch."}
       </TooltipContent>
     </Tooltip>
