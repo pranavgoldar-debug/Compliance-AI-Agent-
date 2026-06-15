@@ -234,11 +234,17 @@ def archive_org_chart_extras(
 
 
 def _hard_delete_entity(db: Session, e: Entity) -> list[str]:
-    """Delete an entity + everything that hangs off it (licences, documents,
-    obligations and their comments/notifications, rule links). Returns the
-    storage paths to sweep. Does NOT commit."""
+    """Delete an entity + everything that hangs off it: licences, documents,
+    obligations (and their comments/notifications + shared-calendar events),
+    AND its rules — every rule left with no other entity after this one is
+    removed is deleted too (For Action / Approved / Archived alike), so an
+    entity's regulations don't linger in Review & Assign. Rules still shared
+    with another entity are only unlinked. Returns storage paths to sweep.
+    Does NOT commit."""
     from sqlalchemy import delete as sa_delete
 
+    from compliance_agent import calendar_service
+    from compliance_agent.api.rules import _delete_rule_cascade
     from compliance_agent.db import (
         Comment,
         Document,
@@ -253,6 +259,8 @@ def _hard_delete_entity(db: Session, e: Entity) -> list[str]:
         .scalars()
         .all()
     )
+    # Pull their shared Google Calendar events before the rows go.
+    calendar_service.forget_obligations(db, [ob.id for ob in obs])
     for ob in obs:
         db.execute(sa_delete(Comment).where(Comment.obligation_id == ob.id))
         db.execute(sa_delete(Notification).where(Notification.obligation_id == ob.id))
@@ -270,7 +278,16 @@ def _hard_delete_entity(db: Session, e: Entity) -> list[str]:
         if doc.storage_path:
             paths.append(doc.storage_path)
         db.delete(doc)
+    # Rules: unlink this entity, then delete any rule now left with no entity
+    # (i.e. it only belonged to this one) — incl. approved, discovered and
+    # archived. Rules still attached to another entity are kept.
+    rules = list(e.rules)
     e.rules = []
+    db.flush()
+    for r in rules:
+        db.refresh(r)
+        if not r.entities:
+            _delete_rule_cascade(db, r)
     db.flush()
     db.delete(e)
     return paths

@@ -665,8 +665,9 @@ function ApplicabilitySection({
 
   const addToReview = useMutation({
     mutationFn: async () => {
-      // Don't promote a draft that already exists in Review/Confirmed — skip
-      // (archive) it so the review section doesn't collect duplicates.
+      // Only the TICKED items move to Review & Assign. Unticked items (incl.
+      // the not-applicable column) are LEFT AS-IS as discovered drafts — never
+      // auto-archived. Archiving is a manual action only.
       const itemRuleIds = new Set(items.map((i) => i.rule_id));
       const existing = new Set<string>();
       for (const r of [...staging.filter((r) => r.sent_to_review), ...production]) {
@@ -676,15 +677,14 @@ function ApplicabilitySection({
       let skipped = 0;
       await Promise.all(
         items
-          .filter((i) => i.rule_id)
+          .filter((i) => i.rule_id && picked.has(i.form_name))
           .map((i) => {
-            if (!picked.has(i.form_name)) {
-              return api.patch(`/api/rules/${i.rule_id}`, { status: "archived" });
-            }
             const dup = ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s));
             if (dup) {
+              // Already in Review & Assign — skip (leave the draft as-is, don't
+              // archive it).
               skipped++;
-              return api.patch(`/api/rules/${i.rule_id}`, { status: "archived" });
+              return Promise.resolve();
             }
             return api.patch(`/api/rules/${i.rule_id}`, {
               status: "staging",
