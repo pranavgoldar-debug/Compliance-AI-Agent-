@@ -904,6 +904,7 @@ function InviteUserDialog({
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<Role>("employee");
+  const [team, setTeam] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -922,6 +923,7 @@ function InviteUserDialog({
         email: email.trim().toLowerCase(),
         full_name: fullName.trim(),
         role,
+        department: team,
         password,
       }),
     onSuccess: (u) => {
@@ -930,6 +932,7 @@ function InviteUserDialog({
       setEmail("");
       setFullName("");
       setRole("employee");
+      setTeam("");
       setPassword("");
       setError(null);
       onOpenChange(false);
@@ -972,6 +975,24 @@ function InviteUserDialog({
               <option value="employee">Employee</option>
               <option value="admin">Admin</option>
             </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Team</label>
+            <select
+              value={team}
+              onChange={(e) => setTeam(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">— None —</option>
+              <option value="compliance">Compliance</option>
+              <option value="finance">Finance</option>
+              <option value="legal">Legal</option>
+              <option value="hr">HR</option>
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              The function this person owns — drives routing and the team filter.
+              Pick "None" for admins or non-team accounts.
+            </p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Initial password</label>
