@@ -98,7 +98,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "flex flex-col bg-white border-r border-border transition-all duration-200",
+        "flex flex-col bg-card border-r border-border transition-all duration-200",
         collapsed ? "w-[64px]" : "w-[240px]",
       )}
     >

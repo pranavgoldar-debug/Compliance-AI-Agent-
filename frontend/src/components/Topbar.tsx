@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
   Bell,
+  Sun,
+  Moon,
   Search,
   LogOut,
   Settings as SettingsIcon,
@@ -35,6 +37,7 @@ import { api } from "@/lib/api";
 import { fmtRelative, userInitials } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 import type { Entity, NotificationOut, Obligation, SystemInfo } from "@/types/api";
 
 
@@ -96,6 +99,24 @@ function Breadcrumbs() {
 
 
 // ---------------------------------------------------------------------------
+// Light/dark theme toggle (default light, persisted in localStorage).
+// ---------------------------------------------------------------------------
+function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  const dark = theme === "dark";
+  return (
+    <button
+      onClick={toggle}
+      className="p-2 rounded-md hover:bg-secondary text-muted-foreground"
+      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
+      title={dark ? "Light theme" : "Dark theme"}
+    >
+      {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+    </button>
+  );
+}
+
+
 // Mode badge — auto-flips to Live (Claude) when the server has the key set.
 // ---------------------------------------------------------------------------
 function ModeBadge() {
@@ -542,7 +563,7 @@ export function Topbar() {
   const unreadCount = notifications.filter((n) => !n.read && n.id != null).length;
 
   return (
-    <header className="h-14 border-b border-border bg-white flex items-center gap-4 px-6 sticky top-0 z-30">
+    <header className="h-14 border-b border-border bg-card flex items-center gap-4 px-6 sticky top-0 z-30">
       <div className="flex-1 min-w-0">
         <Breadcrumbs />
       </div>
@@ -551,6 +572,7 @@ export function Topbar() {
 
       <div className="flex items-center gap-2">
         <ModeBadge />
+        <ThemeToggle />
 
         <Popover open={notifOpen} onOpenChange={setNotifOpen}>
           <PopoverTrigger asChild>
