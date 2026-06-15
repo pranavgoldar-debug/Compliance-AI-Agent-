@@ -30,6 +30,8 @@ class UserBrief(_Base):
     full_name: str
     role: Role
     department: Optional[str] = None
+    # True for a permanently-removed leaver — UI greys their name in history.
+    is_deleted: bool = False
 
 
 class UserOut(_Base):
@@ -39,7 +41,7 @@ class UserOut(_Base):
     role: Role
     department: Optional[str] = None
     is_active: bool
-    department: Optional[str] = None
+    is_deleted: bool = False
     created_at: datetime
     last_login_at: Optional[datetime] = None
 

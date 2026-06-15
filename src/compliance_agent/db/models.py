@@ -137,6 +137,12 @@ class User(Base):
     # Personal Slack member id (e.g. U0123ABCD). When set, our channel-wide
     # webhook pings can <@-mention> this user. Optional.
     slack_user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Hard-delete tombstone: when an admin permanently removes a user who has
+    # left the org, we scrub their PII (email/password/slack) and set this —
+    # the row survives only as a name label so historical filings / audit
+    # entries can still show "who did it" (rendered greyed in the UI). They
+    # can't log in and are hidden from the user list.
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Functional department — drives "Request payment from finance" routing.
     # Nullable so the admin can leave it unset for users who don't fit a single
     # bucket; those users are excluded from department-specific fanouts.

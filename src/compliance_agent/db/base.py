@@ -319,6 +319,8 @@ def _add_missing_columns() -> None:
             # Team membership — compliance / finance / legal / risk / operations.
             # Nullable; admins + legacy users can be untagged.
             ("department", varchar(16)),
+            # Hard-delete tombstone (scrubbed leaver — name kept, PII gone).
+            ("is_deleted", "BOOLEAN NOT NULL DEFAULT 0" if not is_pg else "BOOLEAN NOT NULL DEFAULT FALSE"),
         ],
         # Tracker sync: short codes for each entity (VINC, RTUK, ...)
         "entities": [

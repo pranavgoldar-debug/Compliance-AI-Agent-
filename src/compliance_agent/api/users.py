@@ -64,8 +64,13 @@ def list_users_admin(
     db: Session = Depends(get_session),
     _: User = Depends(require_admin),
 ) -> list[UserOut]:
-    """Full user list incl. inactive users. Admin only."""
-    stmt = select(User).order_by(User.is_active.desc(), User.full_name, User.email)
+    """Full user list incl. inactive users, but EXCLUDING permanently-deleted
+    leavers (they survive only as name tombstones for history). Admin only."""
+    stmt = (
+        select(User)
+        .where(User.is_deleted.is_(False))
+        .order_by(User.is_active.desc(), User.full_name, User.email)
+    )
     return [UserOut.model_validate(u) for u in db.execute(stmt).scalars().all()]
 
 
@@ -225,4 +230,49 @@ def deactivate_user(
         "open_filings": len(open_obs),
         "reassigned_to": new_owner.id if new_owner else None,
     }
+
+
+@router.delete("/admin/{user_id}/purge")
+def purge_user(
+    user_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> dict:
+    """Permanently remove a leaver's IDENTITY while keeping a name tombstone.
+
+    Only allowed on an already-INACTIVE user (deactivate first — that step
+    hands off their open work). We scrub the PII that constitutes their
+    identity — email, password, Slack id — and set is_deleted, but KEEP
+    full_name so historical filings / audit entries can still show who did it
+    (the UI greys a deleted user's name). They vanish from the user list and
+    can never log in. Irreversible."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.id == actor.id:
+        raise HTTPException(status_code=400, detail="You can't delete your own account.")
+    if user.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Deactivate the user first — that hands off their open work — then delete.",
+        )
+
+    kept_name = user.full_name or user.email
+    # Scrub identity/PII; keep full_name as the history label.
+    user.email = f"deleted-user-{user.id}@removed.invalid"
+    user.password_hash = "!"  # unusable hash — login impossible
+    user.slack_user_id = None
+    user.is_active = False
+    user.is_deleted = True
+
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="user.deleted",
+        target_type="user",
+        target_id=user.id,
+        payload={"name": kept_name},
+    )
+    db.commit()
+    return {"deleted": True, "name_kept": kept_name}
 

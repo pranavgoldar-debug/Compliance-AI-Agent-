@@ -30,6 +30,7 @@ export interface UserBrief {
   full_name: string;
   role: Role;
   department?: Department | null;
+  is_deleted?: boolean;
 }
 
 // Adaptive qualification — AI-generated secondary questions, their answers, and

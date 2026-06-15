@@ -1100,6 +1100,7 @@ function EditUserDialog({
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [reassignTo, setReassignTo] = useState("");
 
   // Reset state when the dialog opens with a new user.
@@ -1111,6 +1112,7 @@ function EditUserDialog({
       setNewPassword("");
       setError(null);
       setConfirmDeactivate(false);
+      setConfirmDelete(false);
       setReassignTo("");
     }
   }, [user]);
@@ -1149,6 +1151,15 @@ function EditUserDialog({
 
   const reactivateMutation = useMutation({
     mutationFn: () => api.patch<UserOut>(`/api/users/admin/${user!.id}`, { is_active: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClose();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const purgeMutation = useMutation({
+    mutationFn: () => api.delete<{ deleted: boolean }>(`/api/users/admin/${user!.id}/purge`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       onClose();
@@ -1287,16 +1298,54 @@ function EditUserDialog({
                     Deactivate user
                   </Button>
                 )
+              ) : confirmDelete ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 space-y-2.5">
+                  <div className="text-sm font-medium text-red-800">
+                    Permanently delete {user.full_name}?
+                  </div>
+                  <div className="text-xs text-red-700/80">
+                    Removes their account, login and contact details for good — they
+                    disappear from this list. Their <strong>name is kept</strong> on past
+                    filings and the audit log (shown greyed, e.g. "{user.full_name} (removed)")
+                    so history stays readable. This <strong>can't be undone</strong>.
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)}>
+                      <X className="h-3.5 w-3.5" />
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={() => purgeMutation.mutate()}
+                      disabled={purgeMutation.isPending}
+                    >
+                      {purgeMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Yes, delete permanently
+                    </Button>
+                  </div>
+                </div>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => reactivateMutation.mutate()}
-                  disabled={reactivateMutation.isPending}
-                >
-                  {reactivateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Reactivate
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => reactivateMutation.mutate()}
+                    disabled={reactivateMutation.isPending}
+                  >
+                    {reactivateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Reactivate
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDelete(true)}
+                    className="text-red-700 border-red-200 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete permanently
+                  </Button>
+                </div>
               )}
             </div>
           )}
