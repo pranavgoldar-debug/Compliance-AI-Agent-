@@ -314,6 +314,12 @@ def delete_obligation(
     db.execute(sa_delete(Notification).where(Notification.obligation_id == obligation_id))
     db.execute(sa_delete(Comment).where(Comment.obligation_id == obligation_id))
 
+    # Remove its shared Google Calendar event BEFORE the row goes (the
+    # calendar_events mapping cascades on delete, taking the event id with it).
+    from compliance_agent import calendar_service
+
+    calendar_service.forget_obligations(db, [obligation_id])
+
     log_activity(
         db,
         actor_id=actor.id,

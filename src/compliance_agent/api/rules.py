@@ -116,31 +116,39 @@ def _delete_pending_for_entity_rule(db: Session, rule_id: int, entity_id: int) -
     """Remove one entity's not-yet-completed obligations for a rule (e.g. when
     the entity's answers make the filing not applicable). Completed kept."""
     from compliance_agent.db import ObligationStatus
+    from compliance_agent import calendar_service
 
-    db.execute(
-        sa_delete(Obligation).where(
+    pending = db.execute(
+        select(Obligation.id).where(
             Obligation.rule_id == rule_id,
             Obligation.entity_id == entity_id,
             Obligation.status.in_(
                 [ObligationStatus.not_started, ObligationStatus.in_progress]
             ),
         )
-    )
+    ).scalars().all()
+    # Pull their Google Calendar events first — the mapping cascades on delete.
+    calendar_service.forget_obligations(db, pending)
+    db.execute(sa_delete(Obligation).where(Obligation.id.in_(pending)))
 
 
 def remove_pending_obligations_for_rule(db: Session, rule: Rule) -> None:
     """Remove a rule's not-yet-completed obligations from the calendar (e.g.
-    when it's archived). Completed filings are kept for history."""
+    when it's archived). Completed filings are kept for history. Their shared
+    Google Calendar events are removed too."""
     from compliance_agent.db import ObligationStatus
+    from compliance_agent import calendar_service
 
-    db.execute(
-        sa_delete(Obligation).where(
+    pending = db.execute(
+        select(Obligation.id).where(
             Obligation.rule_id == rule.id,
             Obligation.status.in_(
                 [ObligationStatus.not_started, ObligationStatus.in_progress]
             ),
         )
-    )
+    ).scalars().all()
+    calendar_service.forget_obligations(db, pending)
+    db.execute(sa_delete(Obligation).where(Obligation.id.in_(pending)))
 
 
 @router.post("/ensure-calendar")
@@ -490,6 +498,8 @@ def _delete_rule_cascade(db: Session, rule: Rule) -> int:
         ).all()
     ]
     if ob_ids:
+        from compliance_agent import calendar_service
+
         db.execute(
             sa_update(Document)
             .where(Document.obligation_id.in_(ob_ids))
@@ -497,6 +507,8 @@ def _delete_rule_cascade(db: Session, rule: Rule) -> int:
         )
         db.execute(sa_delete(Notification).where(Notification.obligation_id.in_(ob_ids)))
         db.execute(sa_delete(Comment).where(Comment.obligation_id.in_(ob_ids)))
+        # Clear their shared Google Calendar events before the rows go.
+        calendar_service.forget_obligations(db, ob_ids)
         db.execute(sa_delete(Obligation).where(Obligation.id.in_(ob_ids)))
 
     db.execute(sa_delete(RuleSnapshot).where(RuleSnapshot.rule_id == rule.id))

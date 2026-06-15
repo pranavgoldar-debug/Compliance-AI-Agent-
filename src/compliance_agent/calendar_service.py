@@ -152,6 +152,43 @@ def _sync(obligation_id: int) -> Optional[str]:
         return None
 
 
+def forget_obligations(db, obligation_ids) -> None:
+    """Remove the shared-calendar events for obligations that are about to be
+    DELETED from the DB. Must be called BEFORE the obligation rows are deleted:
+    the calendar_events mapping cascades on obligation delete, so once the row
+    is gone we've lost the event id and can never clean up Google's side.
+
+    Detaches the mappings in the caller's session (committed by the caller) and
+    fires the Google deletes in the background by the captured ids."""
+    from compliance_agent.db import CalendarEvent
+
+    ids = [int(i) for i in obligation_ids if i is not None]
+    if not ids or not is_configured():
+        return
+    rows = db.execute(
+        select(CalendarEvent).where(CalendarEvent.obligation_id.in_(ids))
+    ).scalars().all()
+    pairs = [(r.calendar_id, r.event_id) for r in rows]
+    for r in rows:
+        db.delete(r)
+    if not pairs:
+        return
+
+    def _run() -> None:
+        from compliance_agent.email_service import _gmail_access_token
+
+        token = _gmail_access_token()
+        if not token:
+            return
+        for cal, event_id in pairs:
+            try:
+                _request("DELETE", f"{_API}/calendars/{cal}/events/{event_id}", token=token)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("gcal delete on removal failed (%s): %s", event_id, e)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def sync_obligation(obligation_id: int, *, sync: bool = False) -> Optional[str]:
     """Fire-and-forget sync for one obligation (daemon thread). Pass sync=True
     to run inline and get the failure reason back (used by the test button)."""
@@ -202,4 +239,10 @@ def create_test_event() -> tuple[bool, Optional[str]]:
     return True, None
 
 
-__all__ = ["is_configured", "sync_obligation", "create_test_event", "calendar_id"]
+__all__ = [
+    "is_configured",
+    "sync_obligation",
+    "forget_obligations",
+    "create_test_event",
+    "calendar_id",
+]
