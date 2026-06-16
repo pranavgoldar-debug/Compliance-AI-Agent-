@@ -197,6 +197,9 @@ export function RulesPage() {
       // that's selected.
       // For Action only shows items a human sent here; hide discovered drafts.
       if (tab === "staging") params.set("in_review", "true");
+      // Active sections (For Action / Approved) hide rules orphaned by a deleted
+      // entity (or only owned by archived ones). Archived tab keeps showing them.
+      if (tab !== "archived") params.set("active_entity_only", "true");
       return api.get<Rule[]>(`/api/rules?${params.toString()}`);
     },
   });
@@ -214,8 +217,8 @@ export function RulesPage() {
     queryKey: ["rules-count"],
     queryFn: async () => {
       const [s, p, a] = await Promise.all([
-        api.get<Rule[]>("/api/rules?status=staging&in_review=true"),
-        api.get<Rule[]>("/api/rules?status=production"),
+        api.get<Rule[]>("/api/rules?status=staging&in_review=true&active_entity_only=true"),
+        api.get<Rule[]>("/api/rules?status=production&active_entity_only=true"),
         api.get<Rule[]>("/api/rules?status=archived"),
       ]);
       return { staging: s.length, production: p.length, archived: a.length };
@@ -683,6 +686,29 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
+  // Permanently remove rules orphaned by a deleted entity (no live entity left).
+  // The active sections already HIDE these; this clears them from the DB too.
+  // Archived rules are left alone.
+  const orphanCleanup = useMutation({
+    mutationFn: () =>
+      api.post<{ deleted_rules: number; deleted_obligations: number }>(
+        "/api/rules/cleanup-orphans",
+      ),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-count"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        r.deleted_rules
+          ? `Removed ${r.deleted_rules} orphaned rule(s) and ${r.deleted_obligations} filing(s) left behind by deleted entities.`
+          : "No orphaned rules found.",
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <Card className="overflow-hidden">
       {isAdmin && (
@@ -741,6 +767,25 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
             >
               {cleanupMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Clean up draft rules I added (last 24h)
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={orphanCleanup.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Permanently delete rules left with no live entity (orphaned by a deleted entity), plus any filings off them? Archived rules and the Library catalogue are NOT touched. This can't be undone.",
+                  )
+                ) {
+                  orphanCleanup.mutate();
+                }
+              }}
+              title="Remove approved/for-action rules whose entity was deleted"
+            >
+              {orphanCleanup.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Remove orphaned rules
             </Button>
           </div>
         </div>

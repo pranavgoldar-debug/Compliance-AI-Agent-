@@ -289,6 +289,14 @@ def list_rules(
         description="When true, only rules a human has explicitly sent to "
         "Review & Assign (sent_to_review is True); hides discovered drafts.",
     ),
+    active_entity_only: Optional[bool] = Query(
+        None,
+        description="When true, only rules still tied to a LIVE (non-archived) "
+        "entity — hides orphans left by a deleted entity and rules whose only "
+        "entities are archived. Used by Review & Assign so a removed entity's "
+        "filings stop lingering there. Catalogue rules always carry entity "
+        "links, so they're unaffected.",
+    ),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ) -> list[RuleOut]:
@@ -305,6 +313,11 @@ def list_rules(
     rows = db.execute(stmt).scalars().all()
     # FINANCE_ONLY switch: hide non-Finance rules from the catalog.
     rows = [r for r in rows if keep_function(r.category, r.area, r.responsible_function)]
+    # Hide rules detached from every live entity (orphaned by a deleted entity,
+    # or only ever attached to now-archived ones) so they stop lingering in
+    # Review & Assign. A rule with no entities at all is treated as orphaned.
+    if active_entity_only:
+        rows = [r for r in rows if any(e.archived_at is None for e in r.entities)]
 
     profile = None
     if entity_id is not None:
@@ -574,6 +587,40 @@ def bulk_delete_rules(
     )
     db.commit()
     return BulkDeleteResult(deleted=deleted)
+
+
+class CleanupOrphansResult(BaseModel):
+    deleted_rules: int
+    deleted_obligations: int
+
+
+@router.post("/cleanup-orphans", response_model=CleanupOrphansResult)
+def cleanup_orphan_rules(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> CleanupOrphansResult:
+    """Admin-only: permanently delete rules left with NO live entity — i.e.
+    orphans whose only owner was deleted (and rules whose every entity is
+    archived) — for the active sections only (For Action / Approved). ARCHIVED
+    rules are deliberately left alone. Catalogue rules always carry an entity
+    link, so they're never caught here. Also removes any filings off those
+    rules; proof documents are kept (unlinked)."""
+    rows = (
+        db.execute(select(Rule).where(Rule.status != RuleStatus.archived))
+        .scalars()
+        .all()
+    )
+    orphans = [r for r in rows if not any(e.archived_at is None for e in r.entities)]
+    deleted_obs = 0
+    for r in orphans:
+        deleted_obs += _delete_rule_cascade(db, r)
+    log_activity(
+        db, actor_id=actor.id, action="rules.cleanup_orphans",
+        target_type="rule", target_id=None,
+        payload={"deleted": len(orphans), "obligations": deleted_obs},
+    )
+    db.commit()
+    return CleanupOrphansResult(deleted_rules=len(orphans), deleted_obligations=deleted_obs)
 
 
 class CleanupRecentResult(BaseModel):
