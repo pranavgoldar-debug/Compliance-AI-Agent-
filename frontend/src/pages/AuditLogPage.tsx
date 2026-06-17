@@ -350,6 +350,21 @@ function humaniseAction(action: string): string {
 }
 
 
+// User-facing labels for the internal rule lifecycle, matching the Review &
+// Assign tabs — so the audit log reads "For Action" / "Approved" instead of the
+// raw "staging" / "production".
+const STATUS_LABELS: Record<string, string> = {
+  staging: "For Action",
+  production: "Approved",
+  archived: "Archived",
+  retired: "Retired",
+};
+const STATUS_KEYS = new Set(["from", "to", "status", "from_status", "to_status"]);
+
+function payloadValue(key: string, value: string): string {
+  return STATUS_KEYS.has(key) && value in STATUS_LABELS ? STATUS_LABELS[value] : value;
+}
+
 function renderPayload(payload: Record<string, unknown>) {
   const fields = (payload.changed_fields ?? payload.fields) as string[] | undefined;
   if (Array.isArray(fields) && fields.length > 0) {
@@ -366,7 +381,7 @@ function renderPayload(payload: Record<string, unknown>) {
       if (v === null || typeof v === "object") return null;
       return (
         <Badge key={k} variant="neutral" className="text-[10px]">
-          {k}: <span className="font-mono ml-1">{String(v)}</span>
+          {k}: <span className="font-mono ml-1">{payloadValue(k, String(v))}</span>
         </Badge>
       );
     });
