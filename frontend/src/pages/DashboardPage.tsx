@@ -66,16 +66,16 @@ function MetricCard({
   href: string;
 }) {
   const toneClasses = {
-    overdue: "border-red-200 bg-red-50",
-    alert: "border-amber-200 bg-amber-50",
-    neutral: "border-aspora-200 bg-aspora-50/60",
-    muted: "border-slate-200 bg-slate-50",
+    overdue: "border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/40",
+    alert: "border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40",
+    neutral: "border-aspora-200 bg-aspora-50/60 dark:border-aspora-800 dark:bg-aspora-900/40",
+    muted: "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50",
   }[tone];
   const valueColor = {
-    overdue: "text-red-700",
-    alert: "text-amber-700",
-    neutral: "text-aspora-800",
-    muted: "text-slate-700",
+    overdue: "text-red-700 dark:text-red-400",
+    alert: "text-amber-700 dark:text-amber-400",
+    neutral: "text-aspora-800 dark:text-aspora-300",
+    muted: "text-slate-700 dark:text-slate-300",
   }[tone];
   return (
     <Link

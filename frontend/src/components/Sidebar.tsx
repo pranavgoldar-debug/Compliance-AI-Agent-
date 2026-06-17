@@ -117,7 +117,21 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               className="h-9 w-9"
             />
           ) : (
-            <img src="/static/brand/aspora-wordmark.png" alt="Aspora" className="h-7" />
+            <>
+              {/* Light: original (white-backed) wordmark. Dark: a version whose
+                  outer white box is transparent (the white inside the letters /
+                  the 'o' mark is kept), so it blends into the dark sidebar. */}
+              <img
+                src="/static/brand/aspora-wordmark.png"
+                alt="Aspora"
+                className="h-7 dark:hidden"
+              />
+              <img
+                src="/static/brand/aspora-wordmark-dark.png"
+                alt="Aspora"
+                className="h-7 hidden dark:block"
+              />
+            </>
           )}
         </a>
         {!collapsed && (
