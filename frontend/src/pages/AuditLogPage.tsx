@@ -215,7 +215,7 @@ export function AuditLogPage() {
               <ChevronDown className="h-3.5 w-3.5 ml-1" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 p-3 space-y-2">
+          <PopoverContent className="w-72 p-3 space-y-2">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Since</div>
             <DateField value={since} onChange={setSince} />
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Until</div>

@@ -101,7 +101,7 @@ export function DateField({
         disabled={disabled}
         value={m}
         onChange={(e) => onMonth(e.target.value)}
-        className={cn(fieldCls, "flex-1 min-w-0")}
+        className={cn(fieldCls, "flex-1 min-w-[6rem] pr-7")}
       >
         <option value="">Month</option>
         {MONTHS.map((name, i) => (
