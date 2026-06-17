@@ -137,17 +137,33 @@ export function fmtShortDate(iso: string | null | undefined): string {
   return fmtDate(iso, "d MMM");
 }
 
+// Parse a backend timestamp into a Date. SQLAlchemy serialises naive UTC
+// (no offset, e.g. "2026-05-28T12:34:56"), which `new Date` / parseISO would
+// otherwise read as LOCAL time — making an IST viewer see the raw UTC
+// wall-clock. Append Z when there's no explicit timezone so it's read as UTC.
+// Use this for ANY API datetime before formatting it for display.
+export function parseBackendDate(iso: string): Date {
+  const looksAware = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(looksAware ? iso : iso + "Z");
+}
+
+// Localised wall-clock time (e.g. "12:42 PM") in the viewer's own timezone.
+export function fmtTime(
+  iso: string | null | undefined,
+  opts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" },
+): string {
+  if (!iso) return "—";
+  try {
+    return parseBackendDate(iso).toLocaleTimeString([], opts);
+  } catch {
+    return iso;
+  }
+}
+
 export function fmtRelative(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
-    // Backend serialises datetimes from SQLAlchemy with no timezone
-    // marker (e.g. "2026-05-28T12:34:56"). parseISO treats those as
-    // LOCAL time, which makes a 2-min-old event look 5h old in IST.
-    // Force the parser to read them as UTC by appending Z when no
-    // explicit offset is present.
-    const looksAware = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
-    const normalised = looksAware ? iso : iso + "Z";
-    return formatDistanceToNow(parseISO(normalised), { addSuffix: true });
+    return formatDistanceToNow(parseBackendDate(iso), { addSuffix: true });
   } catch {
     return iso;
   }

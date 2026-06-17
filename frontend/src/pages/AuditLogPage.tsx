@@ -24,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, userInitials } from "@/lib/format";
+import { fmtRelative, fmtTime, parseBackendDate, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, Entity, UserBrief } from "@/types/api";
 
@@ -117,7 +117,7 @@ export function AuditLogPage() {
   const groupedByDay = useMemo(() => {
     const groups = new Map<string, ActivityOut[]>();
     for (const a of filtered) {
-      const day = new Date(a.created_at).toDateString();
+      const day = parseBackendDate(a.created_at).toDateString();
       if (!groups.has(day)) groups.set(day, []);
       groups.get(day)!.push(a);
     }
@@ -292,10 +292,7 @@ function ActivityRow({ activity }: { activity: ActivityOut }) {
   return (
     <li className="px-4 py-3 flex items-start gap-3 hover:bg-secondary/30">
       <span className="text-xs tabular-nums text-muted-foreground w-20 shrink-0 mt-1">
-        {new Date(activity.created_at).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
+        {fmtTime(activity.created_at)}
       </span>
       <Avatar className="h-7 w-7 shrink-0 mt-0.5">
         <AvatarFallback className="text-[10px]">

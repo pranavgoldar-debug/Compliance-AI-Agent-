@@ -20,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { parseBackendDate } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -648,7 +649,7 @@ function AllDocsView({
                 </td>
                 <td className="px-3 py-2.5 text-xs">{d.folder || d.category}</td>
                 <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                  {new Date(d.created_at).toLocaleDateString()}
+                  {parseBackendDate(d.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-3 py-2.5 text-right text-xs tabular-nums text-muted-foreground">
                   {(d.size_bytes / 1024).toFixed(0)} KB

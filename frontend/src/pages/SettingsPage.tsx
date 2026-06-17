@@ -35,7 +35,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { Markdown } from "@/components/Markdown";
 import { useAuth } from "@/contexts/AuthContext";
-import { JURISDICTIONS, userInitials } from "@/lib/format";
+import { JURISDICTIONS, userInitials, parseBackendDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -837,7 +837,7 @@ function UsersTab() {
                     )}
                   </td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
+                    {u.last_login_at ? parseBackendDate(u.last_login_at).toLocaleDateString() : "Never"}
                   </td>
                   <td className="px-5 py-3">
                     {u.is_active ? (
@@ -2544,7 +2544,7 @@ function RetentionTab() {
 
         {data.oldest_at && (
           <p className="text-xs text-muted-foreground">
-            Oldest event: {new Date(data.oldest_at).toLocaleString()}
+            Oldest event: {parseBackendDate(data.oldest_at).toLocaleString()}
           </p>
         )}
 

@@ -44,7 +44,7 @@ import { ExportMenu } from "@/components/ExportMenu";
 import { DueDateRuleBuilder } from "@/components/DueDateRuleBuilder";
 import type { DueDateSpec } from "@/lib/dueDateSpec";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, deriveFunction } from "@/lib/format";
+import { fmtRelative, deriveFunction, parseBackendDate } from "@/lib/format";
 import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { cn } from "@/lib/utils";
 import type { Rule, RuleStatus, UserBrief, Obligation, Entity } from "@/types/api";
@@ -872,7 +872,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                     </td>
                     <td
                       className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap"
-                      title={r.approved_at ? new Date(r.approved_at).toLocaleString() : undefined}
+                      title={r.approved_at ? parseBackendDate(r.approved_at).toLocaleString() : undefined}
                     >
                       {fmtApproved(r.approved_at)}
                     </td>
