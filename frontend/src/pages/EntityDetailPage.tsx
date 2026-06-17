@@ -2026,7 +2026,7 @@ function OverviewTab({
             <dd className="font-medium">{entity.name}</dd>
             <dt className="text-muted-foreground">Legal type</dt>
             <dd>{entity.legal_type || "—"}</dd>
-            <dt className="text-muted-foreground">Registration #</dt>
+            <dt className="text-muted-foreground">Registration number</dt>
             <dd className="font-mono text-xs">{entity.registration_number || "—"}</dd>
             <dt className="text-muted-foreground">GST / Tax No</dt>
             <dd className="font-mono text-xs">{entity.tax_id || "—"}</dd>
