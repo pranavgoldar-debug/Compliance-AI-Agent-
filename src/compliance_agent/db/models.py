@@ -443,7 +443,7 @@ class Activity(Base):
 # Documents — uploaded files attached to entities and/or obligations
 # ---------------------------------------------------------------------------
 # Default per-entity document folders, seeded on first read.
-DEFAULT_DOCUMENT_FOLDERS = ["Filings", "Templates", "Incorporation Documents"]
+DEFAULT_DOCUMENT_FOLDERS = ["Filings", "Templates", "Incorporation Documents", "Investor Reporting"]
 
 
 class DocumentCategory(str, enum.Enum):
