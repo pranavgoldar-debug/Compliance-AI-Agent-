@@ -413,6 +413,85 @@ def extract_rules_from_text(
 
 
 # ---------------------------------------------------------------------------
+# Gap-audit second pass — jurisdiction-agnostic completeness check. Replaces the
+# need to hand-write a per-country recall block: after the main discovery pass,
+# ask the model which WELL-KNOWN statutory finance/tax filings for this
+# jurisdiction + legal type are MISSING from what was found, and feed them back
+# through the same candidate->Rule path. Best-effort: never raises.
+# ---------------------------------------------------------------------------
+GAP_AUDIT_INSTRUCTIONS = (
+    "COMPLETENESS REVIEW — an initial discovery pass has already run for the "
+    "entity below. Your job is NARROW: name the WELL-KNOWN STATUTORY FINANCE / "
+    "TAX filings for THIS jurisdiction and legal type that are MISSING from the "
+    "ALREADY-FOUND list.\n"
+    "- Return ONLY genuinely missing items. Do NOT repeat anything already in "
+    "the ALREADY-FOUND list — match by form code or filing identity, ignoring "
+    "wording, cadence and punctuation.\n"
+    "- Scope is FINANCE / TAX only: corporate / income tax returns + their "
+    "balance payment + instalments; indirect tax (VAT / GST / sales-tax) "
+    "returns at EACH distinct cadence (list each return separately, never merge "
+    "them); withholding / payroll tax returns; statutory financial statements / "
+    "audit / accounts filings; transfer-pricing filings; and foreign-investment "
+    "/ FX reporting of a financial character. Do NOT add pure HR, governance or "
+    "legal items.\n"
+    "- Name the OFFICIAL form / return and the authority for the jurisdiction. "
+    "If unsure of the exact code, include it anyway with confidence 'Pending "
+    "verification - official source check' rather than omitting it.\n"
+    "- Be precise to the jurisdiction — never invent a filing that does not "
+    "exist there. If nothing is missing, return an empty list.\n\n"
+)
+
+
+def audit_missing_filings(
+    entity_context: str,
+    found_filings: list[str],
+    *,
+    jurisdiction_hint: Optional[str] = None,
+    model: str = "claude-opus-4-8",
+) -> RuleExtractionResult:
+    """Second-pass completeness check. Given the entity context and the filings
+    the first pass already found, return candidate rows (same schema as
+    extract_rules_from_text) for the well-known statutory finance/tax filings
+    that are MISSING — so the caller creates them through the identical path.
+    Jurisdiction-agnostic, so a new country needs no hand-written recall. Safe
+    best-effort: returns an empty result (never raises) when the model is
+    unavailable or the call fails."""
+    if not is_live():
+        return RuleExtractionResult(rules=[])
+
+    found_block = "\n".join(f"- {f}" for f in found_filings if f) or "(none)"
+    user_content = (
+        GAP_AUDIT_INSTRUCTIONS
+        + (f"Jurisdiction hint: {jurisdiction_hint}\n\n" if jurisdiction_hint else "")
+        + entity_context
+        + "\n\nALREADY-FOUND FILINGS (do NOT repeat these):\n"
+        + found_block
+    )
+
+    client = make_client()
+    try:
+        response = client.messages.parse(
+            model=model,
+            max_tokens=16000,
+            temperature=0,
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": user_content}],
+            output_format=RuleExtractionResult,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("gap-audit pass failed; skipping", exc_info=True)
+        return RuleExtractionResult(rules=[])
+    log_usage(response, model=model, label="gap-audit")
+    return response.parsed_output or RuleExtractionResult(rules=[])
+
+
+# ---------------------------------------------------------------------------
 # Obligation assessment — given a company's profile answers + the discovered
 # obligation list, decide which are mandatory / conditional / not-applicable.
 # ---------------------------------------------------------------------------

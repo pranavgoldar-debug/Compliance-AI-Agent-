@@ -1216,6 +1216,61 @@ _ALL_ACTIVITIES_BLOCK = (
 )
 
 
+def _create_rules_from_candidates(db, entity, candidates, juris, user, existing: set) -> list:
+    """Turn discovery CandidateRule items into staging draft Rule rows on the
+    entity, skipping any whose signature already exists (the `existing` set is
+    updated in place). Shared by the main discovery pass and the gap-audit
+    second pass so both create rules identically."""
+    from compliance_agent.classification import owner_team_engine
+    from compliance_agent.data.authority_urls import lookup as authority_url_lookup
+    from compliance_agent.db import Rule, RuleStatus
+
+    created: list = []
+    for cand in candidates:
+        sigs = _dup_signatures(cand.name, cand.form_name, cand.frequency, juris)
+        if not sigs or sigs & existing:
+            continue
+        existing |= sigs
+        rule = Rule(
+            name=cand.name,
+            jurisdiction_code=(juris or "xx")[:16],
+            category=cand.category,
+            area=cand.area,
+            form_name=cand.form_name,
+            authority=cand.authority,
+            # Official authority website (curated, real URLs) so a reviewer can
+            # verify the filing. Authority-level, not the exact form page.
+            source_url=authority_url_lookup(cand.authority),
+            frequency=cand.frequency,
+            due_date_rule=cand.due_date_rule,
+            payment_rule=cand.payment_rule,
+            applicability=cand.applicability,
+            applicability_note=cand.applicability_note,
+            tax_type=cand.tax_type,
+            plain_description=cand.plain_description,
+            responsible_function=(
+                getattr(cand, "owner_team", None)
+                if getattr(cand, "owner_team", None) in ("Finance", "Compliance", "Legal", "HR")
+                else owner_team_engine(
+                    cand.name, cand.authority, cand.category, cand.area,
+                    getattr(cand, "triggering_activity", None),
+                )
+            ),
+            condition=getattr(cand, "condition", None),
+            triggering_activity=getattr(cand, "triggering_activity", None),
+            anchor=getattr(cand, "anchor", None),
+            confidence=getattr(cand, "confidence", None),
+            # Discovered draft — NOT yet in Review & Assign until a human sends it.
+            sent_to_review=False,
+            status=RuleStatus.staging,
+            created_by_id=user.id,
+        )
+        rule.entities = [entity]
+        db.add(rule)
+        created.append(rule)
+    return created
+
+
 @router.post("/{entity_id}/discover-regulations")
 def discover_entity_regulations(
     entity_id: int,
@@ -1237,6 +1292,7 @@ def discover_entity_regulations(
     from compliance_agent.db import License, Rule, RuleStatus
     from compliance_agent.classification import derive_function, owner_team_engine
     from compliance_agent.rule_extractor import (
+        audit_missing_filings,
         extract_rules_from_text,
         is_live,
         RuleExtractorUnavailable,
@@ -1384,51 +1440,18 @@ def discover_entity_regulations(
     existing: set = set()
     for r in _entity_rules_fresh(db, entity):
         existing |= _dup_signatures(r.name, r.form_name, r.frequency, r.jurisdiction_code)
-    created: list = []
-    already_present = 0  # candidates skipped because they already exist here
-    for cand in result.rules:
-        sigs = _dup_signatures(cand.name, cand.form_name, cand.frequency, juris)
-        if not sigs or sigs & existing:
-            already_present += 1
-            continue
-        existing |= sigs
-        rule = Rule(
-            name=cand.name,
-            jurisdiction_code=(juris or "xx")[:16],
-            category=cand.category,
-            area=cand.area,
-            form_name=cand.form_name,
-            authority=cand.authority,
-            # Official authority website (curated, real URLs) so a reviewer can
-            # verify the filing. Authority-level, not the exact form page.
-            source_url=authority_url_lookup(cand.authority),
-            frequency=cand.frequency,
-            due_date_rule=cand.due_date_rule,
-            payment_rule=cand.payment_rule,
-            applicability=cand.applicability,
-            applicability_note=cand.applicability_note,
-            tax_type=cand.tax_type,
-            plain_description=cand.plain_description,
-            responsible_function=(
-                getattr(cand, "owner_team", None)
-                if getattr(cand, "owner_team", None) in ("Finance", "Compliance", "Legal", "HR")
-                else owner_team_engine(
-                    cand.name, cand.authority, cand.category, cand.area,
-                    getattr(cand, "triggering_activity", None),
-                )
-            ),
-            condition=getattr(cand, "condition", None),
-            triggering_activity=getattr(cand, "triggering_activity", None),
-            anchor=getattr(cand, "anchor", None),
-            confidence=getattr(cand, "confidence", None),
-            # Discovered draft — NOT yet in Review & Assign until a human sends it.
-            sent_to_review=False,
-            status=RuleStatus.staging,
-            created_by_id=user.id,
-        )
-        rule.entities = [entity]
-        db.add(rule)
-        created.append(rule)
+    created = _create_rules_from_candidates(db, entity, result.rules, juris, user, existing)
+    already_present = len(result.rules) - len(created)
+    db.flush()
+    # Gap-audit second pass — jurisdiction-agnostic completeness check that
+    # replaces hand-written per-country recalls: ask the model which well-known
+    # statutory finance/tax filings are MISSING from what the first pass found,
+    # and create those too (through the SAME path). Best-effort — adds nothing on
+    # failure or when the model is unavailable.
+    found = [(r.form_name or r.name) for r in _entity_rules_fresh(db, entity)]
+    gap = audit_missing_filings(context, found, jurisdiction_hint=juris)
+    gap_created = _create_rules_from_candidates(db, entity, gap.rules, juris, user, existing)
+    created = created + gap_created
     db.flush()
     # Collapse VAT/GST returns to a single entry stamped with the answered
     # cadence (a return is filed at one cadence, so Monthly + Quarterly variants
@@ -1457,10 +1480,11 @@ def discover_entity_regulations(
     if cov:
         entity.qualification = {**(entity.qualification or {}), "coverage_notes": cov}
     logger.info(
-        "DISCOVERY entity=%s (%s): model returned %d candidate(s) -> created %d, "
-        "already_present %d, duplicates_removed %d. notes=%r",
+        "DISCOVERY entity=%s (%s): model returned %d candidate(s) -> created %d "
+        "(of which %d from gap-audit), already_present %d, duplicates_removed %d. "
+        "notes=%r",
         entity_id, entity.name, len(result.rules), len(created),
-        already_present, deduped, result.notes,
+        len(gap_created), already_present, deduped, result.notes,
     )
     log_activity(
         db, actor_id=user.id, action="entity.discovered_regulations",
