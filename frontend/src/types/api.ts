@@ -86,6 +86,8 @@ export interface Entity {
   jurisdiction_code: string;
   short_code: string | null;
   registration_number: string | null;
+  tax_id: string | null;
+  address: string | null;
   incorporation_date: string | null;
   fiscal_year_end: string | null;
   nature_of_operation: string | null;

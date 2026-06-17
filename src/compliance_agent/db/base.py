@@ -325,6 +325,9 @@ def _add_missing_columns() -> None:
         # Tracker sync: short codes for each entity (VINC, RTUK, ...)
         "entities": [
             ("short_code", varchar(32)),
+            # GST / Tax registration number + registered address.
+            ("tax_id", varchar(120)),
+            ("address", text_type),
             # Find Regulations qualifying-questions answers (VAT-registered,
             # payroll, revenue band, related-party txns, relevant activity).
             ("finance_profile", "JSON" if is_pg else text_type),

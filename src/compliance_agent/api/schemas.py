@@ -72,6 +72,8 @@ class EntityCreate(BaseModel):
     jurisdiction_code: str
     short_code: Optional[str] = None
     registration_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
     nature_of_operation: Optional[str] = None
@@ -85,6 +87,8 @@ class EntityUpdate(BaseModel):
     jurisdiction_code: Optional[str] = None
     short_code: Optional[str] = None
     registration_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
     nature_of_operation: Optional[str] = None
@@ -103,6 +107,8 @@ class EntityOut(_Base):
     jurisdiction_code: str
     short_code: Optional[str] = None
     registration_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
     nature_of_operation: Optional[str] = None

@@ -1607,6 +1607,8 @@ function EditEntityDialog({
   const [legalType, setLegalType] = useState(entity.legal_type);
   const [jurisdictionCode, setJurisdictionCode] = useState(entity.jurisdiction_code ?? "");
   const [regNumber, setRegNumber] = useState(entity.registration_number ?? "");
+  const [taxId, setTaxId] = useState(entity.tax_id ?? "");
+  const [address, setAddress] = useState(entity.address ?? "");
   const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
   const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
   const [shortCode, setShortCode] = useState(entity.short_code ?? "");
@@ -1621,6 +1623,8 @@ function EditEntityDialog({
       setLegalType(entity.legal_type);
       setJurisdictionCode(entity.jurisdiction_code ?? "");
       setRegNumber(entity.registration_number ?? "");
+      setTaxId(entity.tax_id ?? "");
+      setAddress(entity.address ?? "");
       setFye(entity.fiscal_year_end ?? "");
       setIncDate(entity.incorporation_date ?? "");
       setShortCode(entity.short_code ?? "");
@@ -1646,6 +1650,8 @@ function EditEntityDialog({
         legal_type: legalType.trim(),
         jurisdiction_code: jurisdictionCode || null,
         registration_number: regNumber.trim() || null,
+        tax_id: taxId.trim() || null,
+        address: address.trim() || null,
         fiscal_year_end: fye.trim() || null,
         incorporation_date: incDate || null,
         short_code: shortCode.trim() || null,
@@ -1694,11 +1700,31 @@ function EditEntityDialog({
               />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Registration number</label>
+              <Input
+                value={regNumber}
+                onChange={(e) => setRegNumber(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">GST / Tax No</label>
+              <Input
+                value={taxId}
+                placeholder="GSTIN / VAT / TRN…"
+                onChange={(e) => setTaxId(e.target.value)}
+              />
+            </div>
+          </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium">Registration number</label>
-            <Input
-              value={regNumber}
-              onChange={(e) => setRegNumber(e.target.value)}
+            <label className="text-xs font-medium">Address</label>
+            <textarea
+              value={address}
+              placeholder="Registered office address"
+              onChange={(e) => setAddress(e.target.value)}
+              rows={2}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
             />
           </div>
           <div className="space-y-1">
@@ -2002,6 +2028,10 @@ function OverviewTab({
             <dd>{entity.legal_type || "—"}</dd>
             <dt className="text-muted-foreground">Registration #</dt>
             <dd className="font-mono text-xs">{entity.registration_number || "—"}</dd>
+            <dt className="text-muted-foreground">GST / Tax No</dt>
+            <dd className="font-mono text-xs">{entity.tax_id || "—"}</dd>
+            <dt className="text-muted-foreground">Address</dt>
+            <dd className="whitespace-pre-line">{entity.address || "—"}</dd>
             <dt className="text-muted-foreground">Incorporation date</dt>
             <dd>{fmtDate(entity.incorporation_date)}</dd>
             <dt className="text-muted-foreground">Fiscal year end</dt>

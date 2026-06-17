@@ -175,6 +175,9 @@ class Entity(Base):
     # for cross-referencing rows in the Aspora Global Compliance Tracker.
     short_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
     registration_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # GST / Tax registration number, and registered address — admin-set.
+    tax_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     incorporation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     fiscal_year_end: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "31-Mar", "31-Dec"
     # What the entity actually does — free-text business description, admin-set.
