@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   Bell,
-  Sun,
-  Moon,
   Search,
   LogOut,
   Settings as SettingsIcon,
@@ -37,7 +35,6 @@ import { api } from "@/lib/api";
 import { fmtRelative, userInitials } from "@/lib/format";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/lib/theme";
 import type { Entity, NotificationOut, Obligation, SystemInfo } from "@/types/api";
 
 
@@ -94,25 +91,6 @@ function Breadcrumbs() {
         );
       })}
     </nav>
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// Light/dark theme toggle (default light, persisted in localStorage).
-// ---------------------------------------------------------------------------
-function ThemeToggle() {
-  const { theme, toggle } = useTheme();
-  const dark = theme === "dark";
-  return (
-    <button
-      onClick={toggle}
-      className="p-2 rounded-md hover:bg-secondary text-muted-foreground"
-      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
-      title={dark ? "Light theme" : "Dark theme"}
-    >
-      {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-    </button>
   );
 }
 
@@ -409,7 +387,7 @@ function GlobalSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative flex-1 max-w-md inline-flex items-center gap-2 rounded-lg border border-input bg-secondary/60 px-3 h-9 text-sm text-muted-foreground hover:bg-secondary transition-colors"
+        className="relative flex-1 inline-flex items-center gap-2 rounded-lg border border-input bg-secondary/60 px-3 h-9 text-sm text-muted-foreground hover:bg-secondary transition-colors"
       >
         <Search className="h-4 w-4 shrink-0" />
         <span className="flex-1 text-left truncate min-w-0">Search obligations, entities…</span>
@@ -564,7 +542,7 @@ export function Topbar() {
 
   return (
     <header className="h-14 border-b border-border bg-card flex items-center gap-4 px-6 sticky top-0 z-30">
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 shrink-0">
         <Breadcrumbs />
       </div>
 
@@ -572,7 +550,6 @@ export function Topbar() {
 
       <div className="flex items-center gap-2">
         <ModeBadge />
-        <ThemeToggle />
 
         <Popover open={notifOpen} onOpenChange={setNotifOpen}>
           <PopoverTrigger asChild>

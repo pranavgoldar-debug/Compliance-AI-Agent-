@@ -377,7 +377,7 @@ export function DashboardPage() {
           <p className="text-muted-foreground mt-1 text-sm">{formatToday()}</p>
         </div>
         <div className="hidden lg:block text-right text-xs text-muted-foreground">
-          Aspora Compliance OS<br />
+          Finance Compliance OS<br />
           <span className="text-muted-foreground/70">{user?.role === "admin" ? "Admin workspace" : "Operator workspace"}</span>
         </div>
       </div>
