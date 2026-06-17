@@ -776,37 +776,56 @@ def _is_vat_return(rule) -> bool:
     return is_vat and "return" in blob
 
 
+def _vat_return_key(rule) -> str:
+    """Identity of a VAT/GST return for de-dup grouping. India files SEVERAL
+    distinct GST returns (GSTR-1 outward supplies, GSTR-3B summary, GSTR-9
+    annual…) — these are different filings and must be kept apart, so each
+    GSTR-<n> gets its own key. A non-GST VAT return (one filing, one cadence)
+    shares a single generic key so its Monthly-vs-Quarterly variants still
+    collapse to one."""
+    blob = (str(rule.form_name or "") + " " + str(rule.name or "")).lower()
+    m = re.search(r"gstr[-\s]?0*(\d+[a-z]?)", blob)
+    if m:
+        return "gstr-" + m.group(1)
+    return "vat-return"
+
+
 def _collapse_vat_returns(db, entity) -> int:
-    """A VAT/GST return is filed at ONE cadence, so the model emitting both a
-    Monthly and a Quarterly variant is a duplicate (unlike a genuine
-    quarterly-vs-annual pair of *different* filings, which we keep apart). Keep a
-    single VAT/GST return and stamp its cadence from the entity's answered
-    vat_frequency (via _vat_return_overrides) — so it shows Monthly if they file
-    monthly, Quarterly if quarterly. Removes the redundant obligation-free
-    copies. Returns the number removed."""
+    """Collapse only TRUE duplicates of the SAME VAT/GST return — i.e. the model
+    emitting both a Monthly and a Quarterly variant of one filing. Genuinely
+    different returns (India's GSTR-1 / GSTR-3B / GSTR-9) are grouped by their
+    form identity and kept apart. Within each group keep one copy and stamp the
+    entity's answered cadence onto the periodic SUMMARY return (GSTR-3B / a
+    generic VAT return), never onto an annual return whose cadence must stand.
+    Removes the redundant obligation-free copies. Returns the number removed."""
     from compliance_agent.db import RuleStatus
 
     vat_rules = [r for r in _entity_rules_fresh(db, entity) if _is_vat_return(r)]
     if not vat_rules:
         return 0
-    keep, *rest = sorted(
-        vat_rules,
-        key=lambda r: (
-            1 if r.obligations else 0,
-            1 if r.status == RuleStatus.production else 0,
-            1 if getattr(r, "sent_to_review", False) else 0,
-            -(r.id or 0),
-        ),
-        reverse=True,
-    )
-    # Stamp the kept return with the entity's answered cadence, if they gave one.
+    groups: dict[str, list] = {}
+    for r in vat_rules:
+        groups.setdefault(_vat_return_key(r), []).append(r)
     override = _vat_return_overrides(entity.finance_profile)
-    if override:
-        keep.frequency, keep.due_date_rule = override
     removed = 0
-    for r in rest:
-        _remove_rule_from_entity(db, r, entity)
-        removed += 1
+    for key, rules in groups.items():
+        keep, *rest = sorted(
+            rules,
+            key=lambda r: (
+                1 if r.obligations else 0,
+                1 if r.status == RuleStatus.production else 0,
+                1 if getattr(r, "sent_to_review", False) else 0,
+                -(r.id or 0),
+            ),
+            reverse=True,
+        )
+        # Stamp the answered cadence only on the periodic summary return, so the
+        # distinct GSTR-1 / GSTR-9 keep their own (monthly / annual) cadences.
+        if override and key in ("vat-return", "gstr-3b"):
+            keep.frequency, keep.due_date_rule = override
+        for r in rest:
+            _remove_rule_from_entity(db, r, entity)
+            removed += 1
     return removed
 
 
@@ -1137,7 +1156,8 @@ _IN_RECALL = (
     "- MCA / Registrar of Companies: AOC-4 (annual financial statements); MGT-7 "
     "(annual return); DPT-3 (annual return of deposits); DIR-3 KYC (director KYC, "
     "annual); ADT-1 (auditor appointment, event); MSME-1 (half-yearly dues "
-    "return); BEN-2 (significant beneficial ownership, event); DIR-12, INC-22, "
+    "return); BEN-2 (significant beneficial ownership, event); MGT-14 (filing of "
+    "board / special resolutions & agreements, event); DIR-12, INC-22, "
     "PAS-3 (director / registered-office / allotment change filings, event).\n"
     "- Income Tax (CBDT): ITR-6 (annual return); ADVANCE TAX instalments "
     "(QUARTERLY); self-assessment balance payment; Tax Audit Report "
@@ -1152,7 +1172,8 @@ _IN_RECALL = (
     "always include it for a GST-registered entity. LUT for zero-rated exports "
     "where services are exported.\n"
     "- RBI / FEMA: Foreign Liabilities & Assets (FLA) return (annual); FC-GPR "
-    "(FDI allotment, event); Softex (software/service export, via STPI) where "
+    "(FDI allotment, event); FC-TRS (transfer of shares between a resident and a "
+    "non-resident, event); Softex (software/service export, via STPI) where "
     "the entity exports services; ECB / ODI returns where relevant.\n"
     "- Payroll & social security: EPFO PF Electronic Challan cum Return (ECR, "
     "monthly); ESIC contribution (monthly); state Professional Tax return "
