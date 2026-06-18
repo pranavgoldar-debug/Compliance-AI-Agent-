@@ -206,15 +206,16 @@ export const FINANCE_GATES: FilingGate[] = [
     question: "Does it move money / have customers (sanctions exposure)?",
     options: YES_NO,
   },
-  // ESR is jurisdiction-specific (UAE) — not in the activity sheet, kept on top
-  // of it because it gates the Economic Substance filings.
+  // ESR (Economic Substance) — shown for ALL jurisdictions per product call.
+  // It's primarily a UAE / offshore-centre concept, so for other jurisdictions
+  // it's typically answered "Not applicable"; it gates the Economic Substance
+  // Notification + Report filings.
   {
     id: "conducts_esr_relevant_activity",
     drives: "Economic Substance (ESR) Notification + Report",
     key: "conducts_esr_relevant_activity",
     question: 'Does it conduct a "relevant activity" under ESR?',
     options: YES_NO,
-    jurisdictions: ["uae"],
     followups: [
       {
         key: "esr_income",
