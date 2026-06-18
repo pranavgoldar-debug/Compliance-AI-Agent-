@@ -250,6 +250,14 @@ function ActivityProfileTab({ entity, isAdmin }: { entity: Entity; isAdmin: bool
               <strong>Refresh Regulations</strong> discovers — that list always
               assumes every activity is present.
             </p>
+            <p className="text-xs text-red-600 mt-1 font-medium">
+              ⚠️ Don't change an answer unless the entity's actual activity has
+              changed. It saves immediately and feeds the mandatory-vs-conditional
+              assessment, so filings can flip between mandatory, conditional and
+              not-applicable, and different follow-up questions apply. (It will
+              not delete confirmed filings or change what Refresh Regulations
+              discovers.)
+            </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {gates.map((g) => {

@@ -1769,6 +1769,12 @@ def _schedule_filings_for_license(
             # All functions — match the all-function obligations list above.
         ]
     )
+    # Skip rules detached from every live entity (orphaned by a deleted entity,
+    # or only ever on now-archived ones). Review & Assign already HIDES these,
+    # so without this guard a hidden/orphan rule could still silently spawn an
+    # (unassigned) filing when a licence is added. Keeps the scheduler in step
+    # with the active_entity_only filter used elsewhere.
+    pool = [r for r in pool if any(e.archived_at is None for e in r.entities)]
     today_d = date.today()
     scheduled = skipped = applicable = 0
     for rule in pool:
