@@ -240,7 +240,6 @@ def export_entities(
 ):
     stmt = (
         select(Entity)
-        .options(joinedload(Entity.country_lead))
         .order_by(Entity.name)
     )
     if jurisdiction_code:
@@ -279,10 +278,8 @@ def export_entities(
                 e.registration_number or "",
                 e.incorporation_date.isoformat() if e.incorporation_date else "",
                 e.fiscal_year_end or "",
-                (e.country_lead.full_name if e.country_lead else "") or "",
                 active,
                 overdue,
-                e.archived_at.isoformat() if e.archived_at else "",
             ]
         )
 
@@ -293,10 +290,8 @@ def export_entities(
         "Registration #",
         "Incorporation date",
         "Fiscal year end",
-        "Country lead",
         "Active obligations",
         "Overdue",
-        "Archived at",
     ]
     return _emit(format, "aspora-entities", "Entities", headers, rows)
 
