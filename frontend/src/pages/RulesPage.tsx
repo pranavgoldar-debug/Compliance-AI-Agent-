@@ -92,7 +92,7 @@ function GroupMultiSelect({
         <Button
           variant="outline"
           className={cn(
-            "h-10 rounded-lg font-normal",
+            "h-10 rounded-lg font-normal shrink-0",
             selected.length > 0 && "bg-aspora-50 border-aspora-200 text-aspora-800",
           )}
         >
@@ -371,11 +371,11 @@ export function RulesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="flex flex-nowrap gap-2 items-center overflow-x-auto pb-1">
         <select
           value={entityId}
           onChange={(e) => setEntityId(e.target.value)}
-          className="h-10 min-w-[200px] rounded-lg border border-input bg-background px-3 text-sm"
+          className="h-10 min-w-[180px] shrink-0 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All entities</option>
           {entities.map((e) => (
@@ -387,7 +387,7 @@ export function RulesPage() {
         <select
           value={jurisdictionCode}
           onChange={(e) => setJurisdictionCode(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          className="h-10 shrink-0 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All jurisdictions</option>
           {jurisdictionOptionsInUse(entities.map((e) => e.jurisdiction_code)).map((o) => (
@@ -405,7 +405,7 @@ export function RulesPage() {
         <select
           value={fn}
           onChange={(e) => setFn(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          className="h-10 shrink-0 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All functions</option>
           {functions.map((f) => (
@@ -417,7 +417,7 @@ export function RulesPage() {
         <select
           value={applic}
           onChange={(e) => setApplic(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          className="h-10 shrink-0 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All applicability</option>
           <option value="Mandatory">Mandatory</option>
@@ -427,7 +427,7 @@ export function RulesPage() {
         <select
           value={freq}
           onChange={(e) => setFreq(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          className="h-10 shrink-0 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All frequencies</option>
           {freqOptions.map((f) => (
@@ -439,7 +439,7 @@ export function RulesPage() {
         <select
           value={dateOrder}
           onChange={(e) => setDateOrder(e.target.value as "latest" | "oldest")}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          className="h-10 shrink-0 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="latest">Latest first</option>
           <option value="oldest">Oldest first</option>
