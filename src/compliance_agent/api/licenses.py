@@ -1250,10 +1250,12 @@ def applicable_rules(
             for r in db.execute(
                 select(Rule)
                 .where(
-                    Rule.jurisdiction_code == lic.jurisdiction_code,
+                    Rule.entities.any(Entity.id == lic.entity_id),
                     # Mirror the Review & Assign "Approved" section exactly —
                     # that tab is status == production (no extra approved_at
-                    # gate), so the license list shows the same approved set.
+                    # gate), so the license list shows the same approved set,
+                    # but scoped to THIS licence's entity (not the whole
+                    # jurisdiction) so unrelated entities' filings don't appear.
                     Rule.status == RuleStatus.production,
                 )
                 .order_by(Rule.category, Rule.form_name)
@@ -1750,31 +1752,22 @@ def schedule_rules_for_license(
 def _schedule_filings_for_license(
     db: Session, lic: License, *, mandatory_only: bool
 ) -> tuple[int, int, int]:
-    """Create a compliance obligation for every approved (production) rule in
-    the licence's jurisdiction — the same set shown in the Review & Assign
-    "Approved" section. Skips any that already have an obligation on the
-    computed due date. Returns (scheduled, skipped_existing, applicable). Does
-    NOT commit."""
+    """Create a compliance obligation for every approved (production) rule that
+    belongs to THIS licence's entity. Scoped to the entity (not the whole
+    jurisdiction) so one entity's approved filings never appear on another
+    entity's licence, and a licence whose entity has no approved rules schedules
+    nothing. Skips any that already have an obligation on the computed due date.
+    Returns (scheduled, skipped_existing, applicable). Does NOT commit."""
     pool = _dedupe_rules(
-        [
-            r
-            for r in db.execute(
-                select(Rule).where(
-                    Rule.jurisdiction_code == lic.jurisdiction_code,
-                    Rule.status == RuleStatus.production,
-                )
+        db.execute(
+            select(Rule).where(
+                Rule.entities.any(Entity.id == lic.entity_id),
+                Rule.status == RuleStatus.production,
             )
-            .scalars()
-            .all()
-            # All functions — match the all-function obligations list above.
-        ]
+        )
+        .scalars()
+        .all()
     )
-    # Skip rules detached from every live entity (orphaned by a deleted entity,
-    # or only ever on now-archived ones). Review & Assign already HIDES these,
-    # so without this guard a hidden/orphan rule could still silently spawn an
-    # (unassigned) filing when a licence is added. Keeps the scheduler in step
-    # with the active_entity_only filter used elsewhere.
-    pool = [r for r in pool if any(e.archived_at is None for e in r.entities)]
     today_d = date.today()
     scheduled = skipped = applicable = 0
     for rule in pool:

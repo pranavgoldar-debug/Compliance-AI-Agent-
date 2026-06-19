@@ -1861,7 +1861,7 @@ function RegulationsTable({
         <div className="text-xs text-muted-foreground">
           Across all functions (Finance, Legal, HR, Compliance). These are
           auto-scheduled onto the calendar — every filing approved in Review
-          &amp; Assign for this jurisdiction appears automatically when you open
+          &amp; Assign for this entity appears automatically when you open
           the license.
         </div>
       )}
