@@ -1522,8 +1522,8 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
     <>
     <Card>
       <CardContent className="p-6">
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex items-center gap-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4 min-w-0">
             <div
               className={cn(
                 "h-14 w-14 rounded-xl bg-aspora-100 grid place-items-center text-aspora-700 font-bold shrink-0 leading-none text-center px-1",
@@ -1532,9 +1532,9 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
             >
               {entity.short_code || userInitials(entity.name)}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-semibold tracking-tight">{entity.name}</h1>
+                <h1 className="text-2xl font-semibold tracking-tight break-words">{entity.name}</h1>
                 <JurisdictionBadge code={entity.jurisdiction_code} />
                 <Badge variant="default">{entity.legal_type}</Badge>
               </div>
@@ -1549,7 +1549,7 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -1879,119 +1879,150 @@ function BankDetailsCard({
   fullWidth?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<BankDetails[]>([]);
+  const accounts = bankAccountsOf(entity.bank_details);
+  // Which account is open for editing: 0..n-1 = an existing one, accounts.length
+  // = a new account being added, null = nothing being edited.
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [draft, setDraft] = useState<BankDetails>({});
+
+  const flatten = (a: BankDetails) => {
+    const { accounts: _drop, ...flat } = a;
+    return flat;
+  };
+  const nonEmpty = (a: BankDetails) =>
+    Object.values(flatten(a)).some((v) => v && String(v).trim());
+  const persist = (next: BankDetails[]) =>
+    api.patch<Entity>(`/api/entities/${entity.id}`, {
+      bank_details: { accounts: next.map(flatten).filter(nonEmpty) },
+    });
+
   const save = useMutation({
     mutationFn: () => {
-      const accounts = draft
-        .map((a) => {
-          const { accounts: _drop, ...flat } = a;
-          return flat;
-        })
-        .filter((a) => Object.values(a).some((v) => v && String(v).trim()));
-      return api.patch<Entity>(`/api/entities/${entity.id}`, {
-        bank_details: { accounts },
-      });
+      const next = [...accounts];
+      if (editIdx === accounts.length) next.push(draft);
+      else if (editIdx != null) next[editIdx] = draft;
+      return persist(next);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entity"] });
-      setEditing(false);
+      setEditIdx(null);
     },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
-  const accounts = bankAccountsOf(entity.bank_details);
+  const del = useMutation({
+    mutationFn: (i: number) => persist(accounts.filter((_, idx) => idx !== i)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
-  const startEdit = () => {
-    const existing = bankAccountsOf(entity.bank_details);
-    setDraft(existing.length ? existing : [{}]);
-    setEditing(true);
+  const openEdit = (i: number, acct: BankDetails) => {
+    setDraft({ ...acct });
+    setEditIdx(i);
   };
-  const setField = (i: number, key: BankField, value: string) =>
-    setDraft((rows) => rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
-  const addAccount = () => setDraft((rows) => [...rows, {}]);
-  const removeAccount = (i: number) =>
-    setDraft((rows) => rows.filter((_, idx) => idx !== i));
+  const setField = (key: BankField, value: string) =>
+    setDraft((d) => ({ ...d, [key]: value }));
+
+  // Inline edit form for ONE account (the one at editIdx).
+  const editForm = (label: string) => (
+    <div className="rounded-lg border border-aspora-200 bg-aspora-50/30 p-3 space-y-2">
+      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+      {BANK_FIELDS.map((f) => (
+        <div key={f.key} className="space-y-1">
+          <label className="text-[11px] text-muted-foreground">{f.label}</label>
+          <Input
+            value={draft[f.key] ?? ""}
+            placeholder={f.placeholder}
+            onChange={(e) => setField(f.key, e.target.value)}
+            className="h-9"
+          />
+        </div>
+      ))}
+      <div className="flex justify-end gap-2 pt-1">
+        <Button variant="outline" size="sm" onClick={() => setEditIdx(null)}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          Save
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <Card>
       <CardContent className="p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Bank accounts
-          </h3>
-          {isAdmin && !editing && (
-            <button onClick={startEdit} className="text-xs text-aspora-700 hover:underline">
-              Edit
-            </button>
-          )}
-        </div>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Bank accounts
+        </h3>
 
-        {editing ? (
-          <div className="space-y-3">
-            {draft.map((acct, i) => (
-              <div key={i} className="rounded-lg border border-border p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Account {i + 1}
-                  </span>
-                  <button
-                    onClick={() => removeAccount(i)}
-                    className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
-                    title="Remove account"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                {BANK_FIELDS.map((f) => (
-                  <div key={f.key} className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground">{f.label}</label>
-                    <Input
-                      value={acct[f.key] ?? ""}
-                      placeholder={f.placeholder}
-                      onChange={(e) => setField(i, f.key, e.target.value)}
-                      className="h-9"
-                    />
-                  </div>
-                ))}
-              </div>
-            ))}
-            <Button variant="outline" size="sm" onClick={addAccount}>
-              <Plus className="h-4 w-4" />
-              Add account
-            </Button>
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
-                {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                Save
-              </Button>
-            </div>
-          </div>
-        ) : accounts.length === 0 ? (
+        {accounts.length === 0 && editIdx === null ? (
           <div className="text-sm text-muted-foreground italic">
-            No bank accounts recorded{isAdmin ? " — click Edit to add." : "."}
+            No bank accounts recorded{isAdmin ? " — click Add account." : "."}
           </div>
         ) : (
-          <div className={cn(fullWidth ? "grid sm:grid-cols-2 lg:grid-cols-3 gap-3" : "space-y-3")}>
-            {accounts.map((acct, i) => (
-              <div key={i} className="rounded-lg border border-border p-3">
-                {accounts.length > 1 && (
-                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">
-                    Account {i + 1}
+          <div
+            className={cn(
+              fullWidth ? "grid sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start" : "space-y-3",
+            )}
+          >
+            {accounts.map((acct, i) =>
+              editIdx === i ? (
+                <div key={i}>{editForm(`Account ${i + 1}`)}</div>
+              ) : (
+                <div key={i} className="rounded-lg border border-border p-3">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      {accounts.length > 1 ? `Account ${i + 1}` : ""}
+                    </span>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => openEdit(i, acct)}
+                          className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
+                          title="Edit this account"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Delete this bank account?")) del.mutate(i);
+                          }}
+                          className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                          title="Delete this account"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-                <dl className="grid grid-cols-3 gap-y-1.5 text-sm">
-                  {BANK_FIELDS.filter((f) => acct[f.key]).map((f) => (
-                    <div key={f.key} className="contents">
-                      <dt className="text-muted-foreground col-span-1">{f.label}</dt>
-                      <dd className="col-span-2 font-medium break-all">{acct[f.key]}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            ))}
+                  <dl className="grid grid-cols-3 gap-y-1.5 text-sm">
+                    {BANK_FIELDS.filter((f) => acct[f.key]).map((f) => (
+                      <div key={f.key} className="contents">
+                        <dt className="text-muted-foreground col-span-1">{f.label}</dt>
+                        <dd className="col-span-2 font-medium break-all">{acct[f.key]}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ),
+            )}
+            {editIdx === accounts.length && <div>{editForm("New account")}</div>}
           </div>
+        )}
+
+        {isAdmin && editIdx === null && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDraft({});
+              setEditIdx(accounts.length);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Add account
+          </Button>
         )}
       </CardContent>
     </Card>
