@@ -1667,7 +1667,18 @@ export function LicenseDetailBody({
                       <Skeleton key={i} className="h-14 w-full" />
                     ))}
                   </div>
-                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? null : (
+                ) : !rulesQuery.data || rulesQuery.data.direct.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border bg-secondary/20 px-4 py-6 text-center space-y-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/60 px-2.5 py-1 text-xs text-foreground">
+                      <span className="font-semibold tabular-nums">0</span>
+                      <span>approved</span>
+                    </span>
+                    <p className="text-sm text-muted-foreground">
+                      Nothing approved yet — approve filings in Review &amp; Assign for this
+                      entity and they'll appear here.
+                    </p>
+                  </div>
+                ) : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
                     <div className="flex flex-wrap gap-2 text-xs">
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/60 px-2.5 py-1 text-foreground">
