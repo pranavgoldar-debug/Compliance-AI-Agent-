@@ -1869,7 +1869,15 @@ function bankAccountsOf(bd: BankDetails | null | undefined): BankDetails[] {
   return Object.values(flat).some((v) => v && String(v).trim()) ? [flat] : [];
 }
 
-function BankDetailsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
+function BankDetailsCard({
+  entity,
+  isAdmin,
+  fullWidth,
+}: {
+  entity: Entity;
+  isAdmin: boolean;
+  fullWidth?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<BankDetails[]>([]);
@@ -1965,7 +1973,7 @@ function BankDetailsCard({ entity, isAdmin }: { entity: Entity; isAdmin: boolean
             No bank accounts recorded{isAdmin ? " — click Edit to add." : "."}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className={cn(fullWidth ? "grid sm:grid-cols-2 lg:grid-cols-3 gap-3" : "space-y-3")}>
             {accounts.map((acct, i) => (
               <div key={i} className="rounded-lg border border-border p-3">
                 {accounts.length > 1 && (
@@ -2030,6 +2038,11 @@ function OverviewTab({
     queryFn: () => api.get<ActivityOut[]>(`/api/activities?entity_id=${entity.id}&limit=8`),
     refetchInterval: 60_000,
   });
+
+  // With many accounts the right-hand bank card gets very tall and leaves dead
+  // space beside the shorter Business Information. Past 3, move it to a
+  // full-width card below (laid out in columns) instead.
+  const manyBanks = bankAccountsOf(entity.bank_details).length > 3;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2105,7 +2118,7 @@ function OverviewTab({
           </CardContent>
         </Card>
 
-        <BankDetailsCard entity={entity} isAdmin={isAdmin} />
+        {!manyBanks && <BankDetailsCard entity={entity} isAdmin={isAdmin} />}
 
         <Card>
           <CardContent className="p-6 space-y-3">
@@ -2139,6 +2152,12 @@ function OverviewTab({
           </CardContent>
         </Card>
       </div>
+
+      {manyBanks && (
+        <div className="md:col-span-3">
+          <BankDetailsCard entity={entity} isAdmin={isAdmin} fullWidth />
+        </div>
+      )}
 
       <Card className="md:col-span-3">
         <CardContent className="p-6 space-y-3">
