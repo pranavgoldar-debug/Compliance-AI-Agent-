@@ -1880,10 +1880,13 @@ function BankDetailsCard({
 }) {
   const queryClient = useQueryClient();
   const accounts = bankAccountsOf(entity.bank_details);
-  // Which account is open for editing: 0..n-1 = an existing one, accounts.length
-  // = a new account being added, null = nothing being edited.
+  // editIdx: an EXISTING account being edited on its own (null = none).
   const [editIdx, setEditIdx] = useState<number | null>(null);
-  const [draft, setDraft] = useState<BankDetails>({});
+  const [editDraft, setEditDraft] = useState<BankDetails>({});
+  // newDrafts: bulk-ADD mode — a list of new blank accounts (null = not adding).
+  const [newDrafts, setNewDrafts] = useState<BankDetails[] | null>(null);
+  const adding = newDrafts !== null;
+  const idle = editIdx === null && !adding;
 
   const flatten = (a: BankDetails) => {
     const { accounts: _drop, ...flat } = a;
@@ -1896,16 +1899,23 @@ function BankDetailsCard({
       bank_details: { accounts: next.map(flatten).filter(nonEmpty) },
     });
 
-  const save = useMutation({
+  const saveEdit = useMutation({
     mutationFn: () => {
       const next = [...accounts];
-      if (editIdx === accounts.length) next.push(draft);
-      else if (editIdx != null) next[editIdx] = draft;
+      if (editIdx != null) next[editIdx] = editDraft;
       return persist(next);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entity"] });
       setEditIdx(null);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const saveNew = useMutation({
+    mutationFn: () => persist([...accounts, ...(newDrafts ?? [])]),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity"] });
+      setNewDrafts(null);
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
@@ -1915,39 +1925,19 @@ function BankDetailsCard({
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  const openEdit = (i: number, acct: BankDetails) => {
-    setDraft({ ...acct });
-    setEditIdx(i);
-  };
-  const setField = (key: BankField, value: string) =>
-    setDraft((d) => ({ ...d, [key]: value }));
-
-  // Inline edit form for ONE account (the one at editIdx).
-  const editForm = (label: string) => (
-    <div className="rounded-lg border border-aspora-200 bg-aspora-50/30 p-3 space-y-2">
-      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-      {BANK_FIELDS.map((f) => (
-        <div key={f.key} className="space-y-1">
-          <label className="text-[11px] text-muted-foreground">{f.label}</label>
-          <Input
-            value={draft[f.key] ?? ""}
-            placeholder={f.placeholder}
-            onChange={(e) => setField(f.key, e.target.value)}
-            className="h-9"
-          />
-        </div>
-      ))}
-      <div className="flex justify-end gap-2 pt-1">
-        <Button variant="outline" size="sm" onClick={() => setEditIdx(null)}>
-          Cancel
-        </Button>
-        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
-          {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          Save
-        </Button>
+  // Field inputs bound to an arbitrary draft + onChange.
+  const fields = (val: BankDetails, onChange: (k: BankField, v: string) => void) =>
+    BANK_FIELDS.map((f) => (
+      <div key={f.key} className="space-y-1">
+        <label className="text-[11px] text-muted-foreground">{f.label}</label>
+        <Input
+          value={val[f.key] ?? ""}
+          placeholder={f.placeholder}
+          onChange={(e) => onChange(f.key, e.target.value)}
+          className="h-9"
+        />
       </div>
-    </div>
-  );
+    ));
 
   return (
     <Card>
@@ -1956,7 +1946,7 @@ function BankDetailsCard({
           Bank accounts
         </h3>
 
-        {accounts.length === 0 && editIdx === null ? (
+        {accounts.length === 0 && !adding ? (
           <div className="text-sm text-muted-foreground italic">
             No bank accounts recorded{isAdmin ? " — click Add account." : "."}
           </div>
@@ -1968,17 +1958,34 @@ function BankDetailsCard({
           >
             {accounts.map((acct, i) =>
               editIdx === i ? (
-                <div key={i}>{editForm(`Account ${i + 1}`)}</div>
+                <div
+                  key={i}
+                  className="rounded-lg border border-aspora-200 bg-aspora-50/30 p-3 space-y-2"
+                >
+                  <div className="text-[11px] font-medium text-muted-foreground">
+                    Account {i + 1}
+                  </div>
+                  {fields(editDraft, (k, v) => setEditDraft((d) => ({ ...d, [k]: v })))}
+                  <div className="flex justify-end gap-2 pt-1">
+                    <Button variant="outline" size="sm" onClick={() => setEditIdx(null)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>
+                      {saveEdit.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Save
+                    </Button>
+                  </div>
+                </div>
               ) : (
                 <div key={i} className="rounded-lg border border-border p-3">
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <span className="text-[11px] font-medium text-muted-foreground">
                       {accounts.length > 1 ? `Account ${i + 1}` : ""}
                     </span>
-                    {isAdmin && (
+                    {isAdmin && idle && (
                       <div className="flex items-center gap-1 shrink-0">
                         <button
-                          onClick={() => openEdit(i, acct)}
+                          onClick={() => { setEditDraft({ ...acct }); setEditIdx(i); }}
                           className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
                           title="Edit this account"
                         >
@@ -2007,19 +2014,58 @@ function BankDetailsCard({
                 </div>
               ),
             )}
-            {editIdx === accounts.length && <div>{editForm("New account")}</div>}
           </div>
         )}
 
-        {isAdmin && editIdx === null && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setDraft({});
-              setEditIdx(accounts.length);
-            }}
-          >
+        {/* Bulk add: one or more NEW accounts entered together, then saved. */}
+        {adding && (
+          <div className="space-y-3">
+            {newDrafts!.map((acc, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-aspora-200 bg-aspora-50/30 p-3 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    New account {i + 1}
+                  </span>
+                  {newDrafts!.length > 1 && (
+                    <button
+                      onClick={() => setNewDrafts((d) => (d ?? []).filter((_, idx) => idx !== i))}
+                      className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                {fields(acc, (k, v) =>
+                  setNewDrafts((d) => (d ?? []).map((r, idx) => (idx === i ? { ...r, [k]: v } : r))),
+                )}
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setNewDrafts((d) => [...(d ?? []), {}])}
+            >
+              <Plus className="h-4 w-4" />
+              Add another
+            </Button>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setNewDrafts(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={() => saveNew.mutate()} disabled={saveNew.isPending}>
+                {saveNew.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isAdmin && idle && (
+          <Button variant="outline" size="sm" onClick={() => setNewDrafts([{}])}>
             <Plus className="h-4 w-4" />
             Add account
           </Button>
