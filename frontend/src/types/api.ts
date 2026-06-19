@@ -71,6 +71,7 @@ export interface OwnershipStage {
 export interface BankDetails {
   account_name?: string;
   bank_name?: string;
+  account_type?: string;
   account_number?: string;
   iban?: string;
   swift?: string;

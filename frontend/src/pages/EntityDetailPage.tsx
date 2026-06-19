@@ -1837,6 +1837,7 @@ function fmtStake(role: string | undefined): string | null {
 type BankField =
   | "account_name"
   | "bank_name"
+  | "account_type"
   | "account_number"
   | "iban"
   | "swift"
@@ -1844,6 +1845,7 @@ type BankField =
 const BANK_FIELDS: { key: BankField; label: string; placeholder: string }[] = [
   { key: "account_name", label: "Account name", placeholder: "Account holder" },
   { key: "bank_name", label: "Bank", placeholder: "Bank name" },
+  { key: "account_type", label: "Account type", placeholder: "e.g. Current / Savings" },
   { key: "account_number", label: "Account number", placeholder: "Account no." },
   { key: "iban", label: "IBAN", placeholder: "IBAN" },
   { key: "swift", label: "SWIFT / BIC", placeholder: "SWIFT" },
