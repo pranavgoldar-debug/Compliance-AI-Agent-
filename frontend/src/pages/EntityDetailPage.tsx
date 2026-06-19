@@ -1839,6 +1839,7 @@ type BankField =
   | "bank_name"
   | "account_type"
   | "account_number"
+  | "sort_code"
   | "iban"
   | "swift"
   | "currency";
@@ -1847,6 +1848,7 @@ const BANK_FIELDS: { key: BankField; label: string; placeholder: string }[] = [
   { key: "bank_name", label: "Bank", placeholder: "Bank name" },
   { key: "account_type", label: "Account type", placeholder: "e.g. Current / Savings" },
   { key: "account_number", label: "Account number", placeholder: "Account no." },
+  { key: "sort_code", label: "Sort code / Routing", placeholder: "Sort code / routing no." },
   { key: "iban", label: "IBAN", placeholder: "IBAN" },
   { key: "swift", label: "SWIFT / BIC", placeholder: "SWIFT" },
   { key: "currency", label: "Currency", placeholder: "e.g. GBP" },

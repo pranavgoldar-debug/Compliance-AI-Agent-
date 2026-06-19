@@ -73,6 +73,7 @@ export interface BankDetails {
   bank_name?: string;
   account_type?: string;
   account_number?: string;
+  sort_code?: string;
   iban?: string;
   swift?: string;
   currency?: string;

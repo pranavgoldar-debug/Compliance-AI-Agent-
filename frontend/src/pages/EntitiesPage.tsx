@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   ChevronDown,
+  Landmark,
   LayoutGrid,
   List,
   Loader2,
@@ -35,6 +36,7 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
+import { ImportBankAccountsModal } from "@/components/ImportBankAccountsModal";
 import { fmtRelative, userInitials, jurisdiction } from "@/lib/format";
 import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { CountrySelect } from "@/components/CountrySelect";
@@ -64,6 +66,7 @@ export function EntitiesPage() {
   const [types, setTypes] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
   const [addOpen, setAddOpen] = useState(false);
+  const [bankImportOpen, setBankImportOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["entities"],
@@ -107,6 +110,16 @@ export function EntitiesPage() {
                 jurisdiction_code: jurisdictions.length === 1 ? jurisdictions[0] : undefined,
               }}
             />
+            {isAdmin && (
+              <Button
+                variant="outline"
+                onClick={() => setBankImportOpen(true)}
+                title="Import bank accounts from a spreadsheet (stays out of git)"
+              >
+                <Landmark className="h-4 w-4" />
+                Import bank accounts
+              </Button>
+            )}
             {isAdmin ? (
               <Button onClick={() => setAddOpen(true)}>
                 <Plus className="h-4 w-4" />
@@ -217,6 +230,11 @@ export function EntitiesPage() {
       )}
 
       <AddEntityDialog open={addOpen} onOpenChange={setAddOpen} />
+      <ImportBankAccountsModal
+        open={bankImportOpen}
+        onOpenChange={setBankImportOpen}
+        entities={data ?? []}
+      />
     </div>
   );
 }
