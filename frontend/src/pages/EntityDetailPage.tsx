@@ -1524,8 +1524,13 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
       <CardContent className="p-6">
         <div className="flex items-start justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-xl bg-aspora-100 grid place-items-center text-aspora-700 font-bold text-xl shrink-0">
-              {userInitials(entity.name)}
+            <div
+              className={cn(
+                "h-14 w-14 rounded-xl bg-aspora-100 grid place-items-center text-aspora-700 font-bold shrink-0 leading-none text-center px-1",
+                entity.short_code ? "text-base" : "text-xl",
+              )}
+            >
+              {entity.short_code || userInitials(entity.name)}
             </div>
             <div>
               <div className="flex items-center gap-3 flex-wrap">
