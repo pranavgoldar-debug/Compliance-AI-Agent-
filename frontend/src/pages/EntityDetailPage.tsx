@@ -2116,11 +2116,6 @@ function OverviewTab({
     refetchInterval: 60_000,
   });
 
-  // With many accounts the right-hand bank card gets very tall and leaves dead
-  // space beside the shorter Business Information. Past 3, move it to a
-  // full-width card below (laid out in columns) instead.
-  const manyBanks = bankAccountsOf(entity.bank_details).length > 3;
-
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <Card className="md:col-span-2">
@@ -2195,8 +2190,6 @@ function OverviewTab({
           </CardContent>
         </Card>
 
-        {!manyBanks && <BankDetailsCard entity={entity} isAdmin={isAdmin} />}
-
         <Card>
           <CardContent className="p-6 space-y-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -2230,11 +2223,9 @@ function OverviewTab({
         </Card>
       </div>
 
-      {manyBanks && (
-        <div className="md:col-span-3">
-          <BankDetailsCard entity={entity} isAdmin={isAdmin} fullWidth />
-        </div>
-      )}
+      <div className="md:col-span-3">
+        <BankDetailsCard entity={entity} isAdmin={isAdmin} fullWidth />
+      </div>
 
       <Card className="md:col-span-3">
         <CardContent className="p-6 space-y-3">
