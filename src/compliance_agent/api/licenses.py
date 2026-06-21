@@ -432,7 +432,9 @@ def update_license(
         action="license.updated",
         target_type="license",
         target_id=lic.id,
-        payload=data,
+        # JSON-safe dump (dates -> ISO strings) so the JSON activity payload
+        # doesn't choke on date objects (was a 500 on edit).
+        payload=payload.model_dump(exclude_unset=True, mode="json"),
     )
     db.commit()
     db.refresh(lic)

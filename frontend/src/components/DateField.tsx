@@ -85,7 +85,7 @@ export function DateField({
   };
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex items-center gap-2 min-w-0", className)}>
       <input
         type="text"
         inputMode="numeric"
@@ -94,14 +94,14 @@ export function DateField({
         disabled={disabled}
         value={d}
         onChange={(e) => onDay(e.target.value)}
-        className={cn(fieldCls, "w-14 text-center")}
+        className={cn(fieldCls, "w-14 shrink-0 text-center")}
       />
       <select
         aria-label="Month"
         disabled={disabled}
         value={m}
         onChange={(e) => onMonth(e.target.value)}
-        className={cn(fieldCls, "flex-1 min-w-[6rem] pr-7")}
+        className={cn(fieldCls, "flex-1 min-w-0 pr-7")}
       >
         <option value="">Month</option>
         {MONTHS.map((name, i) => (
@@ -116,7 +116,7 @@ export function DateField({
         disabled={disabled}
         value={y}
         onChange={(e) => onYear(e.target.value)}
-        className={cn(fieldCls, "w-20 text-center")}
+        className={cn(fieldCls, "w-16 shrink-0 text-center")}
       />
     </div>
   );
