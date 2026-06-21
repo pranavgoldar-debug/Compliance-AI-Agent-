@@ -41,7 +41,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
+import { fmtDate, JURISDICTION_OPTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
 import {
   gatesForJurisdiction,
   followupsForJurisdiction,
@@ -175,8 +175,8 @@ export function LicensesPage() {
           className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All jurisdictions</option>
-          {Object.entries(JURISDICTIONS).map(([code, j]) => (
-            <option key={code} value={code}>
+          {JURISDICTION_OPTIONS.map((j) => (
+            <option key={j.code} value={j.code}>
               {j.flag} {j.name}
             </option>
           ))}
@@ -545,8 +545,8 @@ export function UploadDialog({
                 className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
               >
                 <option value="">Pick a jurisdiction…</option>
-                {Object.entries(JURISDICTIONS).map(([code, j]) => (
-                  <option key={code} value={code}>
+                {JURISDICTION_OPTIONS.map((j) => (
+                  <option key={j.code} value={j.code}>
                     {j.flag} {j.name}
                   </option>
                 ))}
@@ -1572,7 +1572,18 @@ export function LicenseDetailBody({
                 <Field label="Name"><Input {...fld("name")} /></Field>
                 <Field label="License type"><Input {...fld("license_type")} /></Field>
                 <Field label="Authority"><Input {...fld("authority")} /></Field>
-                <Field label="Jurisdiction code"><Input {...fld("jurisdiction_code")} placeholder="uae / uk / us…" /></Field>
+                <Field label="Jurisdiction">
+                  <select
+                    value={form.jurisdiction_code}
+                    onChange={(e) => setForm((f) => ({ ...f, jurisdiction_code: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Pick a jurisdiction…</option>
+                    {JURISDICTION_OPTIONS.map((j) => (
+                      <option key={j.code} value={j.code}>{j.flag} {j.name}</option>
+                    ))}
+                  </select>
+                </Field>
                 <Field label="License number"><Input {...fld("license_number")} /></Field>
                 <Field label="Issue date"><DateField value={form.issue_date} onChange={(v) => setForm((f) => ({ ...f, issue_date: v }))} /></Field>
                 <Field label="Expiry date"><DateField value={form.expiry_date} onChange={(v) => setForm((f) => ({ ...f, expiry_date: v }))} /></Field>

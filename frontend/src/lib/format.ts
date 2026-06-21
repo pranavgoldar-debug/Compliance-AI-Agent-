@@ -24,6 +24,15 @@ export const JURISDICTIONS: Record<
   australia: { name: "Australia", flag: "🇦🇺", iso2: "au" },
 };
 
+// Jurisdiction options for dropdowns: alphabetical by name, and excluding the
+// EU bloc (entities file in specific member states, not "European Union").
+// Single source so every jurisdiction picker stays consistent.
+export const JURISDICTION_OPTIONS: { code: string; name: string; flag: string }[] =
+  Object.entries(JURISDICTIONS)
+    .filter(([code]) => code !== "eu")
+    .map(([code, j]) => ({ code, name: j.name, flag: j.flag }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
 // Strip jurisdiction codes/suffixes that AI extraction sometimes appends to
 // filing names ("VAT_CA", "VAT (CA)", "VAT — DIFC") so the UI shows the plain
 // name ("VAT"). Conservative: only removes a trailing country/zone token.
