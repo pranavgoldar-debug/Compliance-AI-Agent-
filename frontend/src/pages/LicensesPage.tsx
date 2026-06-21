@@ -252,7 +252,8 @@ export function LicensesPage() {
               </Button>
             </div>
           )}
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 {isAdmin && (
@@ -341,6 +342,7 @@ export function LicensesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
