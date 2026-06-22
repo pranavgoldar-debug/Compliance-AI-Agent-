@@ -116,6 +116,26 @@ JURISDICTION_CATALOG: dict[str, list[CatalogEntry]] = {
         CatalogEntry("REP027", "Safeguarding Return (REP027)", PERIODIC_FILING,
                      ("safeguarding return", "monthly safeguarding return",
                       "payment services directive safeguarding return")),
+        # Other coded FCA RegData returns — same purpose: collapse the AI's name
+        # variants ("FSA056 …" vs "Capital Adequacy Return") onto one identity.
+        # Aliases are filing-specific (no loose/shared phrases), so genuinely
+        # different returns never merge.
+        CatalogEntry("FSA056", "Capital Adequacy Return (FSA056)", PERIODIC_FILING,
+                     ("capital adequacy return", "capital-adequacy return")),
+        CatalogEntry("FIN073", "Baseline Financial Resilience Report (FIN073)", PERIODIC_FILING,
+                     ("baseline financial resilience report", "financial resilience report")),
+        CatalogEntry("REP-CRIM", "Annual Financial Crime Report (REP-CRIM)", PERIODIC_FILING,
+                     ("annual financial crime report", "financial crime report")),
+        CatalogEntry("REP002", "Annual Controllers Report (REP002)", PERIODIC_FILING,
+                     ("annual controllers report", "controllers report")),
+        CatalogEntry("REP001", "Annual Close Links Report (REP001)", PERIODIC_FILING,
+                     ("annual close links report", "close links report", "close-links report")),
+        CatalogEntry("REP017", "Payments Fraud Report (REP017)", PERIODIC_FILING,
+                     ("payments fraud report", "payment fraud report")),
+        CatalogEntry("REP018", "Operational and Security Risk Report (REP018)", PERIODIC_FILING,
+                     ("operational and security risk report", "operational & security risk report")),
+        CatalogEntry("DISP-1.10B", "Complaints Return (DISP 1.10B)", PERIODIC_FILING,
+                     ("complaints return", "complaints data report")),
     ],
     "india": [
         CatalogEntry("GSTR-3B", "GSTR-3B Summary Return", PERIODIC_FILING,
