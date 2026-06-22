@@ -171,7 +171,8 @@ Go to **Entities → "Add entity"** (admin only). Fill in:
 - **Legal name** and **Jurisdiction** — required.
 - **Legal type**, **Short code**, **Registration number** — optional identifiers.
 - **Nature of operation** — one line on what the company does (e.g. *cross-border remittance & payments*). **The AI reads this to discover regulations**, so write it properly.
-- **Fiscal year end** — *important.* Many deadlines are "X months after financial year-end", so the calendar can't place them without it.
+- **Fiscal year end / ARD** — *important.* The last day of the company's financial year — the date its accounts are made up to (e.g. *31 March*). Most deadlines are *"X months after the year-end"*, so the calendar can't place them without it.
+- **Why "/ ARD"?** **ARD (Accounting Reference Date)** is the UK Companies House name for that **same date** — in this app **ARD = fiscal year end**, one date with two names. (It is *not* the *annual return / confirmation statement*, which is a separate filing.)
 - **Ownership** — optional parent → subsidiary chain.
 
 Save, then open the entity. You'll see five tabs: **Overview · Licences · Primary Activity · Compliance · Documents.**

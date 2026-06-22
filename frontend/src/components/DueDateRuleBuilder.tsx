@@ -195,27 +195,9 @@ export function DueDateRuleBuilder({
                   </select>
                 </div>
                 <div className="pb-1.5 text-sm text-muted-foreground">
-                  After {isAnnual ? (spec.anchor === "ard" ? "the Annual Return Date (ARD)" : "financial year end") : "each period end"}
+                  After {isAnnual ? "financial year end" : "each period end"}
                 </div>
               </div>
-              {isAnnual && (
-                <div>
-                  <FieldLabel>Anchor on</FieldLabel>
-                  <select
-                    className={selectCls}
-                    disabled={disabled}
-                    value={spec.anchor ?? "fye"}
-                    onChange={(e) => patch({ anchor: e.target.value as "fye" | "ard" })}
-                  >
-                    <option value="fye">Fiscal year end</option>
-                    <option value="ard">Annual Return Date (ARD)</option>
-                  </select>
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    ARD uses each entity's Annual Return Date (falls back to its
-                    fiscal year end when they're the same).
-                  </p>
-                </div>
-              )}
               {spec.unit !== "days" && (
                 <label className="flex items-center gap-2 text-sm">
                   <input

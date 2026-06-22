@@ -238,10 +238,6 @@ function AddEntityDialog({
   const [taxId, setTaxId] = useState("");
   const [address, setAddress] = useState("");
   const [fye, setFye] = useState("");
-  // ARD = Annual Return Date. Default: same as fiscal year end (no separate
-  // field). Untick to enter a distinct ARD.
-  const [ardSame, setArdSame] = useState(true);
-  const [ard, setArd] = useState("");
   const [incDate, setIncDate] = useState("");
   const [nature, setNature] = useState("");
   const [ownership, setOwnership] = useState<OwnershipStage[]>([]);
@@ -257,8 +253,6 @@ function AddEntityDialog({
       setTaxId("");
       setAddress("");
       setFye("");
-      setArdSame(true);
-      setArd("");
       setIncDate("");
       setNature("");
       setOwnership([]);
@@ -287,7 +281,7 @@ function AddEntityDialog({
         address: address.trim() || null,
         incorporation_date: incDate || null,
         fiscal_year_end: fye.trim() || null,
-        annual_return_date: ardSame ? null : (ard.trim() || null),
+        annual_return_date: null,
         nature_of_operation: nature.trim() || null,
         ownership: cleaned.length ? cleaned : null,
       });
@@ -372,26 +366,9 @@ function AddEntityDialog({
               <DateField value={incDate} onChange={setIncDate} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Fiscal year end</label>
+              <label className="text-xs font-medium">Fiscal year end / ARD</label>
               <FiscalYearEndPicker value={fye} onChange={setFye} />
             </div>
-          </div>
-          <div className="space-y-1">
-            <label className="flex items-center gap-2 text-xs font-medium">
-              <input
-                type="checkbox"
-                className="accent-aspora-600"
-                checked={ardSame}
-                onChange={(e) => setArdSame(e.target.checked)}
-              />
-              Annual Return Date (ARD) is the same as the fiscal year end
-            </label>
-            {!ardSame && (
-              <div className="pt-1 space-y-1">
-                <label className="text-xs font-medium">Annual Return Date (ARD)</label>
-                <FiscalYearEndPicker value={ard} onChange={setArd} />
-              </div>
-            )}
           </div>
 
           <div className="space-y-2 pt-1">
