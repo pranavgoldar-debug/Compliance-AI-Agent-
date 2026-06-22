@@ -109,6 +109,13 @@ JURISDICTION_CATALOG: dict[str, list[CatalogEntry]] = {
     "uk": [
         CatalogEntry("CT600", "Company Tax Return (CT600)", PERIODIC_FILING,
                      ("company tax return", "corporation tax return")),
+        # Monthly FCA safeguarding return — collapses the AI's name variants
+        # ("REP027 (…)" vs plain "Safeguarding Return") onto one identity. The
+        # annual safeguarding AUDIT report carries no REP027 code and no
+        # "…return" alias, so it stays a separate filing (no false merge).
+        CatalogEntry("REP027", "Safeguarding Return (REP027)", PERIODIC_FILING,
+                     ("safeguarding return", "monthly safeguarding return",
+                      "payment services directive safeguarding return")),
     ],
     "india": [
         CatalogEntry("GSTR-3B", "GSTR-3B Summary Return", PERIODIC_FILING,

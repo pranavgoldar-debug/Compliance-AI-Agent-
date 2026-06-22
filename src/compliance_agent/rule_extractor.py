@@ -725,6 +725,7 @@ Examples that ARE the same obligation (cluster + keep one):
 - "PAYE Real Time Information Full Payment Submission", "PAYE RTI FPS", "Full Payment Submission (FPS)".
 - "FCA Periodic Fee" and "FCA Periodic Fee and Tariff Data Return" (the same fee-tariff obligation) — keep the more complete name.
 - "Annual Safeguarding Audit", "Safeguarding Audit Report", "Independent Safeguarding Audit".
+- "Safeguarding Return (REP027)", "REP027 Safeguarding Return", "REP027 (Payment Services Directive safeguarding return)", "Monthly Safeguarding Return" — the MONTHLY safeguarding return (distinct from the annual audit above); keep the name "Safeguarding Return (REP027)".
 
 Parent/child (put the GENERIC parent in redundant_parents, keep the specifics):
 - Generic "State Money Transmitter License Renewal & Reporting" when specific "Michigan Money Transmitter License Renewal", "Maryland Money Transmitter License Renewal" are present.
