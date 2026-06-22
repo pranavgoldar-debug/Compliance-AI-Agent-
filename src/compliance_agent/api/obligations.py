@@ -43,6 +43,7 @@ from compliance_agent.db import (
     Obligation,
     ObligationStatus,
     Role,
+    Rule,
     User,
     get_session,
 )
@@ -232,6 +233,16 @@ def update_obligation(
     if uncompleted_now:
         obligation.completed_at = None
         obligation.completed_by_id = None
+
+    # Reverse-sync: an assignee set/cleared on the filing flows up to its
+    # rule's owner, so the Review & Assign (Approved) table reflects an
+    # assignment made on the filing itself. Forward sync (rule.owner ->
+    # obligations) already exists; this closes the loop. Set the owner
+    # directly so a multi-entity rule's sibling filings aren't disturbed.
+    if "assignee_id" in data and obligation.assignee_id != prev_assignee_id:
+        rule = obligation.rule or db.get(Rule, obligation.rule_id)
+        if rule is not None and rule.owner_id != obligation.assignee_id:
+            rule.owner_id = obligation.assignee_id
 
     # Notifications: assignee changed → ping the new owner.
     if "assignee_id" in data and obligation.assignee_id and obligation.assignee_id != prev_assignee_id:
@@ -616,6 +627,13 @@ def bulk_update(
         elif new_assignee is not None and o.assignee_id != new_assignee.id:
             o.assignee_id = new_assignee.id
             changed_fields.append("assignee_id")
+
+        # Reverse-sync the (bulk) assignee change up to each rule's owner so
+        # the Review & Assign table matches what's set on the calendar.
+        if "assignee_id" in changed_fields:
+            rule = o.rule or db.get(Rule, o.rule_id)
+            if rule is not None and rule.owner_id != o.assignee_id:
+                rule.owner_id = o.assignee_id
 
         if not changed_fields:
             continue

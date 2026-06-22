@@ -255,6 +255,9 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      // Reverse-sync sets the rule's owner from the filing's assignee, so
+      // refresh Review & Assign (the Approved table reads rule.owner_id).
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
       queryClient.invalidateQueries({ queryKey: ["entities"] });
       queryClient.invalidateQueries({ queryKey: ["sidebar-task-count"] });
