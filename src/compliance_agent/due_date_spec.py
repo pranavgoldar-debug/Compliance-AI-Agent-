@@ -89,6 +89,7 @@ def next_due_dates(
     base: date,
     fy_end: Optional[tuple[int, int]] = None,
     count: int = 3,
+    ard_end: Optional[tuple[int, int]] = None,
 ) -> list[date]:
     """The next ``count`` due dates on/after ``base`` implied by ``spec``.
 
@@ -132,8 +133,13 @@ def next_due_dates(
         offset = int(spec.get("offset") or 0)
         unit = str(spec.get("unit", "months")).strip().lower()
         snap = bool(spec.get("snap_last"))
-        fy_month, _fy_day = fy_end or (12, 31)
-        # Period ends are month-ends stepping back from the fiscal year-end.
+        # Anchor on the entity's Annual Return Date when the spec asks for it
+        # (anchor == "ard"); otherwise the fiscal year-end. ard_end is None when
+        # the entity's ARD equals its FYE, so it correctly falls back to fy_end.
+        anchor = str(spec.get("anchor", "")).strip().lower()
+        anchor_end = ard_end if (anchor == "ard" and ard_end) else fy_end
+        fy_month, _fy_day = anchor_end or (12, 31)
+        # Period ends are month-ends stepping back from the anchor (FYE / ARD).
         origin_pe = _last_day(base.year - 2, fy_month)
         for i in range(steps):
             t = _add_months(_first_of(origin_pe.year, origin_pe.month), i * interval)

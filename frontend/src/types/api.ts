@@ -92,6 +92,8 @@ export interface Entity {
   address: string | null;
   incorporation_date: string | null;
   fiscal_year_end: string | null;
+  /** Annual Return Date ("DD-Mon") when it differs from fiscal_year_end; null = same. */
+  annual_return_date: string | null;
   nature_of_operation: string | null;
   finance_profile: Record<string, string> | null;
   qualification: Qualification | null;

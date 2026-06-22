@@ -1623,6 +1623,9 @@ function EditEntityDialog({
   const [taxId, setTaxId] = useState(entity.tax_id ?? "");
   const [address, setAddress] = useState(entity.address ?? "");
   const [fye, setFye] = useState(entity.fiscal_year_end ?? "");
+  // ARD = Annual Return Date. Same as FYE unless an explicit one is stored.
+  const [ardSame, setArdSame] = useState(!entity.annual_return_date);
+  const [ard, setArd] = useState(entity.annual_return_date ?? "");
   const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
   const [shortCode, setShortCode] = useState(entity.short_code ?? "");
   const [nature, setNature] = useState(entity.nature_of_operation ?? "");
@@ -1639,6 +1642,8 @@ function EditEntityDialog({
       setTaxId(entity.tax_id ?? "");
       setAddress(entity.address ?? "");
       setFye(entity.fiscal_year_end ?? "");
+      setArdSame(!entity.annual_return_date);
+      setArd(entity.annual_return_date ?? "");
       setIncDate(entity.incorporation_date ?? "");
       setShortCode(entity.short_code ?? "");
       setNature(entity.nature_of_operation ?? "");
@@ -1666,6 +1671,7 @@ function EditEntityDialog({
         tax_id: taxId.trim() || null,
         address: address.trim() || null,
         fiscal_year_end: fye.trim() || null,
+        annual_return_date: ardSame ? null : (ard.trim() || null),
         incorporation_date: incDate || null,
         short_code: shortCode.trim() || null,
         nature_of_operation: nature.trim() || null,
@@ -1759,6 +1765,23 @@ function EditEntityDialog({
               <label className="text-xs font-medium">Fiscal year end</label>
               <FiscalYearEndPicker value={fye} onChange={setFye} />
             </div>
+          </div>
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 text-xs font-medium">
+              <input
+                type="checkbox"
+                className="accent-aspora-600"
+                checked={ardSame}
+                onChange={(e) => setArdSame(e.target.checked)}
+              />
+              Annual Return Date (ARD) is the same as the fiscal year end
+            </label>
+            {!ardSame && (
+              <div className="pt-1 space-y-1">
+                <label className="text-xs font-medium">Annual Return Date (ARD)</label>
+                <FiscalYearEndPicker value={ard} onChange={setArd} />
+              </div>
+            )}
           </div>
 
           <div className="space-y-2 pt-1">
@@ -2138,6 +2161,8 @@ function OverviewTab({
             <dd>{fmtDate(entity.incorporation_date)}</dd>
             <dt className="text-muted-foreground">Fiscal year end</dt>
             <dd>{entity.fiscal_year_end || "—"}</dd>
+            <dt className="text-muted-foreground">Annual Return Date</dt>
+            <dd>{entity.annual_return_date || "Same as fiscal year end"}</dd>
             <dt className="text-muted-foreground">Nature of operation</dt>
             <dd>{entity.nature_of_operation || "—"}</dd>
             <dt className="text-muted-foreground">Jurisdiction</dt>

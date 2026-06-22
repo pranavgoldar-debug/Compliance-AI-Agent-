@@ -60,7 +60,7 @@ def ensure_obligations_for_rule(db: Session, rule: Rule) -> None:
         # (entity Compliance list / rule serialization); if a filing truly
         # doesn't apply, the reviewer archives it instead of approving.
         # Deadline anchored on THIS entity's fiscal year-end (per-entity).
-        due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end))
+        due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end), _parse_fy_end(ent.annual_return_date))
 
         # `due` is recomputed from today on every run. For rules whose
         # due_date_rule isn't a parseable deadline, _next_due_for_rule falls
@@ -1008,7 +1008,7 @@ def apply_rule_due_date(
     updated = 0
     next_due = None
     for ent in rule.entities:
-        new_due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end))
+        new_due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end), _parse_fy_end(ent.annual_return_date))
         next_due = new_due
         obs = (
             db.execute(

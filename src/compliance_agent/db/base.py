@@ -328,6 +328,8 @@ def _add_missing_columns() -> None:
             # GST / Tax registration number + registered address.
             ("tax_id", varchar(120)),
             ("address", text_type),
+            # Annual Return Date when it differs from the fiscal year-end.
+            ("annual_return_date", varchar(10)),
             # Find Regulations qualifying-questions answers (VAT-registered,
             # payroll, revenue band, related-party txns, relevant activity).
             ("finance_profile", "JSON" if is_pg else text_type),

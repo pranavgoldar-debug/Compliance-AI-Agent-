@@ -300,6 +300,7 @@ def serialize_entity(entity: Entity, db: Session) -> EntityOut:
         address=entity.address,
         incorporation_date=entity.incorporation_date,
         fiscal_year_end=entity.fiscal_year_end,
+        annual_return_date=entity.annual_return_date,
         nature_of_operation=entity.nature_of_operation,
         finance_profile=entity.finance_profile,
         ownership=entity.ownership,

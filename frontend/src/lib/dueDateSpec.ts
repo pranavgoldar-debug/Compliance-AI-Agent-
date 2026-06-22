@@ -16,6 +16,9 @@ export interface DueDateSpec {
   offset?: number;
   unit?: "months" | "days";
   snap_last?: boolean;
+  // after_period: anchor the period on the entity's fiscal year-end (default)
+  // or its Annual Return Date (ARD). ARD falls back to FYE when they're equal.
+  anchor?: "fye" | "ard";
   date?: string; // YYYY-MM-DD (one-time)
 }
 

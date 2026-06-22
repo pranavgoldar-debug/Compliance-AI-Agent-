@@ -180,6 +180,10 @@ class Entity(Base):
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     incorporation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     fiscal_year_end: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "31-Mar", "31-Dec"
+    # Annual Return Date (e.g. "30-Sep") when it DIFFERS from the fiscal year-end.
+    # NULL means "same as fiscal_year_end" — deadlines anchored on the ARD then
+    # fall back to the FYE. Stored as "DD-Mon" like fiscal_year_end.
+    annual_return_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     # What the entity actually does — free-text business description, admin-set.
     nature_of_operation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

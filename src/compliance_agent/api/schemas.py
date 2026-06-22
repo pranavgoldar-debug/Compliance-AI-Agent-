@@ -76,6 +76,7 @@ class EntityCreate(BaseModel):
     address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    annual_return_date: Optional[str] = None
     nature_of_operation: Optional[str] = None
     ownership: Optional[list] = None
     country_lead_id: Optional[int] = None
@@ -91,6 +92,7 @@ class EntityUpdate(BaseModel):
     address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    annual_return_date: Optional[str] = None
     nature_of_operation: Optional[str] = None
     country_lead_id: Optional[int] = None
     finance_profile: Optional[dict] = None
@@ -111,6 +113,7 @@ class EntityOut(_Base):
     address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    annual_return_date: Optional[str] = None
     nature_of_operation: Optional[str] = None
     finance_profile: Optional[dict] = None
     ownership: Optional[list] = None

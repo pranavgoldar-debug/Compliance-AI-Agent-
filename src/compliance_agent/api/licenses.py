@@ -1277,6 +1277,7 @@ def applicable_rules(
     # rule_id.
     today_d = date.today()
     _fy = _parse_fy_end(getattr(entity, "fiscal_year_end", None))
+    _ard = _parse_fy_end(getattr(entity, "annual_return_date", None))
     next_by_rule: dict[int, Obligation] = {}
     if entity is not None:
         rows = (
@@ -1339,7 +1340,7 @@ def applicable_rules(
             match_reason=match_reason,
             next_obligation_id=ob.id if ob else None,
             next_due_date=ob.due_date if ob else None,
-            projected_due_date=_next_due_for_rule(rule, today_d, _fy),
+            projected_due_date=_next_due_for_rule(rule, today_d, _fy, _ard),
             next_status=ob.status.value if ob and ob.status else None,
             next_assignee=assignee,
             days_to_next=((ob.due_date - today_d).days if ob else None),
@@ -1477,7 +1478,10 @@ def _add_months(d: date, n: int) -> date:
 
 
 def _next_due_for_rule(
-    rule: Rule, base: date, fy_end: Optional[tuple[int, int]] = None
+    rule: Rule,
+    base: date,
+    fy_end: Optional[tuple[int, int]] = None,
+    ard_end: Optional[tuple[int, int]] = None,
 ) -> date:
     """Best-effort REAL statutory deadline, parsed from the rule's
     `due_date_rule` text, instead of a naive "today + interval". Handles the
@@ -1493,7 +1497,7 @@ def _next_due_for_rule(
     if spec:
         from compliance_agent.due_date_spec import next_due_dates
 
-        dates = next_due_dates(spec, base, fy_end, count=1)
+        dates = next_due_dates(spec, base, fy_end, count=1, ard_end=ard_end)
         if dates:
             return dates[0]
 
@@ -1604,7 +1608,8 @@ def schedule_rule_for_license(
         raise HTTPException(status_code=404, detail="Rule not found.")
 
     due = payload.due_date or _next_due_for_rule(
-        rule, date.today(), _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None))
+        rule, date.today(), _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None)),
+        _parse_fy_end(getattr(lic.entity, "annual_return_date", None))
     )
 
     # Refuse a duplicate scheduling (rule + entity + due + department).
@@ -1711,7 +1716,8 @@ def schedule_rules_for_license(
         if rule is None:
             continue
         due = _next_due_for_rule(
-            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None))
+            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None)),
+            _parse_fy_end(getattr(lic.entity, "annual_return_date", None))
         )
         existing = db.execute(
             select(Obligation).where(
@@ -1777,7 +1783,8 @@ def _schedule_filings_for_license(
             continue
         applicable += 1
         due = _next_due_for_rule(
-            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None))
+            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None)),
+            _parse_fy_end(getattr(lic.entity, "annual_return_date", None))
         )
         existing = db.execute(
             select(Obligation).where(
