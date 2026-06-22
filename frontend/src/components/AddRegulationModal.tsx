@@ -141,6 +141,19 @@ function parseDeadlineRule(text: any): any {
 /* ---------------- date math ---------------- */
 const lastDayOf = (y: number, m0: number) => new Date(y, m0 + 1, 0).getDate();
 
+// Parse an entity's "DD-Mon" fiscal year end (e.g. "31-Mar") into the FY-end
+// anchor {month, day}. Falls back to 31 Mar when absent or unparseable.
+function parseFyEnd(fye?: string): { month: number; day: number } {
+  const m = String(fye || "").match(/(\d{1,2})\s*[-/ ]\s*([A-Za-z]{3,})/);
+  if (m) {
+    const idx = MONTHS.findIndex(
+      (mn) => mn.slice(0, 3).toLowerCase() === m[2].slice(0, 3).toLowerCase(),
+    );
+    if (idx >= 0) return { month: idx + 1, day: Math.min(Math.max(+m[1], 1), lastDayOf(2025, idx)) };
+  }
+  return { month: 3, day: 31 };
+}
+
 function addMonths(date: Date, n: number, anchor?: string) {
   const total = date.getMonth() + n;
   const y = date.getFullYear() + Math.floor(total / 12);
@@ -325,11 +338,11 @@ function DueRuleEditor({ frequency, dueRule, onChange, anchorDate, setAnchorDate
 /* ---------------- manual entry tab ---------------- */
 const EMPTY: any = Object.fromEntries(COLUMNS.map((c) => [c.key, ""]));
 
-function ManualTab({ onSubmit, onClose, suggestions = [] }: any) {
-  const [rec, setRec] = useState<any>({ ...EMPTY });
+function ManualTab({ onSubmit, onClose, suggestions = [], entityName = "", countryName = "", fiscalYearEnd = "" }: any) {
+  const [rec, setRec] = useState<any>({ ...EMPTY, entity: entityName, country: countryName });
   const [frequency, setFrequency] = useState("ANNUAL");
   const [dueRule, setDueRule] = useState<any>({ type: "OFFSET_FROM_FY_END", offset_value: 6, offset_unit: "MONTHS", day_anchor: "SAME_DAY" });
-  const [anchorDate, setAnchorDate] = useState<any>({ month: 3, day: 31 });
+  const [anchorDate, setAnchorDate] = useState<any>(parseFyEnd(fiscalYearEnd));
   const [moreOpen, setMoreOpen] = useState(false);
 
   const set = (k: string) => (e: any) => setRec({ ...rec, [k]: e.target.value });
@@ -607,9 +620,14 @@ export interface AddRegulationModalProps {
   onImport: (records: any[]) => void;
   /** Entity jurisdiction code — gates the suggested source links. */
   jurisdiction?: string;
+  /** Pre-fill the manual form from the entity the modal was opened on. */
+  entityName?: string;
+  countryName?: string;
+  /** Entity fiscal year end ("DD-Mon") — seeds the FY-end anchor (default 31 Mar). */
+  fiscalYearEnd?: string;
 }
 
-export function AddRegulationModal({ open, onClose, onSubmit, onImport, jurisdiction }: AddRegulationModalProps) {
+export function AddRegulationModal({ open, onClose, onSubmit, onImport, jurisdiction, entityName, countryName, fiscalYearEnd }: AddRegulationModalProps) {
   const [tab, setTab] = useState("manual");
   if (!open) return null;
   const suggestions = SOURCE_SUGGESTIONS[(jurisdiction || "").toLowerCase()] || [];
@@ -631,7 +649,8 @@ export function AddRegulationModal({ open, onClose, onSubmit, onImport, jurisdic
             <button type="button" style={S.tab(tab === "import")} onClick={() => setTab("import")}>Import</button>
           </div>
           {tab === "manual"
-            ? <ManualTab onSubmit={onSubmit} onClose={onClose} suggestions={suggestions} />
+            ? <ManualTab onSubmit={onSubmit} onClose={onClose} suggestions={suggestions}
+                entityName={entityName} countryName={countryName} fiscalYearEnd={fiscalYearEnd} />
             : <ImportTab onImport={onImport} onClose={onClose} />}
         </div>
       </div>

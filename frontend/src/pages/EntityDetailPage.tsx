@@ -44,7 +44,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, userInitials } from "@/lib/format";
+import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, jurisdiction, userInitials } from "@/lib/format";
 import { CountrySelect } from "@/components/CountrySelect";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
@@ -1490,6 +1490,9 @@ function AddRegulationDialog({
       onSubmit={(rec) => create.mutate([toPayload(rec)])}
       onImport={(recs) => create.mutate(recs.map(toPayload))}
       jurisdiction={entity.jurisdiction_code}
+      entityName={entity.name}
+      countryName={jurisdiction(entity.jurisdiction_code).name}
+      fiscalYearEnd={entity.fiscal_year_end ?? undefined}
     />
   );
 }
