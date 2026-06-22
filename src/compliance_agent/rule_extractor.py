@@ -159,6 +159,26 @@ class CandidateRule(BaseModel):
     authority: str
     frequency: str
     due_date_rule: str
+    due_date_spec: Optional[dict] = Field(
+        default=None,
+        description=(
+            "STRUCTURED schedule so the calendar can compute real dates — the "
+            "free-text due_date_rule alone cannot be scheduled, so always fill "
+            "this when the timing is determinable. Shape: {\"frequency\": "
+            "annual|semiannual|quarterly|monthly|onetime|event|continuous, "
+            "\"basis\": fixed|after_period, \"day\": 1-31, \"month\": 1-12 "
+            "(fixed basis), \"offset\": int, \"unit\": months|days "
+            "(after_period basis, anchored on the entity's fiscal year-end), "
+            "\"date\": YYYY-MM-DD (onetime)}. Examples: 'within 6 months of FY "
+            "end' -> {\"frequency\":\"annual\",\"basis\":\"after_period\","
+            "\"offset\":6,\"unit\":\"months\"}; 'by 31 March each year' -> "
+            "{\"frequency\":\"annual\",\"basis\":\"fixed\",\"day\":31,"
+            "\"month\":3}; a monthly return due on the 20th -> "
+            "{\"frequency\":\"monthly\",\"basis\":\"fixed\",\"day\":20}. Use "
+            "\"event\" or \"continuous\" (no dates) for event-driven / ongoing "
+            "filings. The frequency here MUST match the frequency field above."
+        ),
+    )
     payment_rule: Optional[str] = None
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None

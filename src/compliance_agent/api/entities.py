@@ -1243,6 +1243,9 @@ def _create_rules_from_candidates(db, entity, candidates, juris, user, existing:
             source_url=authority_url_lookup(cand.authority),
             frequency=cand.frequency,
             due_date_rule=cand.due_date_rule,
+            # Structured schedule so the calendar can compute real dates (not just
+            # the free-text due_date_rule). From discovery; refined later if needed.
+            due_date_spec=getattr(cand, "due_date_spec", None),
             payment_rule=cand.payment_rule,
             applicability=cand.applicability,
             applicability_note=cand.applicability_note,
