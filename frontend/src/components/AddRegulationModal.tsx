@@ -379,7 +379,7 @@ function ManualTab({ onSubmit, onClose, suggestions = [], entityName = "", count
         <div style={S.field}><span style={S.label}>Owner team</span>
           <Select value={rec.ownerTeam} onChange={set("ownerTeam")}>
             <option value="">Select…</option>
-            {["Finance", "Compliance", "Legal", "Ops", "HR / Payroll"].map((t) => <option key={t}>{t}</option>)}
+            {["Finance", "Compliance", "Legal", "HR / Payroll"].map((t) => <option key={t}>{t}</option>)}
           </Select>
         </div>
       </div>
