@@ -225,6 +225,19 @@ def canonical_code(
     return None
 
 
+def canonical_name(
+    name: Optional[str],
+    form_name: Optional[str],
+    jurisdiction: Optional[str] = None,
+) -> Optional[str]:
+    """The catalog's single official display name for a filing when it matches a
+    known catalog entry, else None (uncoded filings keep their discovered name).
+    Powers the admin 'Standardize names' action that renames existing rows to one
+    canonical name per filing."""
+    entry = _match_catalog(jurisdiction or "", name or "", form_name or "")
+    return entry.official_name if entry is not None else None
+
+
 # ---------------------------------------------------------------------------
 # Acronym / spelling normalization (jurisdiction-agnostic)
 # ---------------------------------------------------------------------------
@@ -302,6 +315,7 @@ def normalize_phrase(text: Optional[str]) -> str:
 
 __all__ = [
     "canonical_code",
+    "canonical_name",
     "normalize_phrase",
     "CatalogEntry",
     "JURISDICTION_CATALOG",

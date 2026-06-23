@@ -759,6 +759,46 @@ def backfill_source_urls(
     return BackfillUrlsResult(**counts)
 
 
+class NormalizeNamesResult(BaseModel):
+    checked: int
+    renamed: int
+    examples: list[str]
+
+
+@router.post("/normalize-names", response_model=NormalizeNamesResult)
+def normalize_rule_names(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> NormalizeNamesResult:
+    """Admin-only: rename rules that match a known filing in the canonical
+    catalog to that filing's single official name — so a discovered
+    'Safeguarding Return' and an 'REP027 (…)' both become 'Safeguarding Return
+    (REP027)'. Only catalog-matched rules are touched; uncoded filings keep
+    their discovered names. Idempotent."""
+    from compliance_agent.rule_normalize import canonical_name
+
+    rows = db.execute(select(Rule)).scalars().all()
+    renamed = 0
+    examples: list[str] = []
+    for r in rows:
+        canon = canonical_name(r.name, r.form_name, r.jurisdiction_code)
+        if canon and r.name != canon:
+            if len(examples) < 20:
+                examples.append(f"{r.name} → {canon}")
+            r.name = canon
+            renamed += 1
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="rules.normalize_names",
+        target_type="rule",
+        target_id=None,
+        payload={"checked": len(rows), "renamed": renamed},
+    )
+    db.commit()
+    return NormalizeNamesResult(checked=len(rows), renamed=renamed, examples=examples)
+
+
 # ---------------------------------------------------------------------------
 # Snapshots (Phase 7) — history of regulation-change checks
 # ---------------------------------------------------------------------------

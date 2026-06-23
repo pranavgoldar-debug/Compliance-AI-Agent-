@@ -666,6 +666,27 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
+  // Rename existing catalog-matched rules to one canonical name per filing
+  // (e.g. "Safeguarding Return" / "REP027 (…)" -> "Safeguarding Return (REP027)").
+  const normalizeMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ checked: number; renamed: number; examples: string[] }>(
+        "/api/rules/normalize-names",
+      ),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["catalog-rules"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.alert(
+        r.renamed
+          ? `Standardized ${r.renamed} filing name(s):\n\n${r.examples.slice(0, 12).join("\n")}`
+          : "All filing names already match the canonical catalog — nothing to change.",
+      );
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   // Clear ONLY the section you're viewing — delete just this tab's rule ids,
   // so clearing For Action / Approved / Archived never touches the others.
   const sectionLabel =
@@ -749,6 +770,16 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
             >
               {backfillMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Backfill regulator URLs
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={normalizeMutation.isPending}
+              onClick={() => normalizeMutation.mutate()}
+              title="Rename rules that match a known filing to one canonical name (e.g. 'Safeguarding Return' → 'Safeguarding Return (REP027)')"
+            >
+              {normalizeMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Standardize names
             </Button>
             <Button
               variant="outline"
