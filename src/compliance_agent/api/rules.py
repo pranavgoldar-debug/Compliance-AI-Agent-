@@ -19,6 +19,7 @@ from compliance_agent.classification import (
 )
 from compliance_agent.api.schemas import RuleCreate, RuleOut, RuleSnapshotOut, RuleUpdate
 from compliance_agent.auth import get_current_user, require_admin
+from compliance_agent.data.authority_urls import lookup as authority_url_lookup
 from compliance_agent.db import (
     Comment,
     Document,
@@ -213,8 +214,8 @@ def _serialize_rule(rule: Rule, entity_applicability: Optional[str] = None) -> R
             or rule.tax_type
         ),
         status=rule.status,
-        source_url=rule.source_url,
-        submission_url=rule.submission_url,
+        source_url=rule.source_url or authority_url_lookup(rule.authority),
+        submission_url=rule.submission_url or authority_url_lookup(rule.authority),
         source_text=rule.source_text,
         source_changed_at=rule.source_changed_at,
         entity_ids=[e.id for e in rule.entities],

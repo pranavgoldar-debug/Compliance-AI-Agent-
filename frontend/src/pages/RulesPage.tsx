@@ -635,62 +635,6 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  const cleanupMutation = useMutation({
-    mutationFn: () =>
-      api.post<{ deleted_rules: number; deleted_obligations: number }>(
-        "/api/rules/cleanup-recent-production?hours=24&mine_only=true",
-      ),
-    onSuccess: (r) => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      window.alert(
-        `Removed ${r.deleted_rules} draft rule(s) and ${r.deleted_obligations} filing(s) you added in the last 24 hours. Production catalogue rules were left untouched.`,
-      );
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
-
-
-  const backfillMutation = useMutation({
-    mutationFn: () =>
-      api.post<{
-        checked: number;
-        source_filled: number;
-        submission_filled: number;
-        skipped_no_match: number;
-      }>("/api/rules/backfill-source-urls"),
-    onSuccess: (r) => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["obligations"] });
-      window.alert(
-        `Regulator URLs filled.\nChecked: ${r.checked}\nSource links added: ${r.source_filled}\nSubmission links added: ${r.submission_filled}\nNo authority match: ${r.skipped_no_match}`,
-      );
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
-
-  // Rename existing catalog-matched rules to one canonical name per filing
-  // (e.g. "Safeguarding Return" / "REP027 (…)" -> "Safeguarding Return (REP027)").
-  const normalizeMutation = useMutation({
-    mutationFn: () =>
-      api.post<{ checked: number; renamed: number; examples: string[] }>(
-        "/api/rules/normalize-names",
-      ),
-    onSuccess: (r) => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["catalog-rules"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      window.alert(
-        r.renamed
-          ? `Standardized ${r.renamed} filing name(s):\n\n${r.examples.slice(0, 12).join("\n")}`
-          : "All filing names already match the canonical catalog — nothing to change.",
-      );
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
-
   // Clear ONLY the section you're viewing — delete just this tab's rule ids,
   // so clearing For Action / Approved / Archived never touches the others.
   const sectionLabel =
@@ -756,7 +700,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
       {isAdmin && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-secondary/20">
           <span className="text-xs text-muted-foreground">
-            Backfill regulator links, or clean up rules you added recently.
+            Delete filings you no longer need, or remove rules left by deleted entities.
           </span>
           <div className="flex items-center gap-2 shrink-0">
             <Button
@@ -803,44 +747,6 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                 Delete selected ({selected.size})
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={backfillMutation.isPending}
-              onClick={() => backfillMutation.mutate()}
-              title="Fill every rule's regulator 'View regulation' + 'Submit & pay' links from the authority table"
-            >
-              {backfillMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Backfill regulator URLs
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={normalizeMutation.isPending}
-              onClick={() => normalizeMutation.mutate()}
-              title="Rename rules that match a known filing to one canonical name (e.g. 'Safeguarding Return' → 'Safeguarding Return (REP027)')"
-            >
-              {normalizeMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Standardize names
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-              disabled={cleanupMutation.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Delete the DRAFT (staging / AI-extracted) rules you created in the last 24 hours, and any filings scheduled from them? Production catalogue rules are NOT touched. Uploaded documents are kept. This can't be undone.",
-                  )
-                ) {
-                  cleanupMutation.mutate();
-                }
-              }}
-            >
-              {cleanupMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Clean up draft rules I added (last 24h)
-            </Button>
             <Button
               variant="outline"
               size="sm"

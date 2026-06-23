@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from compliance_agent.classification import derive_function, derive_tax_type
+from compliance_agent.data.authority_urls import lookup as authority_url_lookup
 
 from compliance_agent.db import (
     Activity,
@@ -170,8 +171,10 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         ),
         rule_frequency=o.rule.frequency,
         rule_due_date_rule=o.rule.due_date_rule,
-        rule_source_url=o.rule.source_url,
-        rule_submission_url=o.rule.submission_url,
+        # Auto-fill the regulator links from the authority when the rule has none
+        # stored — so the "View regulation" / "Submit & pay" buttons always work.
+        rule_source_url=o.rule.source_url or authority_url_lookup(o.rule.authority),
+        rule_submission_url=o.rule.submission_url or authority_url_lookup(o.rule.authority),
         rule_source_changed_at=o.rule.source_changed_at,
         rule_payment_rule=o.rule.payment_rule,
         entity_name=o.entity.name,
