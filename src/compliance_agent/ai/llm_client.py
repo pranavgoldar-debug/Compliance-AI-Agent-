@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -250,13 +251,52 @@ class _Messages:
         **_extra: Any,
     ):
         oa_messages = _anth_to_openai_messages(system, messages)
-        completion = self._openai.beta.chat.completions.parse(
-            model=resolve_model(model),
-            messages=oa_messages,
+        model_id = resolve_model(model)
+        # OpenAI-native structured output (json_schema). Works for OpenAI models
+        # on OpenRouter, but many providers — incl. Anthropic models via
+        # OpenRouter — don't ENFORCE the schema, so the reply comes back as
+        # prose/markdown and the SDK's strict json.loads raises. Try it; on any
+        # failure, fall back to asking for plain JSON and validating it ourselves.
+        if output_format is not None:
+            try:
+                completion = self._openai.beta.chat.completions.parse(
+                    model=model_id,
+                    messages=oa_messages,
+                    max_tokens=max_tokens,
+                    response_format=output_format,
+                )
+                shaped = _AnthropicShapedParseResponse(completion)
+                if shaped.parsed_output is not None:
+                    return shaped
+            except Exception:
+                pass
+        return self._parse_json_fallback(model_id, oa_messages, max_tokens, output_format)
+
+    def _parse_json_fallback(self, model_id, oa_messages, max_tokens, output_format):
+        """Provider-agnostic structured output: instruct the model to emit a raw
+        JSON object matching the schema, then extract + validate it. Used when
+        json_schema isn't enforced (e.g. Anthropic models via OpenRouter)."""
+        msgs = list(oa_messages)
+        if output_format is not None:
+            schema = json.dumps(output_format.model_json_schema())
+            instruction = (
+                "\n\nReturn ONLY a single JSON object that conforms to this JSON "
+                "Schema. No prose, no explanation, no markdown code fences:\n" + schema
+            )
+            if (
+                msgs
+                and msgs[-1].get("role") == "user"
+                and isinstance(msgs[-1].get("content"), str)
+            ):
+                msgs[-1] = {**msgs[-1], "content": msgs[-1]["content"] + instruction}
+            else:
+                msgs.append({"role": "user", "content": instruction.strip()})
+        completion = self._openai.chat.completions.create(
+            model=model_id,
+            messages=msgs,
             max_tokens=max_tokens,
-            response_format=output_format,
         )
-        return _AnthropicShapedParseResponse(completion)
+        return _ManualParseResponse(completion, output_format)
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +484,40 @@ class _AnthropicShapedParseResponse:
             self.stop_reason = "no_output"
         else:
             self.stop_reason = "end_turn"
+        self.usage = getattr(completion, "usage", None)
+
+
+def _extract_json(text: str) -> str:
+    """Pull the JSON object/array out of a model reply that may be wrapped in
+    markdown fences or padded with prose (the non-strict providers do this)."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[A-Za-z0-9]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t).strip()
+    starts = [i for i in (t.find("{"), t.find("[")) if i != -1]
+    if not starts:
+        return t
+    start = min(starts)
+    end = max(t.rfind("}"), t.rfind("]"))
+    return t[start : end + 1] if end > start else t
+
+
+class _ManualParseResponse:
+    """Like _AnthropicShapedParseResponse, but we parse the model's text reply as
+    JSON ourselves and validate it against the Pydantic output_format — for
+    providers that don't enforce json_schema structured output."""
+
+    def __init__(self, completion, output_format) -> None:
+        choice = completion.choices[0]
+        raw = getattr(choice.message, "content", None) or ""
+        self.parsed_output = None
+        self.stop_reason = "no_output"
+        if output_format is not None and raw.strip():
+            try:
+                self.parsed_output = output_format.model_validate_json(_extract_json(raw))
+                self.stop_reason = "end_turn"
+            except Exception:
+                self.stop_reason = "no_output"
         self.usage = getattr(completion, "usage", None)
 
 
