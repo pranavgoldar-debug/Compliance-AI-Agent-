@@ -601,6 +601,10 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
   const openFiling = useOpenFiling();
   const [checking, setChecking] = useState<Rule | null>(null);
   const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
+  // Row selection for per-row bulk-delete (admin) — reset on section change.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  useEffect(() => setSelected(new Set()), [tab]);
+  const pageRules = rules.slice(0, 200);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -707,6 +711,23 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
+  // Delete only the rows the admin ticked (per-row checkboxes) — same
+  // bulk-delete endpoint, just the selected ids.
+  const deleteSelected = useMutation({
+    mutationFn: (ids: number[]) =>
+      api.post<{ deleted: number }>("/api/rules/bulk-delete", { ids }),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-count"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setSelected(new Set());
+      window.alert(`Deleted ${r.deleted} filing(s).`);
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   // Permanently remove rules orphaned by a deleted entity (no live entity left).
   // The active sections already HIDE these; this clears them from the DB too.
   // Archived rules are left alone.
@@ -761,6 +782,27 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
               )}
               Clear {sectionLabel}
             </Button>
+            {selected.size > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={deleteSelected.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Permanently delete the ${selected.size} selected filing(s) and their calendar obligations? This can't be undone.`,
+                    )
+                  ) {
+                    deleteSelected.mutate([...selected]);
+                  }
+                }}
+                title="Delete only the rows you've ticked"
+              >
+                {deleteSelected.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Delete selected ({selected.size})
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -825,6 +867,19 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
         <table className="w-full text-sm min-w-[1200px]">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
+              {isAdmin && (
+                <th className="px-3 py-2.5 w-8">
+                  <input
+                    type="checkbox"
+                    className="accent-aspora-600"
+                    checked={pageRules.length > 0 && pageRules.every((r) => selected.has(r.id))}
+                    onChange={(e) =>
+                      setSelected(e.target.checked ? new Set(pageRules.map((r) => r.id)) : new Set())
+                    }
+                    title="Select all"
+                  />
+                </th>
+              )}
               <th className="px-3 py-2.5 text-left font-medium">Jurisdiction</th>
               <th className="px-3 py-2.5 text-left font-medium">Form / Report</th>
               <th className="px-3 py-2.5 text-left font-medium">Authority</th>
@@ -842,8 +897,25 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rules.slice(0, 200).map((r) => (
+            {pageRules.map((r) => (
               <tr key={r.id} className="hover:bg-secondary/30">
+                {isAdmin && (
+                  <td className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      className="accent-aspora-600"
+                      checked={selected.has(r.id)}
+                      onChange={(e) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(r.id);
+                          else next.delete(r.id);
+                          return next;
+                        })
+                      }
+                    />
+                  </td>
+                )}
                 <td className="px-3 py-2.5">
                   <JurisdictionBadge code={r.jurisdiction_code} />
                 </td>
