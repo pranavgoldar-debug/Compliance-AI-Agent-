@@ -315,16 +315,18 @@ export function TasksPage({
       );
     return { ...base, statuses: seeded };
   })();
-  // ?scope=unassigned deep-links straight to the Unassigned tab (dashboard
-  // Unassigned tile). Otherwise, when the user arrives with a URL pre-filter
-  // (status or awaiting-payment), default scope to "all" so they see every
-  // match, not just their own assignments.
+  // ?scope=<tab> deep-links straight to that tab — the dashboard's Unassigned
+  // tile uses ?scope=unassigned, the "needs attention" banner uses ?scope=all.
+  // Otherwise, when the user arrives with a URL pre-filter (status or
+  // awaiting-payment), default scope to "all" so they see every match, not just
+  // their own assignments.
   const initialScope: Scope = (() => {
-    if (
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("scope") === "unassigned"
-    )
-      return "unassigned";
+    const s =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("scope")
+        : null;
+    if (s === "assigned" || s === "unassigned" || s === "completed" || s === "all")
+      return s;
     return initialFilters.statuses.length > 0 || initialAwaitingPayment ? "all" : "assigned";
   })();
   const [scope, setScope] = useState<Scope>(initialScope);

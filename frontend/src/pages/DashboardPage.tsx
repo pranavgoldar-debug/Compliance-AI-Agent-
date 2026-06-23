@@ -141,7 +141,7 @@ function AlertBanners({ overdue, inAlert }: { overdue: number; inAlert: number }
             </div>
           </div>
           <Link
-            to="/tasks"
+            to="/tasks?scope=all"
             className="text-sm font-medium text-amber-700 hover:underline whitespace-nowrap"
           >
             View →
