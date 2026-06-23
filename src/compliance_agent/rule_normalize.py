@@ -113,7 +113,7 @@ JURISDICTION_CATALOG: dict[str, list[CatalogEntry]] = {
         # ("REP027 (…)" vs plain "Safeguarding Return") onto one identity. The
         # annual safeguarding AUDIT report carries no REP027 code and no
         # "…return" alias, so it stays a separate filing (no false merge).
-        CatalogEntry("REP027", "Safeguarding Return (REP027)", PERIODIC_FILING,
+        CatalogEntry("REP027", "REP027 (Payment Services Directive safeguarding return)", PERIODIC_FILING,
                      ("safeguarding return", "monthly safeguarding return",
                       "payment services directive safeguarding return")),
         # Other coded FCA RegData returns — same purpose: collapse the AI's name
