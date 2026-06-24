@@ -175,45 +175,29 @@ or document by name. No fluff.
 
 
 def _call_claude(prompt: str) -> SecondOpinion:
-    from compliance_agent.ai.llm_client import make_client
+    # Structured output via the shared parse path (same as discovery): on
+    # OpenRouter this falls back to plain-JSON extraction + Pydantic validation,
+    # so it works whether the backend is Anthropic-direct or OpenRouter. The
+    # previous Anthropic-native tool-use call 500'd on OpenRouter-only setups.
+    from compliance_agent.ai.llm_client import log_usage, make_client
 
     client = make_client()
-    tool = {
-        "name": "record_opinion",
-        "description": "Record the structured second-opinion verdict.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "verdict": {
-                    "type": "string",
-                    "enum": ["approve", "needs_more_info", "reject"],
-                },
-                "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-                "reasoning": {"type": "string"},
-                "suggested_next_steps": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "risk_flags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": ["verdict", "reasoning"],
-        },
-    }
-
-    response = client.messages.create(
+    response = client.messages.parse(
         model="claude-opus-4-8",
         max_tokens=1500,
-        system=_SYSTEM,
-        tools=[tool],
-        tool_choice={"type": "tool", "name": "record_opinion"},
+        temperature=0,
+        system=[
+            {
+                "type": "text",
+                "text": _SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
         messages=[{"role": "user", "content": prompt}],
+        output_format=SecondOpinion,
     )
-
-    for block in response.content:
-        if getattr(block, "type", None) == "tool_use" and block.name == "record_opinion":
-            return SecondOpinion(**(block.input or {}))
-
-    raise RuntimeError("Claude didn't call record_opinion.")
+    log_usage(response, model="claude-opus-4-8", label="second-opinion")
+    opinion = response.parsed_output
+    if opinion is None:
+        raise RuntimeError("Second opinion model returned no structured output.")
+    return opinion
