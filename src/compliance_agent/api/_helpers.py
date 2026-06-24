@@ -305,6 +305,7 @@ def serialize_entity(entity: Entity, db: Session) -> EntityOut:
         fiscal_year_end=entity.fiscal_year_end,
         annual_return_date=entity.annual_return_date,
         nature_of_operation=entity.nature_of_operation,
+        status=getattr(entity, "status", None) or "not_started",
         finance_profile=entity.finance_profile,
         ownership=entity.ownership,
         bank_details=entity.bank_details,

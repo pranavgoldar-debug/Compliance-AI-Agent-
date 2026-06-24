@@ -81,11 +81,15 @@ export interface BankDetails {
   accounts?: BankDetails[];
 }
 
+export type EntityStatus = "not_started" | "in_progress" | "live";
+
 export interface Entity {
   id: number;
   name: string;
   legal_type: string;
   jurisdiction_code: string;
+  /** Onboarding / operational status, set at registration and editable later. */
+  status: EntityStatus;
   short_code: string | null;
   registration_number: string | null;
   tax_id: string | null;

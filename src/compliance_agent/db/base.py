@@ -274,6 +274,10 @@ def _add_missing_columns() -> None:
     bool_default_true = "BOOLEAN NOT NULL DEFAULT 1" if not is_pg else "BOOLEAN NOT NULL DEFAULT TRUE"
 
     table_additions: dict[str, list[tuple[str, str]]] = {
+        # Entity onboarding / operational status (not_started / in_progress / live).
+        "entities": [
+            ("status", f"{varchar(16)} NOT NULL DEFAULT 'not_started'"),
+        ],
         # Phase 5: effort bands on obligations.
         # PR-B (department split): every obligation owns by a department.
         "obligations": [

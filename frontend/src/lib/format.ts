@@ -254,7 +254,34 @@ const FIELD_LABELS: Record<string, string> = {
   ownership: "Ownership",
   finance_profile: "Primary activity",
   document_folders: "Document folders",
+  status: "Status",
 };
+
+// Entity onboarding/operational status → display label + badge variant.
+// not_started → slate · in_progress → blue · live → green.
+export function entityStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "in_progress":
+      return "In Progress";
+    case "live":
+      return "Live";
+    default:
+      return "Not Started";
+  }
+}
+
+export function entityStatusVariant(
+  status: string | null | undefined,
+): "neutral" | "progress" | "completed" {
+  switch (status) {
+    case "in_progress":
+      return "progress";
+    case "live":
+      return "completed";
+    default:
+      return "neutral";
+  }
+}
 
 export function fieldLabel(field: string): string {
   return (
