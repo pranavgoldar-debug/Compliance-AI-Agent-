@@ -380,21 +380,38 @@ def _add_missing_columns() -> None:
                         )
                     )
 
-    with engine.begin() as conn:
-        for table, additions in table_additions.items():
-            if table not in tables:
+    # Add each missing column in ITS OWN transaction. Previously every column
+    # add shared ONE transaction with the data-fixups below, so any later
+    # statement failing rolled back the column adds too — a failing fixup could
+    # silently revert e.g. entities.status, leaving the model expecting a column
+    # the database never got and breaking every entity query. Per-column commits
+    # keep the adds independent and self-healing on the next boot.
+    for table, additions in table_additions.items():
+        if table not in tables:
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table)}
+        for col_name, col_def in additions:
+            if col_name in existing:
                 continue
-            existing = {col["name"] for col in inspector.get_columns(table)}
-            for col_name, col_def in additions:
-                if col_name in existing:
-                    continue
-                # Postgres supports IF NOT EXISTS; SQLite doesn't but the
-                # existing-cols check above already gates us.
-                guard = "IF NOT EXISTS " if is_pg else ""
-                conn.execute(
-                    text(f"ALTER TABLE {table} ADD COLUMN {guard}{col_name} {col_def}")
+            # Postgres supports IF NOT EXISTS; SQLite doesn't but the
+            # existing-cols check above already gates us.
+            guard = "IF NOT EXISTS " if is_pg else ""
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {guard}{col_name} {col_def}")
+                    )
+            except Exception:
+                logger.warning(
+                    "add_missing_columns: could not add %s.%s",
+                    table,
+                    col_name,
+                    exc_info=True,
                 )
 
+    # Best-effort data fix-ups run in their OWN transaction so a failure here
+    # can never roll back the column adds above (which already committed).
+    with engine.begin() as conn:
         # One-shot data fix: an earlier release shipped with DEFAULT '4w'
         # (the enum VALUE), but SAEnum reads the NAME. Migrate legacy rows
         # so SAEnum stops choking with `'4w' is not among the defined enum
