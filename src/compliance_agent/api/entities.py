@@ -1188,6 +1188,63 @@ _IN_RECALL = (
 )
 
 
+# Jurisdiction recall for the United States. The model already recalls the common
+# FinCEN / IRS / state filings; this block pins the MSB / money-transmitter items
+# that under-recall — Form 107 AMENDMENT as DISTINCT from the biennial renewal,
+# the NMLS MSBCR + UAAR call reports, the NMLS record-amendment notice, and
+# (critically) a SEPARATE per-state MTL renewal for EACH state in the licence text
+# rather than one generic renewal. Recall guidance only — no seeded rows; the
+# states are READ FROM the entity's own licences, never hardcoded here.
+_US_RECALL = (
+    "US RECALL (jurisdiction = US) — for a money-services business / money "
+    "transmitter, name the ACTUAL authority + form for each, as its OWN item, "
+    "where it applies:\n"
+    "- FinCEN MSB registration — list TWO DISTINCT items, do NOT collapse them: "
+    "(1) the biennial MSB Registration RENEWAL (FinCEN Form 107 / RMSB, every "
+    "2 years by Dec 31); and (2) the MSB Registration AMENDMENT / CORRECTION "
+    "(also Form 107) — an EVENT-BASED filing triggered by a qualifying change to "
+    "the registration information (legal name / DBA, address, ownership or "
+    "control), not by time.\n"
+    "- FinCEN BSA/AML: the written AML compliance programme (continuous); "
+    "Suspicious Activity Report (Form 111) and Currency Transaction Report "
+    "(Form 112) (event-based); funds-transfer / Travel Rule recordkeeping "
+    "(continuous); FBAR (Form 114, annual) where foreign accounts apply.\n"
+    "- OFAC (U.S. Treasury): sanctions screening and the blocked / rejected "
+    "transaction report (annual report of blocked property plus event-based "
+    "reports).\n"
+    "- NMLS / state regulators (via NMLS / CSBS) — include each as its OWN item: "
+    "the MSB Call Report (MSBCR, QUARTERLY, within 45 days of quarter end); the "
+    "Uniform Authorized Agent Report (UAAR, QUARTERLY via NMLS); and the NMLS "
+    "record AMENDMENT / material-change notification (event-based — legal "
+    "name/DBA, principal address / branches, control-person changes).\n"
+    "- State Money Transmitter Licence RENEWAL — for EACH U.S. state in which the "
+    "entity holds an MTL (read the states from the LICENSES HELD text below), "
+    "emit a SEPARATE annual renewal item naming THAT state and its actual "
+    "financial regulator (e.g. the state's Dept of Insurance & Financial "
+    "Services / Office of Financial Regulation / Division of Finance / Securities "
+    "Commission / Office of the State Bank Commissioner); do NOT collapse "
+    "multiple states into one generic 'state MTL renewal'. Also, each as its own "
+    "item where applicable: change-of-control / acquisition notice per state "
+    "(event-based); audited annual financial statements to the state regulators "
+    "(via NMLS); the permissible-investments / safeguarding report; and "
+    "surety-bond maintenance.\n"
+    "- State corporate filings — for EACH state of registration: the state "
+    "annual report / registered-agent filing and any state franchise tax "
+    "(e.g. Delaware LLC franchise tax; Maryland SDAT annual report + business "
+    "personal-property return); name the state for each.\n"
+    "- Corporate Transparency Act (CTA) Beneficial Ownership Information (BOI) "
+    "report to FinCEN — TRACK its applicability. Under FinCEN's interim final "
+    "rule (eff. 26 Mar 2025) U.S.-formed entities are currently EXEMPT and only "
+    "foreign reporting companies must file; so for a U.S.-formed entity include "
+    "it as a TRACKED item noting the current exemption (the rule is interim and "
+    "could change on finalisation) rather than as an active recurring filing.\n"
+    "These U.S. MSB / money-transmitter filings are well-established — INCLUDE "
+    "each that applies even if unsure of the exact form or per-state deadline, "
+    "marking confidence 'Pending verification - official source check' rather "
+    "than omitting it.\n\n"
+)
+
+
 def _emi_signal(nature: str, licenses) -> bool:
     """True when the entity looks like an e-money / payment institution —
     drives whether the EMI prudential-returns recall is injected. Reads the
@@ -1420,6 +1477,7 @@ def discover_entity_regulations(
         + (_EMI_RECALL if _emi_signal(entity.nature_of_operation, licenses) else "")
         + (_LT_RECALL if (juris or "").strip().lower() == "lithuania" else "")
         + (_IN_RECALL if (juris or "").strip().lower() == "india" else "")
+        + (_US_RECALL if (juris or "").strip().lower() == "us" else "")
         + f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
