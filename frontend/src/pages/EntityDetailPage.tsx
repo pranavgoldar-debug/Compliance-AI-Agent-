@@ -44,7 +44,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, jurisdiction, userInitials } from "@/lib/format";
+import { deriveFunction, fieldLabel, fmtDate, fmtRelative, fmtShortDate, jurisdiction, userInitials } from "@/lib/format";
 import { CountrySelect } from "@/components/CountrySelect";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
@@ -2099,6 +2099,32 @@ function humaniseAction(action: string): string {
   return map[action] || action.replace(/[._]/g, " ");
 }
 
+// Compact one-line summary of what an entity.updated event changed, for the
+// activity feed — "Fiscal year end / ARD: 31 Dec → 31 Mar · Address updated".
+// Sensitive fields (recorded without values by the backend) read "… updated".
+function summariseEntityChanges(payload: Record<string, unknown> | null): string {
+  if (!payload) return "";
+  const changes = payload.changes as
+    | Record<string, { from?: unknown; to?: unknown; updated?: boolean }>
+    | undefined;
+  if (changes && typeof changes === "object") {
+    const entries = Object.entries(changes);
+    const fmt = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+    const parts = entries.slice(0, 3).map(([field, c]) =>
+      c && typeof c === "object" && ("from" in c || "to" in c)
+        ? `${fieldLabel(field)}: ${fmt(c.from)} → ${fmt(c.to)}`
+        : `${fieldLabel(field)} updated`,
+    );
+    const extra = entries.length - parts.length;
+    return parts.join(" · ") + (extra > 0 ? ` · +${extra} more` : "");
+  }
+  const fields = payload.changed_fields as string[] | undefined;
+  if (Array.isArray(fields) && fields.length > 0) {
+    return fields.slice(0, 3).map(fieldLabel).join(" · ");
+  }
+  return "";
+}
+
 function OverviewTab({
   entity,
   obligations,
@@ -2263,6 +2289,12 @@ function OverviewTab({
                         <span className="font-medium">{a.target_label}</span>
                       </>
                     )}
+                    {a.action === "entity.updated" &&
+                      summariseEntityChanges(a.payload) && (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {summariseEntityChanges(a.payload)}
+                        </div>
+                      )}
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {fmtRelative(a.created_at)}

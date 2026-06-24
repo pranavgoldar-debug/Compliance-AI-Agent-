@@ -75,6 +75,54 @@ def create_entity(
     return serialize_entity(entity, db)
 
 
+# Entity fields whose VALUES must never be written into the activity feed —
+# sensitive financial / structured data. They are still recorded as "changed",
+# just without their before/after values (no bank details / ownership / primary
+# activity answers leaking into a broadly-visible log).
+_ENTITY_SENSITIVE_FIELDS = {
+    "bank_details",
+    "ownership",
+    "finance_profile",
+    "document_folders",
+}
+
+
+def _audit_scalar(value):
+    """JSON-safe, length-bounded rendering of a scalar field value for the audit
+    payload. Returns None for complex values (dict/list) so the caller omits the
+    value and records the field as merely 'changed'."""
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    text = str(value)
+    return text if len(text) <= 80 else text[:79] + "…"
+
+
+def _entity_change_log(before: dict, entity, fields: dict) -> Optional[dict]:
+    """Diff an entity update for the activity payload. Returns
+    {"changed_fields": [...], "changes": {field: {"from","to"} | {"updated": True}}}
+    or None when nothing actually changed. Sensitive/complex fields are flagged
+    changed without exposing their values."""
+    changed_fields: list[str] = []
+    changes: dict = {}
+    for field in fields:
+        old = before.get(field)
+        new = getattr(entity, field, None)
+        if old == new:
+            continue
+        changed_fields.append(field)
+        if (
+            field in _ENTITY_SENSITIVE_FIELDS
+            or isinstance(new, (dict, list))
+            or isinstance(old, (dict, list))
+        ):
+            changes[field] = {"updated": True}
+        else:
+            changes[field] = {"from": _audit_scalar(old), "to": _audit_scalar(new)}
+    if not changed_fields:
+        return None
+    return {"changed_fields": changed_fields, "changes": changes}
+
+
 @router.patch("/{entity_id}", response_model=EntityOut)
 def update_entity(
     entity_id: int,
@@ -94,6 +142,8 @@ def update_entity(
         fields["fiscal_year_end"] = canonical_fye(fields["fiscal_year_end"]) or str(
             fields["fiscal_year_end"]
         )[:10]
+    # Snapshot pre-edit values so the activity log can record what changed.
+    _before = {f: getattr(entity, f, None) for f in fields}
     for field, value in fields.items():
         setattr(entity, field, value)
     # When the Primary Activity answers change, reconcile this entity's calendar:
@@ -117,7 +167,12 @@ def update_entity(
             else:
                 ensure_obligations_for_rule(db, rule)
     log_activity(
-        db, actor_id=user.id, action="entity.updated", target_type="entity", target_id=entity.id
+        db,
+        actor_id=user.id,
+        action="entity.updated",
+        target_type="entity",
+        target_id=entity.id,
+        payload=_entity_change_log(_before, entity, fields),
     )
     db.commit()
     db.refresh(entity)
