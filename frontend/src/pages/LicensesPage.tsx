@@ -55,6 +55,46 @@ import type {
   LicenseRuleHit,
 } from "@/types/api";
 
+// Download a license's file through the authenticated API (cookie session) and
+// save it client-side. A plain <a href="/api/licenses/:id/download"> does a
+// top-level browser navigation, so when the response isn't a direct attachment
+// — an auth edge, a file missing from the server's (ephemeral) disk, or a
+// cross-origin API in production — the browser lands the user ON that URL
+// instead of downloading. Fetching the bytes here keeps us on the page and
+// surfaces any error as a message rather than navigating away.
+async function downloadLicenseFile(id: number, filename: string | null) {
+  try {
+    const res = await fetch(`/api/licenses/${id}/download`, {
+      credentials: "include",
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body && typeof body === "object" && "detail" in body) {
+          msg = String((body as { detail: unknown }).detail);
+        }
+      } catch {
+        // non-JSON error body — keep the status message
+      }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename ?? `license-${id}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    window.alert(
+      `Couldn't download the file: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+}
+
 function expiryBadgeVariant(
   s: LicenseExpiryStatus,
 ): "completed" | "alert" | "overdue" | "neutral" {
@@ -329,7 +369,11 @@ export function LicensesPage() {
                     {lic.has_file && (
                       <a
                         href={`/api/licenses/${lic.id}/download`}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          downloadLicenseFile(lic.id, lic.filename);
+                        }}
                         className="inline-flex items-center gap-1 text-xs text-aspora-600 hover:underline"
                         title="Download file"
                       >
@@ -1650,6 +1694,10 @@ export function LicenseDetailBody({
                     value={
                       <a
                         href={`/api/licenses/${license.id}/download`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          downloadLicenseFile(license.id, license.filename);
+                        }}
                         className="text-aspora-600 hover:underline inline-flex items-center gap-1 text-xs"
                       >
                         <Download className="h-3 w-3" />
