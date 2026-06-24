@@ -676,10 +676,17 @@ function ApplicabilitySection({
       // Only the TICKED items move to Review & Assign. Unticked items (incl.
       // the not-applicable column) are LEFT AS-IS as discovered drafts — never
       // auto-archived. Archiving is a manual action only.
-      const itemRuleIds = new Set(items.map((i) => i.rule_id));
+      //
+      // Dedupe against BOTH the already-APPROVED rules (production) and the ones
+      // already in Review & Assign (staging + sent_to_review) — by rule id AND
+      // by signature. A picked item matching either must be skipped: re-PATCHing
+      // an approved rule to "staging" would demote it back into review.
+      const approvedIds = new Set(production.map((r) => r.id));
+      const inReviewIds = new Set(
+        staging.filter((r) => r.sent_to_review).map((r) => r.id),
+      );
       const existing = new Set<string>();
       for (const r of [...staging.filter((r) => r.sent_to_review), ...production]) {
-        if (itemRuleIds.has(r.id)) continue;
         ruleSigs(r.name, r.form_name, r.frequency).forEach((s) => existing.add(s));
       }
       let skipped = 0;
@@ -687,10 +694,14 @@ function ApplicabilitySection({
         items
           .filter((i) => i.rule_id && picked.has(i.form_name))
           .map((i) => {
-            const dup = ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s));
+            const rid = i.rule_id as number;
+            const alreadyLive = approvedIds.has(rid) || inReviewIds.has(rid);
+            const dup =
+              alreadyLive ||
+              ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s));
             if (dup) {
-              // Already in Review & Assign — skip (leave the draft as-is, don't
-              // archive it).
+              // Already approved or already in Review & Assign — skip. Never
+              // demote an approved rule; never duplicate an existing filing.
               skipped++;
               return Promise.resolve();
             }
@@ -707,7 +718,7 @@ function ApplicabilitySection({
       queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["obligations"] });
-      const note = skipped ? ` ${skipped} skipped — already in Review & Assign.` : "";
+      const note = skipped ? ` ${skipped} skipped — already approved or in Review & Assign.` : "";
       window.alert(`${picked.size - skipped} obligation(s) sent to Review & Assign.${note}`);
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
