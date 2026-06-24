@@ -68,6 +68,7 @@ export function EntitiesPage() {
   const [q, setQ] = useState("");
   const [jurisdictions, setJurisdictions] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
   const [addOpen, setAddOpen] = useState(false);
 
@@ -97,8 +98,9 @@ export function EntitiesPage() {
     }
     if (jurisdictions.length) arr = arr.filter((e) => jurisdictions.includes(e.jurisdiction_code));
     if (types.length) arr = arr.filter((e) => types.includes(e.legal_type));
+    if (statuses.length) arr = arr.filter((e) => statuses.includes(e.status));
     return arr;
-  }, [data, q, jurisdictions, types]);
+  }, [data, q, jurisdictions, types, statuses]);
 
   return (
     <div className="space-y-6">
@@ -153,6 +155,16 @@ export function EntitiesPage() {
           selected={types}
           onChange={setTypes}
           searchable
+        />
+        <FilterPopover
+          label="Status"
+          options={[
+            { value: "not_started", label: "Not Started" },
+            { value: "in_progress", label: "In Progress" },
+            { value: "live", label: "Live" },
+          ]}
+          selected={statuses}
+          onChange={setStatuses}
         />
 
         <div className="ml-auto inline-flex rounded-lg border border-input overflow-hidden">
