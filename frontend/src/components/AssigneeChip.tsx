@@ -42,7 +42,15 @@ export function AssigneeChip({ user, showName = false, size = "sm", className }:
       <Avatar className={s.av}>
         <AvatarFallback className={s.txt}>{userInitials(user.full_name || user.email)}</AvatarFallback>
       </Avatar>
-      {showName && <span className="truncate">{user.full_name?.split(" ")[0] || user.email}</span>}
+      {showName && (
+        <span
+          className={cn("truncate", user.is_deleted && "text-muted-foreground/60 italic")}
+          title={user.is_deleted ? "Removed user" : undefined}
+        >
+          {user.full_name || user.email}
+          {user.is_deleted && " (removed)"}
+        </span>
+      )}
     </span>
   );
 }

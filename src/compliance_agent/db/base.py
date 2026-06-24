@@ -12,13 +12,16 @@ Alembic when we cut the next round of schema changes.
 """
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_url() -> str:
@@ -33,7 +36,9 @@ def _resolve_url() -> str:
     return f"sqlite:///{db_path}"
 
 
-DATABASE_URL = _resolve_url()
+def _sqlite_url() -> str:
+    db_path = Path(os.environ.get("COMPLIANCE_DB_PATH", "compliance.db")).resolve()
+    return f"sqlite:///{db_path}"
 
 
 def _engine_kwargs(url: str) -> dict:
@@ -49,10 +54,51 @@ def _engine_kwargs(url: str) -> dict:
         kwargs["pool_size"] = int(os.environ.get("COMPLIANCE_DB_POOL_SIZE", "5"))
         kwargs["max_overflow"] = int(os.environ.get("COMPLIANCE_DB_MAX_OVERFLOW", "5"))
         kwargs["pool_recycle"] = 1800
+        # Bound the connect attempt so an unreachable host fails fast (and the
+        # SQLite fallback below can kick in) instead of hanging the boot.
+        kwargs["connect_args"] = {
+            "connect_timeout": int(os.environ.get("COMPLIANCE_DB_CONNECT_TIMEOUT", "10"))
+        }
     return kwargs
 
 
-engine = create_engine(DATABASE_URL, **_engine_kwargs(DATABASE_URL))
+def _resolve_engine() -> tuple[str, "object"]:
+    """Pick the database URL and build the engine.
+
+    When a Postgres URL is configured we verify the server is actually
+    reachable at boot. On Render's free tier the bundled Postgres expires
+    after 90 days; once it's gone the old connection string is still wired to
+    COMPLIANCE_DB_URL, so the app would crash on startup ("could not connect /
+    is the server accepting TCP/IP connections"). Rather than hard-fail, we
+    fall back to a local SQLite database so the service still boots (the schema
+    auto-creates and auto-seeds). Set COMPLIANCE_DB_STRICT=1 to disable the
+    fallback and fail loudly instead — use that once you're on a paid/managed
+    Postgres you never want to silently leave behind.
+    """
+    url = _resolve_url()
+    eng = create_engine(url, **_engine_kwargs(url))
+
+    if url.startswith("sqlite") or os.environ.get("COMPLIANCE_DB_STRICT") == "1":
+        return url, eng
+
+    try:
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return url, eng
+    except Exception as exc:  # noqa: BLE001 — any connect failure → fall back
+        eng.dispose()
+        fallback = _sqlite_url()
+        logger.warning(
+            "Configured database is unreachable (%s). Falling back to SQLite at "
+            "%s so the service can boot. Data here is local/ephemeral; set "
+            "COMPLIANCE_DB_STRICT=1 to fail instead of falling back.",
+            exc,
+            fallback,
+        )
+        return fallback, create_engine(fallback, **_engine_kwargs(fallback))
+
+
+DATABASE_URL, engine = _resolve_engine()
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
@@ -75,7 +121,26 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
     _migrate_obligation_unique()
+    _migrate_department_enum()
     _auto_seed_if_empty()
+
+
+def _migrate_department_enum() -> None:
+    """The Department enum gained 'hr'. If `department` is a native Postgres
+    enum type, add the value; on a VARCHAR column (how the ad-hoc migrations
+    created it) or on SQLite this is a harmless no-op. Runs in its own
+    AUTOCOMMIT connection so a failure can't poison the main migration tx."""
+    if not DATABASE_URL.startswith("postgres"):
+        return
+    try:
+        with engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
+            conn.execute(text("ALTER TYPE department ADD VALUE IF NOT EXISTS 'hr'"))
+    except Exception:
+        # Column is VARCHAR (no 'department' enum type) or the value already
+        # exists — nothing to do.
+        pass
 
 
 def _migrate_obligation_unique() -> None:
@@ -125,20 +190,21 @@ _AUTO_SEED_RUNNING = False
 
 
 def _auto_seed_if_empty() -> None:
-    """First-boot bootstrap. If the users table is empty, run the demo seed
-    so logins work without anyone having to SSH in. After that, this is a
-    one-query no-op on every restart.
+    """First-boot bootstrap. If the users table is empty, ensure a single admin
+    login exists so the app is usable — WITHOUT seeding any demo entities,
+    rules or obligations. Real entities + licenses are uploaded by the user;
+    obligations are generated from those, never from the demo data.
 
-    Can be disabled by setting COMPLIANCE_AUTO_SEED=0 in the environment —
-    useful if you're about to import production data and don't want demo
-    rows in the way.
+    After the first boot this is a one-query no-op on every restart.
 
     Env vars:
-      COMPLIANCE_AUTO_SEED=0          → skip entirely
-      COMPLIANCE_AUTO_SEED_NO_ASSIGN=1 → seed users/entities/rules but leave
-                                        obligations unassigned
-      COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS=1 → seed users/entities/rules only;
-                                        skip obligation generation
+      COMPLIANCE_AUTO_SEED=0       → skip entirely (no admin created)
+      COMPLIANCE_AUTO_SEED_FULL=1  → load the full demo seed (users + entities
+                                     + rules + obligations) instead of the
+                                     admin-only bootstrap. Use only when you
+                                     explicitly want the demo data back.
+      COMPLIANCE_ADMIN_EMAIL / COMPLIANCE_ADMIN_PASSWORD / COMPLIANCE_ADMIN_NAME
+                                   → override the bootstrap admin credentials.
     """
     global _AUTO_SEED_RUNNING
     if _AUTO_SEED_RUNNING:
@@ -160,15 +226,21 @@ def _auto_seed_if_empty() -> None:
 
     _AUTO_SEED_RUNNING = True
     try:
-        # Lazy import — the seed-only modules aren't needed in steady state.
-        from compliance_agent.db.seed import run_seed
+        if os.environ.get("COMPLIANCE_AUTO_SEED_FULL") == "1":
+            # Explicit opt-in: restore the full demo dataset.
+            from compliance_agent.db.seed import run_seed
 
-        no_obligations = os.environ.get("COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS") == "1"
-        no_assign = os.environ.get("COMPLIANCE_AUTO_SEED_NO_ASSIGN") == "1"
-        run_seed(
-            auto_assign=not (no_assign or no_obligations),
-            create_obligations=not no_obligations,
-        )
+            no_obligations = os.environ.get("COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS") == "1"
+            no_assign = os.environ.get("COMPLIANCE_AUTO_SEED_NO_ASSIGN") == "1"
+            run_seed(
+                auto_assign=not (no_assign or no_obligations),
+                create_obligations=not no_obligations,
+            )
+        else:
+            # Default: admin login only — no demo entities/rules/obligations.
+            from compliance_agent.db.seed import seed_admin_only
+
+            seed_admin_only()
     except Exception as e:  # noqa: BLE001
         # Never block boot on seed failure. Surface in logs so an admin
         # can re-run seed manually if they need to.
@@ -224,6 +296,19 @@ def _add_missing_columns() -> None:
             # Revamp: function (Finance/Compliance/Legal) + plain-English desc.
             ("responsible_function", varchar(24)),
             ("plain_description", text_type),
+            # Review & Assign: owner / reviewer / approver + approval timestamp.
+            ("owner_id", "INTEGER"),
+            ("reviewer_id", "INTEGER"),
+            ("approver_id", "INTEGER"),
+            ("approved_at", datetime_type),
+            # Spec §3/§4 discovery fields.
+            ("condition", "JSON" if is_pg else text_type),
+            ("triggering_activity", varchar(64)),
+            ("anchor", varchar(255)),
+            ("confidence", varchar(120)),
+            ("sent_to_review", "BOOLEAN"),
+            # Due-Date Builder: structured schedule spec (frequency/basis/...).
+            ("due_date_spec", "JSON" if is_pg else text_type),
         ],
         # Phase 9: per-user notification prefs + Slack member id +
         # functional department (drives finance / compliance routing).
@@ -234,10 +319,36 @@ def _add_missing_columns() -> None:
             # Team membership — compliance / finance / legal / risk / operations.
             # Nullable; admins + legacy users can be untagged.
             ("department", varchar(16)),
+            # Hard-delete tombstone (scrubbed leaver — name kept, PII gone).
+            ("is_deleted", "BOOLEAN NOT NULL DEFAULT 0" if not is_pg else "BOOLEAN NOT NULL DEFAULT FALSE"),
         ],
         # Tracker sync: short codes for each entity (VINC, RTUK, ...)
         "entities": [
             ("short_code", varchar(32)),
+            # GST / Tax registration number + registered address.
+            ("tax_id", varchar(120)),
+            ("address", text_type),
+            # Annual Return Date when it differs from the fiscal year-end.
+            ("annual_return_date", varchar(10)),
+            # Find Regulations qualifying-questions answers (VAT-registered,
+            # payroll, revenue band, related-party txns, relevant activity).
+            ("finance_profile", "JSON" if is_pg else text_type),
+            # Owners / controllers (UBO) list: [{name, percent}].
+            ("ownership", "JSON" if is_pg else text_type),
+            # Bank details JSON.
+            ("bank_details", "JSON" if is_pg else text_type),
+            # Free-text description of what the entity does.
+            ("nature_of_operation", text_type),
+            # Adaptive qualification: AI-generated questions + answers + last assessment.
+            ("qualification", "JSON" if is_pg else text_type),
+            # User-creatable document folder names.
+            ("document_folders", "JSON" if is_pg else text_type),
+            # Persisted "Find applicable regulations" result ({items, notes}).
+            ("last_assessment", "JSON" if is_pg else text_type),
+        ],
+        # Free-text folder for documents (dynamic, user-creatable).
+        "documents": [
+            ("folder", varchar(120)),
         ],
     }
 

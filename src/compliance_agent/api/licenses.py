@@ -33,7 +33,11 @@ from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent import storage
-from compliance_agent.classification import FINANCE_ONLY, derive_function, keep_function
+from compliance_agent.classification import (
+    derive_function,
+    derive_tax_type,
+    keep_function,
+)
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
@@ -428,7 +432,9 @@ def update_license(
         action="license.updated",
         target_type="license",
         target_id=lic.id,
-        payload=data,
+        # JSON-safe dump (dates -> ISO strings) so the JSON activity payload
+        # doesn't choke on date objects (was a 500 on edit).
+        payload=payload.model_dump(exclude_unset=True, mode="json"),
     )
     db.commit()
     db.refresh(lic)
@@ -548,10 +554,168 @@ class LicenseAIExtractResponse(BaseModel):
     from_document: bool = True
     candidates: list = []  # list[CandidateRule] — typed late to avoid cycle
     notes: Optional[str] = None
+    # Debug-only discovery audit (extracted facts + obligation counts by source).
+    # Populated only when COMPLIANCE_AGENT_DISCOVERY_DEBUG=1; production UI ignores it.
+    debug_audit: Optional[dict] = None
 
 
 _MAX_EXTRACT_BYTES = 4_000_000   # ~4 MB of source text — enough for any single licence
 _MAX_PROMPT_CHARS = 60_000        # rough char cap to keep Claude prompt manageable
+
+
+# Find Regulations qualifying questions. Keys match the frontend questionnaire;
+# each maps an answer value to a human line for the prompt. The answers drive
+# Mandatory vs Conditional only — no filing is ever dropped.
+#
+# This dict is OPTIONAL — just nicer labels. `_build_profile_block` falls back
+# to humanising any unknown key/value, so questions added on the frontend work
+# without touching this file.
+
+# Generic answer-value → human text, used when a key isn't in _PROFILE_QUESTIONS
+# (or its value isn't listed). Keeps the frontend the single source of truth.
+_VALUE_LABELS: dict[str, str] = {
+    "yes": "yes",
+    "no": "no",
+    "unsure": "not sure",
+    "na": "not applicable",
+    "below": "below threshold",
+    "above": "above threshold",
+    "monthly": "monthly",
+    "quarterly": "quarterly",
+    "annual": "annual",
+}
+
+
+def _humanize_key(key: str) -> str:
+    """Turn a profile key like 'related_party' into 'Related party'."""
+    return key.replace("_", " ").strip().capitalize()
+
+
+_PROFILE_QUESTIONS: dict[str, dict] = {
+    "registered_company": {
+        "label": "Registered company that files accounts + corporate tax",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "ct_income_band": {
+        "label": "Taxable income vs the local corporate-tax threshold",
+        "values": {"below": "below threshold", "above": "above threshold", "unsure": "not sure"},
+    },
+    "licensed_financial_activity": {
+        "label": "Holds / operates a financial-services licence",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "holds_customer_funds": {
+        "label": "Holds or safeguards customer funds",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "employs_staff": {
+        "label": "Employs staff and runs payroll directly",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "wps": {
+        "label": "Salaries paid via the Wage Protection System (WPS)",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "social_security": {
+        "label": "Contributes to pension / social security",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "grants_equity": {
+        "label": "Grants equity, options or share-based awards",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "takes_foreign_investment": {
+        "label": "Receives foreign / cross-border investment",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "intra_group_transactions": {
+        "label": "Transacts with other group companies",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "tp_threshold": {
+        "label": "Related-party transactions vs the TP documentation threshold",
+        "values": {"below": "below threshold", "above": "above threshold", "unsure": "not sure"},
+    },
+    "holds_personal_data": {
+        "label": "Processes personal data of individuals",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "vat_gst_registered": {
+        "label": "VAT / GST registered",
+        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
+    },
+    "vat_frequency": {
+        "label": "VAT / GST return frequency",
+        "values": {"monthly": "monthly", "quarterly": "quarterly", "annual": "annual"},
+    },
+    "has_owners_controllers": {
+        "label": "Has shareholders / controllers (beneficial owners)",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "sanctions_exposure": {
+        "label": "Moves money / has customers (sanctions exposure)",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "conducts_esr_relevant_activity": {
+        "label": 'Conducts a "relevant activity" under ESR',
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "esr_income": {
+        "label": "Earns income from the ESR relevant activity",
+        "values": {"yes": "yes", "no": "no"},
+    },
+    "audit_required": {
+        "label": "Statutory audit required (regulator / company size)",
+        "values": {"yes": "yes", "no": "no", "unsure": "not sure"},
+    },
+}
+
+
+def _build_profile_block(profile: Optional[dict]) -> str:
+    """Render the entity's qualifying-question answers into a prompt block that
+    tells Claude how to use them for applicability. Empty when no profile.
+
+    Generic: renders WHATEVER keys/values the profile contains. `_PROFILE_
+    QUESTIONS` is only an optional nicer-label override — new questions added on
+    the frontend show up here automatically (key/value humanised), so the
+    questionnaire stays the single source of truth."""
+    if not profile:
+        return ""
+    lines: list[str] = []
+    for key, raw in profile.items():
+        if raw in (None, ""):
+            continue
+        spec = _PROFILE_QUESTIONS.get(key)
+        label = spec["label"] if spec else _humanize_key(key)
+        if spec and str(raw) in spec["values"]:
+            human = spec["values"][str(raw)]
+        else:
+            human = _VALUE_LABELS.get(str(raw), str(raw))
+        lines.append(f"- {label}: {human}")
+    if not lines:
+        return ""
+    return (
+        "\n\nCOMPANY PROFILE (admin-provided — use this to set each filing's "
+        "applicability):\n"
+        + "\n".join(lines)
+        + "\n\nApply this profile to set applicability ONLY — do NOT omit or "
+        "drop any filing; keep the full finance list and just label each one:\n"
+        "- Mark a filing MANDATORY when the profile makes it clearly required "
+        "— e.g. VAT/GST-registered -> VAT/GST return is Mandatory; runs "
+        "payroll -> payroll / WPS / withholding returns are Mandatory; "
+        "related-party or cross-border transactions -> transfer-pricing "
+        "documentation is Mandatory; revenue above the threshold -> "
+        "threshold-triggered filings are Mandatory.\n"
+        "- Mark a filing CONDITIONAL when the profile says it does NOT apply, "
+        "is 'not applicable', or is silent / 'not sure' — e.g. NOT "
+        "VAT-registered -> VAT return is Conditional (not dropped); no payroll "
+        "-> payroll returns Conditional. When an answer is 'not applicable', "
+        "add an applicability_note saying the filing does not currently apply "
+        "to this entity. Use the applicability_note to say what would trigger "
+        "each conditional filing.\n"
+        "Every finance filing still appears in the output regardless of the "
+        "profile — the profile only changes Mandatory vs Conditional."
+    )
 
 
 def _read_license_text(lic: License) -> str:
@@ -727,9 +891,11 @@ def ai_extract_obligations(
       - the PDF has no extractable text → notes explain
     """
     from compliance_agent.rule_extractor import (
+        discovery_debug_enabled,
         extract_rules_from_text,
         is_live,
         RuleExtractorUnavailable,
+        summarize_discovery,
     )
 
     lic = db.get(License, license_id)
@@ -749,24 +915,11 @@ def ai_extract_obligations(
         )
 
     text = _read_license_text(lic)
-    has_file = bool(lic.storage_path)
 
-    # A file is attached but we couldn't pull readable text — that's a scanned
-    # PDF / image. Don't silently fall back to knowledge-mode; tell the admin.
-    if has_file and len(text.strip()) < 200:
-        return LicenseAIExtractResponse(
-            available=False,
-            license_id=license_id,
-            jurisdiction_hint=lic.jurisdiction_code,
-            extracted_chars=len(text),
-            notes=(
-                "Couldn't pull readable text from the uploaded file. If it's "
-                "a scanned PDF, run it through OCR first. If it's an image, "
-                "convert to PDF / paste the relevant text into Compliance "
-                "Rules → Add from text instead."
-            ),
-        )
-
+    # If a file is attached but yields no readable text (scanned PDF / image),
+    # don't fail — fall back to knowledge mode using the licence's metadata
+    # (jurisdiction, authority, type, name) + the entity's activity profile, so
+    # the admin still gets a list to review.
     from_document = len(text.strip()) >= 200
     # Shared instruction: the licensee is also an operating company, so the
     # extract must be a SUPERSET — the licence's own obligations PLUS the
@@ -818,31 +971,85 @@ def ai_extract_obligations(
     )
 
     exhaustive_rule = (
-        "\n\nSCOPE — return FINANCE only. List ONLY ongoing FINANCIAL, TAX and "
-        "ACCOUNTING filings. Do NOT include legal, HR, governance or general "
-        "compliance items (e.g. UBO registers, AML/CFT reports, license "
-        "renewals, data-protection filings, board/secretarial matters) — those "
-        "are out of scope here.\n"
-        "Within finance, BE EXHAUSTIVE — list EVERY relevant filing, not just a "
-        "handful: corporate / income tax returns, VAT / GST / sales-tax "
-        "returns, annual financial statements, audit filing, payroll & "
-        "social-security / withholding returns, transfer-pricing documentation, "
-        "economic-substance filings, and any other periodic finance/tax filing "
-        "that applies. One entry per distinct filing; do NOT merge or "
-        "summarise. If unsure whether a finance filing applies, include it and "
-        "mark applicability Conditional rather than omitting it."
+        "\n\nSCOPE — ASSUME EVERY ACTIVITY IS PRESENT and return the MAXIMAL set. "
+        "Cover ALL functions — Finance/Tax, Legal/Corporate, Compliance/AML, and "
+        "HR/Payroll — and ALL item types: periodic filings & returns, licenses, "
+        "permits, registrations, ongoing compliance obligations, reporting "
+        "requirements, and industry-specific regulations.\n"
+        "BE EXHAUSTIVE — list EVERY item that could conceivably apply to an "
+        "entity of this type in this jurisdiction, not just a handful: corporate "
+        "/ income tax, VAT / GST / sales tax, annual financial statements & "
+        "audit, payroll & social-security / withholding, transfer pricing, "
+        "economic substance, AML/CFT reports, UBO / beneficial-ownership "
+        "registers, data-protection registrations, licence renewals, sector "
+        "permits, statutory / registry filings, and any other recurring or "
+        "event-based obligation. One entry per distinct item; do NOT merge or "
+        "summarise. When unsure, INCLUDE it — narrowing happens later via the "
+        "qualification questions. Do not pre-judge applicability here."
+    )
+
+    # Candidate universe is built REGULATOR-FIRST: an uploaded licence /
+    # registration is the strongest evidence, so anchor on it before adding
+    # generic company filings. Mirrors the discovery contract — assume
+    # everything applies; the qualification questions narrow it later, never
+    # here. (E.g. a FINTRAC MSB registration must pull in the full FINTRAC MSB
+    # universe even if some items are later marked Conditional / Not Applicable.)
+    universe_rule = (
+        "\n\nBUILD THE CANDIDATE UNIVERSE IN THIS ORDER:\n"
+        "1. Treat any uploaded licence / registration as the STRONGEST evidence. "
+        "From it, identify the REGULATOR, the LICENSE TYPE, the REGISTRATION "
+        "STATUS, and the AUTHORIZED ACTIVITIES, and use them to anchor the "
+        "universe.\n"
+        "2. FIRST generate the COMPLETE obligation universe tied to that "
+        "regulator and license type — every reporting, renewal, AML/CFT and "
+        "program-/independent-review obligation that regime imposes — before "
+        "adding anything generic. The licence document is a FLOOR, not a "
+        "ceiling: the regulator + license type + authorized activities are a "
+        "POINTER to the full known regime — enumerate every obligation that "
+        "regime imposes, including ones the document does not itself spell out, "
+        "not just the ones written in the text. Example: a FINTRAC MSB "
+        "registration pulls in ALL FINTRAC MSB reporting, renewal, AML/CFT and "
+        "program-review obligations.\n"
+        "3. THEN expand with the generic industry / company obligations. Nature "
+        "of operations EXPANDS this universe — it never replaces or trims the "
+        "regulator-specific obligations.\n"
+        "4. Assume every primary qualification question is answered YES and do "
+        "NOT filter here: include an obligation even if a later qualification "
+        "question may mark it Conditional or Not Applicable."
     )
 
     finance_addendum = (
-        f"\n\nIMPORTANT — also include the standard ongoing FINANCIAL, TAX and "
-        f"ACCOUNTING obligations any operating company in "
-        f"{lic.jurisdiction_code.upper()} owes, even though they sit with a "
-        f"different authority than this licence's regulator: corporate / income "
-        f"tax returns, VAT / GST / sales-tax returns, annual financial "
-        f"statements and audit filing, payroll & social-security / withholding "
-        f"returns, transfer pricing, and economic-substance filings where "
-        f"applicable. The licensee IS such a company, so these apply. Label "
-        f"their function/category as Finance/Tax accordingly."
+        f"\n\nAs a SECONDARY layer — AFTER the regulator-specific universe above "
+        f"— also include the standard ongoing obligations any operating company "
+        f"in {lic.jurisdiction_code.upper()} owes across every function, even "
+        f"where they sit with a different authority than this licence's "
+        f"regulator. These ADD TO, and never replace, the regulator-specific "
+        f"obligations. Label each item's function/category accordingly "
+        f"(Finance / Legal / Compliance / HR)."
+    )
+
+    # Discovery is deliberately answer-independent (assume all activities on) —
+    # the qualification questions + Reassess do the narrowing. So we do NOT feed
+    # the entity's answers into the discovery prompt.
+    profile_block = ""
+    # Nature of operations is a primary discovery input — what the entity does
+    # drives which regulations could apply. It EXPANDS the regulator-specific
+    # universe; it must never shrink it.
+    _nature = getattr(lic.entity, "nature_of_operation", None) if lic.entity else None
+    nature_block = (
+        f"\n\nNATURE OF OPERATIONS (what this entity does): {_nature}. Use this "
+        f"to ADD further obligations on top of the regulator-specific universe, "
+        f"never to remove any." if _nature else ""
+    )
+    # Structured facts that anchor the baseline (corporate tax / audit / registry)
+    # families: the licence type and the licensee's legal entity type. Stated as
+    # plain facts — they only sharpen anchoring, they do not change discovery
+    # breadth or posture.
+    _legal_type = getattr(lic.entity, "legal_type", None) if lic.entity else None
+    _lic_type = lic.license_type or None
+    lic_type_line = f"\n\nLicense type: {_lic_type}." if _lic_type else ""
+    legal_type_line = (
+        f"\nLicensee's legal entity type: {_legal_type}." if _legal_type else ""
     )
     if from_document:
         # Document-grounded: read the actual license text.
@@ -855,8 +1062,12 @@ def ai_extract_obligations(
             f"reporting, periodic confirmations, change notifications, AML "
             f"obligations. Ignore one-off pre-licensing steps that have "
             f"already happened."
+            f"{lic_type_line}{legal_type_line}"
+            f"{universe_rule}"
             f"{exhaustive_rule}"
             f"{finance_addendum}"
+            f"{nature_block}"
+            f"{profile_block}"
             f"{naming_rule}"
             f"{catalogue_ref}"
             f"\n\n--- LICENSE TEXT BEGINS ---\n\n"
@@ -872,14 +1083,18 @@ def ai_extract_obligations(
             f"Jurisdiction: {lic.jurisdiction_code.upper()}\n"
             f"Issuing authority / regulator: {lic.authority}\n"
             f"License name: {lic.name}\n"
-            f"License type: {lic.license_type or '(not specified)'}\n\n"
+            f"License type: {lic.license_type or '(not specified)'}\n"
+            f"Licensee's legal entity type: {_legal_type or '(unknown)'}\n\n"
             f"List every ONGOING compliance obligation a holder of this kind of "
             f"license typically owes the regulator: periodic returns, filings, "
             f"fees, reports, periodic confirmations, change notifications, AML/"
             f"CFT obligations, renewals. For each, note whether it is mandatory "
             f"or conditional, and its usual frequency."
+            f"{universe_rule}"
             f"{exhaustive_rule}"
             f"{finance_addendum}"
+            f"{nature_block}"
+            f"{profile_block}"
             f"{naming_rule}"
             f"{catalogue_ref}"
             f"\n\nIf you are unsure, mark applicability "
@@ -1010,6 +1225,7 @@ def ai_extract_obligations(
         extracted_chars=len(text),
         candidates=candidates,
         notes=combined_notes,
+        debug_audit=summarize_discovery(result) if discovery_debug_enabled() else None,
     )
 
 
@@ -1026,38 +1242,42 @@ def applicable_rules(
     if lic is None:
         raise HTTPException(status_code=404, detail="License not found.")
 
-    # 1. Candidate pool: production rules in this jurisdiction.
-    #    FINANCE_ONLY switch: keep only Finance-function rules. _dedupe_rules
-    #    collapses near-duplicate filings (e.g. two CT600 rows).
+    # 1. Candidate pool: approved (production) rules in this jurisdiction,
+    #    across ALL functions (Finance / Legal / HR / Compliance) — this view
+    #    is intentionally not narrowed by FINANCE_ONLY. _dedupe_rules collapses
+    #    near-duplicate filings (e.g. two CT600 rows).
     pool = _dedupe_rules(
         [
             r
             for r in db.execute(
                 select(Rule)
                 .where(
-                    Rule.jurisdiction_code == lic.jurisdiction_code,
+                    Rule.entities.any(Entity.id == lic.entity_id),
+                    # Mirror the Review & Assign "Approved" section exactly —
+                    # that tab is status == production (no extra approved_at
+                    # gate), so the license list shows the same approved set,
+                    # but scoped to THIS licence's entity (not the whole
+                    # jurisdiction) so unrelated entities' filings don't appear.
                     Rule.status == RuleStatus.production,
                 )
                 .order_by(Rule.category, Rule.form_name)
             )
             .scalars()
             .all()
-            if keep_function(r.category, r.area, r.responsible_function)
+            # All functions (Finance / Legal / HR / Compliance): this license
+            # obligations view is intentionally NOT narrowed by FINANCE_ONLY.
         ]
     )
 
     license_tokens = _tokens(lic.authority, lic.license_type, lic.name)
-
-    # 2. Rules already attached to the entity — used to flag "Other obligations".
-    entity_rule_ids: set[int] = set()
     entity = lic.entity
-    if entity is not None:
-        entity_rule_ids = {r.id for r in entity.rules}
 
-    # 3. Tracking — for each rule, find the next upcoming, not-yet-completed
+    # 2. Tracking — for each rule, find the next upcoming, not-yet-completed
     # obligation against THIS license's entity. One query, then bucket by
     # rule_id.
     today_d = date.today()
+    _fy = _parse_fy_end(getattr(entity, "fiscal_year_end", None))
+    _ard = _parse_fy_end(getattr(entity, "annual_return_date", None))
     next_by_rule: dict[int, Obligation] = {}
     if entity is not None:
         rows = (
@@ -1112,12 +1332,15 @@ def applicable_rules(
                 or derive_function(rule.category, rule.area)
             ),
             plain_description=rule.plain_description,
-            tax_type=rule.tax_type.value if rule.tax_type else "Not a Tax",
+            tax_type=(
+                derive_tax_type(rule.name, rule.form_name, rule.category, rule.area)
+                or (rule.tax_type.value if rule.tax_type else "Not a Tax")
+            ),
             relevance=relevance,
             match_reason=match_reason,
             next_obligation_id=ob.id if ob else None,
             next_due_date=ob.due_date if ob else None,
-            projected_due_date=_next_due_for_rule(rule, today_d),
+            projected_due_date=_next_due_for_rule(rule, today_d, _fy, _ard),
             next_status=ob.status.value if ob and ob.status else None,
             next_assignee=assignee,
             days_to_next=((ob.due_date - today_d).days if ob else None),
@@ -1126,36 +1349,25 @@ def applicable_rules(
     direct: list[LicenseRuleHit] = []
     entity_other: list[LicenseRuleHit] = []
 
-    # License-specific: a rule is "directly applicable" when its authority /
-    # type token-matches the licence (e.g. an FCA licence surfaces FCA rules).
-    # In FINANCE_ONLY mode the pool is already just Finance filings (tax / VAT
-    # / CT etc.) — those apply to the entity by virtue of operating in the
-    # jurisdiction, not via this licence's authority — so surface them all
-    # rather than showing an empty list when the authority doesn't match.
+    # Every approved (production) filing in the entity's jurisdiction is
+    # applicable to it — across ALL functions (Finance / Legal / HR /
+    # Compliance), not just Finance. Token-matching the licence authority only
+    # affects the "why" label, not whether the row is shown.
     juris_label = lic.jurisdiction_code.upper()
     for rule in pool:
         rule_tokens = _tokens(rule.authority, rule.category, rule.area)
         shared = license_tokens & rule_tokens
-        if shared:
-            direct.append(
-                _hit(
-                    rule,
-                    relevance="direct",
-                    match_reason=f"matched on: {', '.join(sorted(shared))}",
-                )
+        direct.append(
+            _hit(
+                rule,
+                relevance="direct",
+                match_reason=(
+                    f"matched on: {', '.join(sorted(shared))}"
+                    if shared
+                    else f"Approved filing in {juris_label}"
+                ),
             )
-        elif FINANCE_ONLY:
-            direct.append(
-                _hit(
-                    rule,
-                    relevance="direct",
-                    match_reason=f"Finance filing in {juris_label}",
-                )
-            )
-        elif rule.id in entity_rule_ids:
-            entity_other.append(
-                _hit(rule, relevance="entity", match_reason="attached to this entity")
-            )
+        )
 
     # Roll-up counts so the UI can show "5 unassigned · 3 in progress · …"
     counts: dict[str, int] = {
@@ -1222,16 +1434,76 @@ def _next_on_day_of_month(base: date, day: int) -> date:
     return _clamp_day(ny, nm, day)
 
 
-def _next_due_for_rule(rule: Rule, base: date) -> date:
+def _parse_fy_end(text: Optional[str]) -> Optional[tuple[int, int]]:
+    """Parse an entity's fiscal_year_end string into (month, day). Handles
+    '31-Dec', '31 Mar', 'Dec 31', 'March 31', '31/12'. None when unparseable."""
+    if not text:
+        return None
+    low = text.strip().lower()
+    m = re.match(r"^\s*(\d{1,2})\s*[/-]\s*(\d{1,2})\s*$", low)  # 31/12 or 31-12
+    if m:
+        day, mon = int(m.group(1)), int(m.group(2))
+        if 1 <= mon <= 12 and 1 <= day <= 31:
+            return (mon, day)
+    mon = next((idx for tok, idx in _MONTH_LOOKUP.items() if tok in low), None)
+    dm = re.search(r"(\d{1,2})", low)
+    if mon and dm and 1 <= int(dm.group(1)) <= 31:
+        return (mon, int(dm.group(1)))
+    return None
+
+
+_MONTH_ABBR = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+]
+
+
+def canonical_fye(text: Optional[str]) -> Optional[str]:
+    """Normalise any fiscal-year-end input ('December', '31 December', '31/12',
+    'dec', 'Dec 31', '31-Dec') to a short canonical 'DD-Mon' string (e.g.
+    '31-Dec') that always fits the column and parses the same way every time.
+    Case- and format-insensitive. Returns None when unparseable."""
+    parsed = _parse_fy_end(text)
+    if not parsed:
+        return None
+    mon, day = parsed
+    return f"{day:02d}-{_MONTH_ABBR[mon - 1]}"
+
+
+def _add_months(d: date, n: int) -> date:
+    """d shifted by n calendar months, clamping the day to the target month."""
+    total = d.year * 12 + (d.month - 1) + n
+    y, m = divmod(total, 12)
+    return _clamp_day(y, m + 1, d.day)
+
+
+def _next_due_for_rule(
+    rule: Rule,
+    base: date,
+    fy_end: Optional[tuple[int, int]] = None,
+    ard_end: Optional[tuple[int, int]] = None,
+) -> date:
     """Best-effort REAL statutory deadline, parsed from the rule's
     `due_date_rule` text, instead of a naive "today + interval". Handles the
     common shapes: "by the 25th of the following month", explicit calendar
-    dates ("by 30 Jun", "31 Dec"), and "Nth day of the Mth month after the
-    period end". Fiscal-relative rules assume a calendar (Dec-31) year-end,
-    since we don't track each entity's financial year here. Falls back to an
-    interval only when nothing parseable is found."""
+    dates ("by 30 Jun", "31 Dec"), "Nth day of the Mth month after the period
+    end", and "N months after the (financial) year end". Fiscal-relative rules
+    anchor on the entity's fiscal year-end when known (`fy_end` = (month, day)),
+    falling back to a calendar (Dec-31) year-end. Falls back to an interval only
+    when nothing parseable is found."""
+    # A structured Due-Date Builder spec, when present, is the source of truth —
+    # the calendar gets exactly the date the builder's preview showed.
+    spec = getattr(rule, "due_date_spec", None)
+    if spec:
+        from compliance_agent.due_date_spec import next_due_dates
+
+        dates = next_due_dates(spec, base, fy_end, count=1, ard_end=ard_end)
+        if dates:
+            return dates[0]
+
     low = (rule.due_date_rule or "").lower()
     freq = (rule.frequency or "").lower()
+    fy_month, fy_day = fy_end or (12, 31)
 
     # Monthly: anchor on the day-of-month it's due ("by the 25th of the
     # following month"), NOT today + 30 days.
@@ -1270,30 +1542,38 @@ def _next_due_for_rule(rule: Rule, base: date) -> date:
         if future:
             return min(future)
 
-    # "15th day of the 6th month after the end of the tax period" — assume a
-    # calendar year-end, so month N maps directly.
+    # "15th day of the 6th month after the end of the tax period" — the Mth
+    # month after the fiscal year-end, on day N.
     m = re.search(
         r"(\d{1,2})\s*(?:st|nd|rd|th)?\s+day\s+of\s+the\s+(\d{1,2})\s*(?:st|nd|rd|th)?\s+month",
         low,
     )
     if m and 1 <= int(m.group(2)) <= 12:
-        day, mon = int(m.group(1)), int(m.group(2))
-        for yr in (base.year, base.year + 1):
-            c = _clamp_day(yr, mon, day)
-            if c >= base:
-                return c
+        day, months_after = int(m.group(1)), int(m.group(2))
+        cands = []
+        for fy_year in (base.year - 1, base.year, base.year + 1):
+            t = _add_months(_clamp_day(fy_year, fy_month, fy_day), months_after)
+            cands.append(_clamp_day(t.year, t.month, day))
+        future = [c for c in cands if c >= base]
+        if future:
+            return min(future)
 
-    # "within N months of ... close / period end" — assume Dec-31 year-end.
-    m = re.search(r"within\s+(\d{1,2})\s+months?", low)
-    if m:
+    # "N months after the financial year end / accounting-period end / close"
+    # (also covers "within N months of period end") — anchor on the FY end.
+    m = re.search(r"(\d{1,2})\s+months?\b", low)
+    if m and re.search(
+        r"year[\s-]*end|fiscal|financial|accounting period|tax period|"
+        r"period[\s-]*end|reporting period|after the end|of the year|close",
+        low,
+    ):
         n = int(m.group(1))
-        for end_year in (base.year - 1, base.year):
-            total = 12 + n  # months from Jan of end_year to (Dec + n)
-            yr = end_year + (total - 1) // 12
-            mon = (total - 1) % 12 + 1
-            c = _clamp_day(yr, mon, calendar.monthrange(yr, mon)[1])
-            if c >= base:
-                return c
+        cands = [
+            _add_months(_clamp_day(fy_year, fy_month, fy_day), n)
+            for fy_year in (base.year - 1, base.year, base.year + 1)
+        ]
+        future = [c for c in cands if c >= base]
+        if future:
+            return min(future)
 
     # Nothing parseable — fall back to a sensible interval.
     if "quarter" in freq:
@@ -1327,7 +1607,10 @@ def schedule_rule_for_license(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found.")
 
-    due = payload.due_date or _next_due_for_rule(rule, date.today())
+    due = payload.due_date or _next_due_for_rule(
+        rule, date.today(), _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None)),
+        _parse_fy_end(getattr(lic.entity, "annual_return_date", None))
+    )
 
     # Refuse a duplicate scheduling (rule + entity + due + department).
     existing = db.execute(
@@ -1432,7 +1715,10 @@ def schedule_rules_for_license(
         rule = db.get(Rule, rid)
         if rule is None:
             continue
-        due = _next_due_for_rule(rule, today_d)
+        due = _next_due_for_rule(
+            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None)),
+            _parse_fy_end(getattr(lic.entity, "annual_return_date", None))
+        )
         existing = db.execute(
             select(Obligation).where(
                 Obligation.rule_id == rule.id,
@@ -1474,23 +1760,21 @@ def schedule_rules_for_license(
 def _schedule_filings_for_license(
     db: Session, lic: License, *, mandatory_only: bool
 ) -> tuple[int, int, int]:
-    """Create a compliance obligation for every production rule in the
-    licence's jurisdiction (the whole country set is applicable). Skips any
-    that already have an obligation on the computed due date. Returns
-    (scheduled, skipped_existing, applicable). Does NOT commit."""
+    """Create a compliance obligation for every approved (production) rule that
+    belongs to THIS licence's entity. Scoped to the entity (not the whole
+    jurisdiction) so one entity's approved filings never appear on another
+    entity's licence, and a licence whose entity has no approved rules schedules
+    nothing. Skips any that already have an obligation on the computed due date.
+    Returns (scheduled, skipped_existing, applicable). Does NOT commit."""
     pool = _dedupe_rules(
-        [
-            r
-            for r in db.execute(
-                select(Rule).where(
-                    Rule.jurisdiction_code == lic.jurisdiction_code,
-                    Rule.status == RuleStatus.production,
-                )
+        db.execute(
+            select(Rule).where(
+                Rule.entities.any(Entity.id == lic.entity_id),
+                Rule.status == RuleStatus.production,
             )
-            .scalars()
-            .all()
-            if keep_function(r.category, r.area, r.responsible_function)
-        ]
+        )
+        .scalars()
+        .all()
     )
     today_d = date.today()
     scheduled = skipped = applicable = 0
@@ -1498,7 +1782,10 @@ def _schedule_filings_for_license(
         if mandatory_only and rule.applicability != Applicability.mandatory:
             continue
         applicable += 1
-        due = _next_due_for_rule(rule, today_d)
+        due = _next_due_for_rule(
+            rule, today_d, _parse_fy_end(getattr(lic.entity, "fiscal_year_end", None)),
+            _parse_fy_end(getattr(lic.entity, "annual_return_date", None))
+        )
         existing = db.execute(
             select(Obligation).where(
                 Obligation.rule_id == rule.id,

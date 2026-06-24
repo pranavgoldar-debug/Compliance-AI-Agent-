@@ -30,6 +30,55 @@ export interface UserBrief {
   full_name: string;
   role: Role;
   department?: Department | null;
+  is_deleted?: boolean;
+}
+
+// Adaptive qualification — AI-generated secondary questions, their answers, and
+// the cached reassessment result.
+export interface GeneratedQuestion {
+  key: string;
+  question: string;
+  options: { value: string; label: string }[];
+  multi_select?: boolean;
+  drives?: string;
+  primary_key?: string | null;
+}
+export interface AssessmentItem {
+  rule_id: number | null;
+  name?: string;
+  form_name: string;
+  category: string | null;
+  frequency: string | null;
+  verdict: string;
+  reason: string;
+  triggering_factors?: string | null;
+  due?: string | null;
+  basis?: string | null;
+  jurisdiction?: string | null;
+}
+export interface Qualification {
+  questions?: GeneratedQuestion[];
+  answers?: Record<string, string>;
+  assessment?: AssessmentItem[];
+}
+
+// One layer in the ownership chain, ordered ultimate-parent → … → this entity.
+export interface OwnershipStage {
+  name: string;
+  role: string;
+}
+
+export interface BankDetails {
+  account_name?: string;
+  bank_name?: string;
+  account_type?: string;
+  account_number?: string;
+  sort_code?: string;
+  iban?: string;
+  swift?: string;
+  currency?: string;
+  /** Multiple accounts live here; a legacy single account is the flat fields. */
+  accounts?: BankDetails[];
 }
 
 export interface Entity {
@@ -39,8 +88,21 @@ export interface Entity {
   jurisdiction_code: string;
   short_code: string | null;
   registration_number: string | null;
+  tax_id: string | null;
+  address: string | null;
   incorporation_date: string | null;
   fiscal_year_end: string | null;
+  /** Annual Return Date ("DD-Mon") when it differs from fiscal_year_end; null = same. */
+  annual_return_date: string | null;
+  nature_of_operation: string | null;
+  finance_profile: Record<string, string> | null;
+  qualification: Qualification | null;
+  document_folders: string[] | null;
+  /** Persisted "Find applicable regulations" result, so the inventory survives
+      navigation/reload and only recomputes on demand. Shape = AssessResp. */
+  last_assessment: { items: unknown[]; notes?: string | null } | null;
+  ownership: OwnershipStage[] | null;
+  bank_details: BankDetails | null;
   country_lead: UserBrief | null;
   archived_at: string | null;
   created_at: string;
@@ -60,18 +122,30 @@ export interface Rule {
   authority: string;
   frequency: string;
   due_date_rule: string;
+  due_date_spec: Record<string, unknown> | null;
   payment_rule: string | null;
   applicability: Applicability;
   applicability_note: string | null;
   tax_type: TaxType;
+  responsible_function: string | null;
+  owner_team_suggested?: string | null;
+  confidence?: string | null;
   status: RuleStatus;
   source_url: string | null;
   submission_url: string | null;
   source_text: string | null;
   source_changed_at: string | null;
   entity_ids: number[];
+  owner_id: number | null;
+  reviewer_id: number | null;
+  approver_id: number | null;
+  approved_at: string | null;
   created_at: string;
   updated_at: string;
+  sent_to_review?: boolean | null;
+  // Per-entity Primary-Activity verdict ("applicable" / "not_applicable"),
+  // set only when the rule is fetched with an entity_id context.
+  entity_applicability?: string | null;
 }
 
 export interface Obligation {
@@ -186,6 +260,7 @@ export interface DocumentOut {
   content_type: string | null;
   size_bytes: number;
   category: DocumentCategory;
+  folder?: string | null;
   tags: string | null;
   url: string | null;
   uploaded_by: UserBrief | null;

@@ -14,13 +14,22 @@ services:
     # Deployed branch. Render reads this from the selected branch in the
     # dashboard, so also set Settings → Branch to match.
     branch: claude/upbeat-turing-DCFHF
-    buildCommand: pip install -e ".[postgres]" && cd frontend && npm ci && npm run build && mkdir -p ../src/compliance_agent/data/webapp && cp -r dist/. ../src/compliance_agent/data/webapp/
+    # Pip installs are pinned via constraints.txt (refresh per its header) and
+    # hardened against Render's flaky route to PyPI: long timeout, 10 retries,
+    # and one full re-attempt — read-timeouts on /simple/<pkg>/ otherwise
+    # surface as a bogus ResolutionImpossible.
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]") && cd frontend && npm ci && npm run build && mkdir -p ../src/compliance_agent/data/webapp && cp -r dist/. ../src/compliance_agent/data/webapp/
     startCommand: uvicorn compliance_agent.web:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/fintech/countries
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       # Wires the FastAPI app to the Postgres add-on declared above.
+      # NOTE: free Postgres expires after ~90 days. Once it's gone this URL
+      # points at a dead host — the app probes it at boot and automatically
+      # falls back to a local (ephemeral) SQLite DB so the service still
+      # starts and auto-seeds. Set COMPLIANCE_DB_STRICT=1 to disable that
+      # fallback once you're on a managed Postgres.
       - key: COMPLIANCE_DB_URL
         fromDatabase:
           name: compliance-agent-db
@@ -32,6 +41,9 @@ services:
       # COMPLIANCE_AGENT_LIVE / ANTHROPIC_API_KEY / SMTP_* / Slack are
       # intentionally NOT declared here. Add them as environment variables
       # in the Render dashboard so they stay out of git.
+      # (To A/B against Grok: set OPENROUTER_API_KEY + OPENROUTER_MODEL=x-ai/grok-4.3
+      #  in the dashboard — llm_client routes through OpenRouter when the key is
+      #  present. Default with only ANTHROPIC_API_KEY set is Claude.)
       #
       # After the FIRST successful deploy, open Render → service → Shell
       # and run `python -m compliance_agent.cli seed` once to populate
@@ -47,7 +59,7 @@ services:
     region: oregon
     branch: claude/upbeat-turing-DCFHF
     schedule: "0 9 * * *"
-    buildCommand: pip install -e ".[postgres]"
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]")
     startCommand: python -m compliance_agent.cli send-reminders
     envVars:
       - key: PYTHON_VERSION
@@ -68,7 +80,7 @@ services:
     region: oregon
     branch: claude/upbeat-turing-DCFHF
     schedule: "30 4 * * *"
-    buildCommand: pip install -e ".[postgres]"
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]")
     startCommand: python -m compliance_agent.cli send-digest --kind employee_daily
     envVars:
       - key: PYTHON_VERSION
@@ -89,7 +101,7 @@ services:
     region: oregon
     branch: claude/upbeat-turing-DCFHF
     schedule: "30 4 * * 1"
-    buildCommand: pip install -e ".[postgres]"
+    buildCommand: pip install --upgrade pip && (pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]" || pip install --timeout 120 --retries 10 -c constraints.txt -e ".[postgres]")
     startCommand: python -m compliance_agent.cli send-digest --kind admin_weekly
     envVars:
       - key: PYTHON_VERSION

@@ -7,10 +7,12 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from compliance_agent.classification import derive_function
+from compliance_agent.classification import derive_function, derive_tax_type
+from compliance_agent.data.authority_urls import lookup as authority_url_lookup
 
 from compliance_agent.db import (
     Activity,
+    DEFAULT_DOCUMENT_FOLDERS,
     EFFORT_BAND_DAYS,
     EffortBand,
     Entity,
@@ -25,8 +27,8 @@ from compliance_agent.api.schemas import (
 )
 
 
-# Fallback for legacy callers — alert lead time = 2× effort-band days.
-ALERT_WINDOW_DAYS = 14
+# Alert window = obligations coming due within the next 30 days.
+ALERT_WINDOW_DAYS = 30
 
 
 def now_utc() -> datetime:
@@ -44,12 +46,12 @@ def days_remaining(due: date) -> int:
 def reminder_offsets_days(band: EffortBand) -> list[int]:
     """When to send reminders (days BEFORE due date). One entry per ping.
 
-    Aspora policy:
-      Monthly   (w1)  →  [7]              one reminder, a week before
-      Quarterly (w2)  →  [25, 15]         two reminders, 25 and 15 days before
-      Half-year (w4)  →  [30, 15]
-      Annual    (w8)  →  [45, 30]         two reminders, 45 and 30 days before
-      Long-form (w12) →  [60, 30]
+    Aspora policy — one reminder per cadence:
+      Monthly   (w1)  →  [7]
+      Quarterly (w2)  →  [30]
+      Half-year (w4)  →  [45]
+      Annual    (w8)  →  [60]
+      Long-form (w12) →  [90]
     """
     return _REMINDER_OFFSETS.get(band, [30])
 
@@ -62,16 +64,18 @@ def lead_time_days(band: EffortBand) -> int:
 
 
 def reminder_offsets_for_frequency(frequency: str) -> list[int]:
-    """Advance-notice offsets (days before due) driven by the filing's
-    FREQUENCY, per the revamp feedback:
+    """Advance-notice offset (days before due) driven by the filing's
+    FREQUENCY, per the revamp feedback — one reminder per cadence:
 
-      Monthly    →  7 days before   (one week)
-      Quarterly  →  30 days before  (one month)
-      Annual     →  45 days before
+      Monthly     →  7 days before
+      Quarterly   →  30 days before
+      Half-yearly →  45 days before
+      Annual      →  60 days before
+      Multi-year  →  90 days before
 
-    Half-yearly and other cadences get sensible defaults. Returns None-ish
-    behaviour ([]) only for cadences with no fixed due date (event-based,
-    one-time, continuous, per-consignment) where date reminders don't apply.
+    Returns None-ish behaviour ([]) only for cadences with no fixed due date
+    (event-based, one-time, continuous, per-consignment) where date reminders
+    don't apply.
     """
     f = (frequency or "").lower()
     if any(k in f for k in ("event", "one-time", "one time", "continuous", "consignment", "ad hoc", "ad-hoc")):
@@ -81,9 +85,11 @@ def reminder_offsets_for_frequency(frequency: str) -> list[int]:
     if "quarter" in f:
         return [30]
     if "half" in f or "semi" in f or "bi-annual" in f or "biannual" in f:
-        return [30, 15]
-    if "annual" in f or "year" in f:
         return [45]
+    if "multi" in f or "long" in f or "every" in f:  # multi-year / long-form
+        return [90]
+    if "annual" in f or "year" in f:
+        return [60]
     if "week" in f:
         return [3]
     return [30]
@@ -91,13 +97,14 @@ def reminder_offsets_for_frequency(frequency: str) -> list[int]:
 
 
 _REMINDER_OFFSETS: dict[EffortBand, list[int]] = {
-    # Aspora policy — first number = how early the FIRST reminder fires:
-    #   Monthly   → 1 week before · Quarterly → 1 month before · Annual → 45 days
+    # Aspora policy — one reminder per cadence, fired this many days before due:
+    #   Monthly → 7 · Quarterly → 30 · Half-yearly → 45 · Annual → 60 ·
+    #   Multi-year → 90.
     EffortBand.w1: [7],
-    EffortBand.w2: [30, 15],
-    EffortBand.w4: [30, 15],
-    EffortBand.w8: [45, 30],
-    EffortBand.w12: [60, 30],
+    EffortBand.w2: [30],
+    EffortBand.w4: [45],
+    EffortBand.w8: [60],
+    EffortBand.w12: [90],
 }
 
 
@@ -154,15 +161,20 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
-        rule_tax_type=o.rule.tax_type,
+        rule_tax_type=(
+            derive_tax_type(o.rule.name, o.rule.form_name, o.rule.category, o.rule.area)
+            or o.rule.tax_type
+        ),
         rule_responsible_function=(
             o.rule.responsible_function
             or derive_function(o.rule.category, o.rule.area)
         ),
         rule_frequency=o.rule.frequency,
         rule_due_date_rule=o.rule.due_date_rule,
-        rule_source_url=o.rule.source_url,
-        rule_submission_url=o.rule.submission_url,
+        # Auto-fill the regulator links from the authority when the rule has none
+        # stored — so the "View regulation" / "Submit & pay" buttons always work.
+        rule_source_url=o.rule.source_url or authority_url_lookup(o.rule.authority),
+        rule_submission_url=o.rule.submission_url or authority_url_lookup(o.rule.authority),
         rule_source_changed_at=o.rule.source_changed_at,
         rule_payment_rule=o.rule.payment_rule,
         entity_name=o.entity.name,
@@ -203,7 +215,10 @@ def serialize_calendar_obligation(o: Obligation) -> CalendarObligation:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
-        rule_tax_type=o.rule.tax_type,
+        rule_tax_type=(
+            derive_tax_type(o.rule.name, o.rule.form_name, o.rule.category, o.rule.area)
+            or o.rule.tax_type
+        ),
         rule_applicability=(
             o.rule.applicability.value if o.rule.applicability else "Mandatory"
         ),
@@ -284,8 +299,17 @@ def serialize_entity(entity: Entity, db: Session) -> EntityOut:
         jurisdiction_code=entity.jurisdiction_code,
         short_code=entity.short_code,
         registration_number=entity.registration_number,
+        tax_id=entity.tax_id,
+        address=entity.address,
         incorporation_date=entity.incorporation_date,
         fiscal_year_end=entity.fiscal_year_end,
+        annual_return_date=entity.annual_return_date,
+        nature_of_operation=entity.nature_of_operation,
+        finance_profile=entity.finance_profile,
+        ownership=entity.ownership,
+        bank_details=entity.bank_details,
+        qualification=entity.qualification,
+        document_folders=entity.document_folders or list(DEFAULT_DOCUMENT_FOLDERS),
         country_lead=serialize_user(entity.country_lead),
         archived_at=entity.archived_at,
         created_at=entity.created_at,

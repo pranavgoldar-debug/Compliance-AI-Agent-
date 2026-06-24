@@ -46,7 +46,7 @@ const ROUTE_LABELS: Record<string, string> = {
   calendar: "Compliance Calendar",
   entities: "Entities",
   tasks: "Tasks",
-  rules: "Compliance Rules",
+  rules: "Review & Assign",
   documents: "Documents",
   "audit-log": "Audit Log",
   settings: "Settings",
@@ -95,7 +95,6 @@ function Breadcrumbs() {
 }
 
 
-// ---------------------------------------------------------------------------
 // Mode badge — auto-flips to Live (Claude) when the server has the key set.
 // ---------------------------------------------------------------------------
 function ModeBadge() {
@@ -130,7 +129,7 @@ function ModeBadge() {
         {live
           ? data.backend === "openrouter"
             ? "AI features call Claude via OpenRouter. Override the model with OPENROUTER_MODEL env var."
-            : "Ask Aspora + Add Rule from text use the real Claude API."
+            : "Ask Aida + Add Rule from text use the real Claude API."
           : "AI features run from curated mocks. Set COMPLIANCE_AGENT_LIVE=1 + ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) to switch."}
       </TooltipContent>
     </Tooltip>
@@ -388,18 +387,18 @@ function GlobalSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative flex-1 max-w-md inline-flex items-center gap-2 rounded-lg border border-input bg-secondary/60 px-3 h-9 text-sm text-muted-foreground hover:bg-secondary transition-colors"
+        className="relative flex-1 inline-flex items-center gap-2 rounded-lg border border-input bg-secondary/60 px-3 h-9 text-sm text-muted-foreground hover:bg-secondary transition-colors"
       >
-        <Search className="h-4 w-4" />
-        <span className="flex-1 text-left">Search obligations, entities…</span>
-        <kbd className="hidden md:inline-flex items-center rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono">
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="flex-1 text-left truncate min-w-0">Search obligations, entities…</span>
+        <kbd className="hidden md:inline-flex shrink-0 items-center rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono">
           ⌘K
         </kbd>
       </button>
 
       {open && (
         <div
-          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-start pt-[15vh]"
+          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid items-start justify-items-center pt-[15vh]"
           onClick={() => setOpen(false)}
         >
           <div
@@ -542,8 +541,8 @@ export function Topbar() {
   const unreadCount = notifications.filter((n) => !n.read && n.id != null).length;
 
   return (
-    <header className="h-14 border-b border-border bg-white flex items-center gap-4 px-6 sticky top-0 z-30">
-      <div className="flex-1 min-w-0">
+    <header className="h-14 border-b border-border bg-card flex items-center gap-4 px-6 sticky top-0 z-30">
+      <div className="min-w-0 shrink-0">
         <Breadcrumbs />
       </div>
 

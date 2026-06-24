@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   CalendarDays,
   CheckCircle2,
-  FileBadge,
   FolderOpen,
   BookOpen,
   Building2,
@@ -44,10 +43,9 @@ interface NavGroup {
 // with the Awaiting payment chip distinguishing the two phases.
 const NAV_GROUPS: NavGroup[] = [
   {
-    heading: "Compliance OS",
+    heading: "Finance Compliance OS",
     items: [
       { to: "/", label: "Home", icon: LayoutDashboard, exact: true },
-      { to: "/licenses", label: "Licenses", icon: FileBadge },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       {
         to: "/tasks",
@@ -65,7 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
     adminOnly: true,
     items: [
       { to: "/entities", label: "Entities", icon: Building2, adminOnly: true },
-      { to: "/rules", label: "Compliance Rules", icon: Library, adminOnly: true },
+      { to: "/rules", label: "Review & Assign", icon: Library, adminOnly: true },
       // /regulations (Regulation Library) intentionally hidden — overlaps
       // with "Add rule from text" on the Compliance Rules page and was
       // confusing users with a slow/blank state. Re-add the line above to
@@ -100,7 +98,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "flex flex-col bg-white border-r border-border transition-all duration-200",
+        "flex flex-col bg-card border-r border-border transition-all duration-200",
         collapsed ? "w-[64px]" : "w-[240px]",
       )}
     >
@@ -119,7 +117,21 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               className="h-9 w-9"
             />
           ) : (
-            <img src="/static/brand/aspora-wordmark.png" alt="Aspora" className="h-7" />
+            <>
+              {/* Light: original (white-backed) wordmark. Dark: a version whose
+                  outer white box is transparent (the white inside the letters /
+                  the 'o' mark is kept), so it blends into the dark sidebar. */}
+              <img
+                src="/static/brand/aspora-wordmark.png"
+                alt="Aspora"
+                className="h-7 dark:hidden"
+              />
+              <img
+                src="/static/brand/aspora-wordmark-dark.png"
+                alt="Aspora"
+                className="h-7 hidden dark:block"
+              />
+            </>
           )}
         </a>
         {!collapsed && (

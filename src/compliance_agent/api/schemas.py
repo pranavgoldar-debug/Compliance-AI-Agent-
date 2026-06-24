@@ -30,6 +30,8 @@ class UserBrief(_Base):
     full_name: str
     role: Role
     department: Optional[str] = None
+    # True for a permanently-removed leaver — UI greys their name in history.
+    is_deleted: bool = False
 
 
 class UserOut(_Base):
@@ -39,7 +41,7 @@ class UserOut(_Base):
     role: Role
     department: Optional[str] = None
     is_active: bool
-    department: Optional[str] = None
+    is_deleted: bool = False
     created_at: datetime
     last_login_at: Optional[datetime] = None
 
@@ -70,8 +72,13 @@ class EntityCreate(BaseModel):
     jurisdiction_code: str
     short_code: Optional[str] = None
     registration_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    annual_return_date: Optional[str] = None
+    nature_of_operation: Optional[str] = None
+    ownership: Optional[list] = None
     country_lead_id: Optional[int] = None
 
 
@@ -81,9 +88,18 @@ class EntityUpdate(BaseModel):
     jurisdiction_code: Optional[str] = None
     short_code: Optional[str] = None
     registration_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    annual_return_date: Optional[str] = None
+    nature_of_operation: Optional[str] = None
     country_lead_id: Optional[int] = None
+    finance_profile: Optional[dict] = None
+    ownership: Optional[list] = None
+    bank_details: Optional[dict] = None
+    qualification: Optional[dict] = None
+    document_folders: Optional[list] = None
 
 
 class EntityOut(_Base):
@@ -93,8 +109,18 @@ class EntityOut(_Base):
     jurisdiction_code: str
     short_code: Optional[str] = None
     registration_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    address: Optional[str] = None
     incorporation_date: Optional[date] = None
     fiscal_year_end: Optional[str] = None
+    annual_return_date: Optional[str] = None
+    nature_of_operation: Optional[str] = None
+    finance_profile: Optional[dict] = None
+    ownership: Optional[list] = None
+    bank_details: Optional[dict] = None
+    qualification: Optional[dict] = None
+    document_folders: Optional[list] = None
+    last_assessment: Optional[dict] = None
     country_lead: Optional[UserBrief] = None
     archived_at: Optional[datetime] = None
     created_at: datetime
@@ -116,6 +142,7 @@ class RuleCreate(BaseModel):
     authority: str
     frequency: str
     due_date_rule: str
+    due_date_spec: Optional[dict] = None
     payment_rule: Optional[str] = None
     applicability: Applicability = Applicability.mandatory
     applicability_note: Optional[str] = None
@@ -127,6 +154,7 @@ class RuleCreate(BaseModel):
     submission_url: Optional[str] = None
     source_text: Optional[str] = None
     entity_ids: list[int] = []
+    sent_to_review: Optional[bool] = None
 
 
 class RuleUpdate(BaseModel):
@@ -138,6 +166,7 @@ class RuleUpdate(BaseModel):
     authority: Optional[str] = None
     frequency: Optional[str] = None
     due_date_rule: Optional[str] = None
+    due_date_spec: Optional[dict] = None
     payment_rule: Optional[str] = None
     applicability: Optional[Applicability] = None
     applicability_note: Optional[str] = None
@@ -149,6 +178,10 @@ class RuleUpdate(BaseModel):
     source_text: Optional[str] = None
     status: Optional[RuleStatus] = None
     entity_ids: Optional[list[int]] = None
+    owner_id: Optional[int] = None
+    reviewer_id: Optional[int] = None
+    approver_id: Optional[int] = None
+    sent_to_review: Optional[bool] = None
 
 
 class RuleOut(_Base):
@@ -161,11 +194,19 @@ class RuleOut(_Base):
     authority: str
     frequency: str
     due_date_rule: str
+    due_date_spec: Optional[dict] = None
     payment_rule: Optional[str] = None
     applicability: Applicability
     applicability_note: Optional[str] = None
     tax_type: TaxType = TaxType.not_tax
     responsible_function: Optional[str] = None
+    # Deterministic owner-team engine's suggestion, set ONLY when it disagrees
+    # with responsible_function — so review can surface the conflict for a human.
+    owner_team_suggested: Optional[str] = None
+    # The model's honesty flag from discovery (Confirmed / verify / Pending
+    # verification). Surfaced so reviewers can spot low-confidence (possibly
+    # hallucinated) rows instead of trusting every candidate equally.
+    confidence: Optional[str] = None
     plain_description: Optional[str] = None
     status: RuleStatus
     source_url: Optional[str] = None
@@ -173,8 +214,17 @@ class RuleOut(_Base):
     source_text: Optional[str] = None
     source_changed_at: Optional[datetime] = None
     entity_ids: list[int] = []
+    owner_id: Optional[int] = None
+    reviewer_id: Optional[int] = None
+    approver_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    sent_to_review: Optional[bool] = None
+    # Per-entity verdict from Primary Activity gating ("applicable" /
+    # "not_applicable"). Only populated when the rule is fetched with an
+    # `entity_id` context; null otherwise.
+    entity_applicability: Optional[str] = None
 
 
 class RuleSnapshotOut(_Base):
@@ -291,6 +341,7 @@ class DocumentOut(_Base):
     content_type: Optional[str] = None
     size_bytes: int
     category: DocumentCategory
+    folder: Optional[str] = None
     tags: Optional[str] = None
     # Set for "link" documents (a template/portal URL rather than an uploaded
     # file). None for normal file uploads.

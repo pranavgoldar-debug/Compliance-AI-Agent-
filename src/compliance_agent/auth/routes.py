@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -107,6 +111,159 @@ def change_password(
     user.password_hash = hash_password(payload.new_password)
     db.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Google sign-in (OAuth 2.0 / OpenID Connect)
+#
+# Existing-accounts-only: Google login matches a provisioned, active user by
+# verified email and issues the SAME session cookie the password flow uses. It
+# never auto-creates accounts — admins still provision people (the login page
+# says "Ask your admin"). Enabled only when GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET
+# are set; the redirect URI is {COMPLIANCE_BASE_URL}/api/auth/google/callback and
+# must be registered in the Google Cloud OAuth client.
+# ---------------------------------------------------------------------------
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+_OAUTH_STATE_COOKIE = "fcos_oauth_state"
+
+
+def _google_client() -> tuple[str | None, str | None]:
+    return os.environ.get("GOOGLE_CLIENT_ID"), os.environ.get("GOOGLE_CLIENT_SECRET")
+
+
+def google_configured() -> bool:
+    cid, csec = _google_client()
+    return bool(cid and csec)
+
+
+def _google_redirect_uri() -> str:
+    return f"{app_base_url()}/api/auth/google/callback"
+
+
+def _allowed_email_domains() -> set[str]:
+    """Email domains allowed to sign in with Google. Defaults to aspora.com;
+    override with GOOGLE_ALLOWED_DOMAINS (comma-separated, e.g. "aspora.com,acme.io").
+    Set it to empty to allow any domain."""
+    raw = os.environ.get("GOOGLE_ALLOWED_DOMAINS", "aspora.com")
+    return {d.strip().lower().lstrip("@") for d in raw.split(",") if d.strip()}
+
+
+def _issue_session_cookie(response: Response, user: User) -> None:
+    """Set the session cookie exactly like the password login flow."""
+    token = create_token(user.id, role=user.role.value)
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=cookie_max_age_seconds(),
+        httponly=True,
+        samesite="lax",
+        secure=False,
+    )
+
+
+@router.get("/providers")
+def auth_providers() -> dict:
+    """Which non-password sign-in options are configured (drives the login UI)."""
+    return {"google": google_configured()}
+
+
+@router.get("/google/start")
+def google_start() -> RedirectResponse:
+    """Kick off the Google OAuth flow: stash a CSRF state cookie, redirect to
+    Google's consent screen."""
+    if not google_configured():
+        return RedirectResponse(url="/login?error=google_unconfigured")
+    cid, _ = _google_client()
+    state = secrets.token_urlsafe(24)
+    params = {
+        "client_id": cid,
+        "redirect_uri": _google_redirect_uri(),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    resp = RedirectResponse(url=f"{_GOOGLE_AUTH_URL}?{urlencode(params)}")
+    # Short-lived, httponly state cookie to defend against CSRF on the callback.
+    resp.set_cookie(
+        key=_OAUTH_STATE_COOKIE,
+        value=state,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+    )
+    return resp
+
+
+@router.get("/google/callback")
+def google_callback(
+    request: Request,
+    db: Session = Depends(get_session),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Handle Google's redirect: verify state, exchange the code, read the
+    verified email, and sign in the matching active user."""
+    if error or not code:
+        return RedirectResponse(url="/login?error=google_failed")
+    expected = request.cookies.get(_OAUTH_STATE_COOKIE)
+    if not expected or not state or not secrets.compare_digest(state, expected):
+        return RedirectResponse(url="/login?error=google_state")
+
+    cid, csec = _google_client()
+    try:
+        with httpx.Client(timeout=10) as client:
+            tok = client.post(
+                _GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": cid,
+                    "client_secret": csec,
+                    "redirect_uri": _google_redirect_uri(),
+                    "grant_type": "authorization_code",
+                },
+            )
+            tok.raise_for_status()
+            access_token = tok.json().get("access_token")
+            if not access_token:
+                return RedirectResponse(url="/login?error=google_failed")
+            # The access token came straight from Google's token endpoint over
+            # TLS, so hitting userinfo with it yields a trustworthy email — no
+            # separate ID-token signature verification needed.
+            ui = client.get(
+                _GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            ui.raise_for_status()
+            info = ui.json()
+    except Exception:  # noqa: BLE001 — any failure → generic login error
+        return RedirectResponse(url="/login?error=google_failed")
+
+    email = (info.get("email") or "").strip().lower()
+    if not email or not info.get("email_verified"):
+        return RedirectResponse(url="/login?error=google_unverified")
+
+    # Domain allowlist — restrict Google sign-in to approved org domains.
+    allowed = _allowed_email_domains()
+    if allowed and email.rsplit("@", 1)[-1] not in allowed:
+        return RedirectResponse(url="/login?error=google_domain")
+
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if user is None or not user.is_active:
+        # No provisioned account — we never auto-create from Google.
+        return RedirectResponse(url="/login?error=google_no_account")
+
+    redirect = RedirectResponse(url="/")
+    _issue_session_cookie(redirect, user)
+    redirect.delete_cookie(_OAUTH_STATE_COOKIE)
+    user.last_login_at = datetime.now(tz=timezone.utc)
+    db.commit()
+    return redirect
 
 
 # ---------------------------------------------------------------------------

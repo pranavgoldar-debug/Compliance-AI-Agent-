@@ -45,16 +45,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
-import { EffortBandBadge } from "@/components/EffortBandBadge";
 import { AssigneeChip } from "@/components/AssigneeChip";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { InlineStatusMenu } from "@/components/InlineStatusMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { JURISDICTIONS, fmtDate, cleanFilingName } from "@/lib/format";
+import { fmtDate, cleanFilingName } from "@/lib/format";
+import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { cn } from "@/lib/utils";
 import type {
@@ -173,7 +173,21 @@ export function CalendarPage() {
       filters.assigneeIds.forEach((id) => params.append("assignee_ids", String(id)));
       return api.get<CalendarObligation[]>(`/api/calendar?${params.toString()}`);
     },
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
+
+  // Reconcile the calendar with rule status on open: approved (production) rules
+  // get their obligations; anything still in Review & Assign has its pending
+  // obligations removed — so the calendar shows ONLY approved obligations, even
+  // if in-review entries lingered from the previous behaviour. Then refresh.
+  const calendarQc = useQueryClient();
+  useEffect(() => {
+    api
+      .post("/api/rules/ensure-calendar")
+      .then(() => calendarQc.invalidateQueries({ queryKey: ["calendar"] }))
+      .catch(() => {});
+  }, [calendarQc]);
 
   const activeFilterCount =
     filters.entityIds.length +
@@ -301,10 +315,9 @@ export function CalendarPage() {
           />
           <MultiSelectFilter
             label="Jurisdiction"
-            options={Object.entries(JURISDICTIONS).map(([code, j]) => ({
-              value: code,
-              label: `${j.flag} ${j.name}`,
-            }))}
+            options={jurisdictionOptionsInUse(entities.map((e) => e.jurisdiction_code)).map(
+              (o) => ({ value: o.value, label: o.name }),
+            )}
             selected={filters.jurisdictions}
             onChange={(vals) => setFilters((f) => ({ ...f, jurisdictions: vals }))}
           />
@@ -459,22 +472,14 @@ function DateRangeControl({
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-muted-foreground">Start</label>
-                <Input
-                  type="date"
+                <DateField
                   value={format(customStart, "yyyy-MM-dd")}
-                  onChange={(e) =>
-                    e.target.value &&
-                    onCustomChange(parseISO(e.target.value), customEnd)
-                  }
+                  onChange={(v) => v && onCustomChange(parseISO(v), customEnd)}
                 />
                 <label className="text-xs text-muted-foreground mt-1">End</label>
-                <Input
-                  type="date"
+                <DateField
                   value={format(customEnd, "yyyy-MM-dd")}
-                  onChange={(e) =>
-                    e.target.value &&
-                    onCustomChange(customStart, parseISO(e.target.value))
-                  }
+                  onChange={(v) => v && onCustomChange(customStart, parseISO(v))}
                 />
               </div>
             </div>
@@ -815,7 +820,6 @@ function DayDetailPanel({ date, items }: { date: Date; items: CalendarObligation
                       ? "Due today"
                       : `${ob.days_remaining}d`}
                 </Badge>
-                <EffortBandBadge band={ob.effort_band} />
                 <AssigneeChip user={ob.assignee} size="xs" />
               </div>
             </button>
@@ -905,7 +909,6 @@ function ListView({
                 <SortHeader label="Entity" k="entity" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <SortHeader label="Obligation" k="rule" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <th className="px-3 py-2.5 text-left font-medium">Category</th>
-                <th className="px-3 py-2.5 text-left font-medium">Effort</th>
                 <SortHeader label="Status" k="status" current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <th className="px-3 py-2.5 text-left font-medium">Assignee</th>
                 <SortHeader label="Days" k="days" current={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -915,14 +918,14 @@ function ListView({
               {isLoading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
-                    <td colSpan={9} className="p-2">
+                    <td colSpan={8} className="p-2">
                       <Skeleton className="h-8" />
                     </td>
                   </tr>
                 ))
               ) : sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-10">
+                  <td colSpan={8} className="p-10">
                     <EmptyState
                       title="No filings in selected range"
                       description="Try widening the date range or clearing some filters."
@@ -976,9 +979,6 @@ function ListView({
                           </Badge>
                         )}
                       </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <EffortBandBadge band={ob.effort_band} />
                     </td>
                     <td className="px-3 py-2.5">
                       <InlineStatusMenu

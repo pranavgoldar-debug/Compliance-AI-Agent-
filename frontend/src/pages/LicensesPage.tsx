@@ -35,12 +35,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtDate, JURISDICTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
+import { fmtDate, JURISDICTION_OPTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
+import {
+  gatesForJurisdiction,
+  followupsForJurisdiction,
+} from "@/lib/financeGates";
+import type { GateOption } from "@/lib/financeGates";
 import type {
   ApplicableRulesResponse,
   Entity,
@@ -169,8 +175,8 @@ export function LicensesPage() {
           className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
         >
           <option value="">All jurisdictions</option>
-          {Object.entries(JURISDICTIONS).map(([code, j]) => (
-            <option key={code} value={code}>
+          {JURISDICTION_OPTIONS.map((j) => (
+            <option key={j.code} value={j.code}>
               {j.flag} {j.name}
             </option>
           ))}
@@ -246,7 +252,8 @@ export function LicensesPage() {
               </Button>
             </div>
           )}
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 {isAdmin && (
@@ -335,6 +342,7 @@ export function LicensesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -364,14 +372,16 @@ interface LicenseAnalyze {
   expiry_date: string | null;
 }
 
-function UploadDialog({
+export function UploadDialog({
   open,
   onOpenChange,
   onUploaded,
+  presetEntityId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onUploaded: () => void;
+  presetEntityId?: number;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [aiNote, setAiNote] = useState<string | null>(null);
@@ -400,6 +410,14 @@ function UploadDialog({
     const ent = entities.find((e) => e.id === id);
     if (ent && !jurisdictionCode) setJurisdictionCode(ent.jurisdiction_code);
   }
+
+  // Pre-select the entity when opened from an entity's Licenses tab.
+  useEffect(() => {
+    if (open && presetEntityId && entityId === "" && entities.length > 0) {
+      pickEntity(presetEntityId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, presetEntityId, entities]);
 
   function reset() {
     setEntityId("");
@@ -527,8 +545,8 @@ function UploadDialog({
                 className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
               >
                 <option value="">Pick a jurisdiction…</option>
-                {Object.entries(JURISDICTIONS).map(([code, j]) => (
-                  <option key={code} value={code}>
+                {JURISDICTION_OPTIONS.map((j) => (
+                  <option key={j.code} value={j.code}>
                     {j.flag} {j.name}
                   </option>
                 ))}
@@ -578,18 +596,10 @@ function UploadDialog({
               />
             </Field>
             <Field label="Issue date">
-              <Input
-                type="date"
-                value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
-              />
+              <DateField value={issueDate} onChange={setIssueDate} />
             </Field>
             <Field label="Expiry date">
-              <Input
-                type="date"
-                value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
-              />
+              <DateField value={expiryDate} onChange={setExpiryDate} />
             </Field>
           </div>
 
@@ -717,6 +727,7 @@ interface CandidateRule {
   payment_rule: string | null;
   applicability: string;
   applicability_note: string | null;
+  tax_type?: string | null;
   // Reconciliation against the curated catalogue (the website's source of truth).
   matched_standard?: boolean;
   catalogue_due_date_rule?: string | null;
@@ -784,18 +795,20 @@ function isTracked(candidateForm: string, existing: string[]): boolean {
   });
 }
 
-function AIExtractDialog({
+export function AIExtractDialog({
   license,
   open,
   onOpenChange,
   onCreated,
   existingForms = [],
+  autoRun = true,
 }: {
   license: License;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
   existingForms?: string[];
+  autoRun?: boolean;
 }) {
   const [response, setResponse] = useState<AIExtractResponse | null>(null);
   const [kept, setKept] = useState<Set<number>>(new Set());
@@ -805,15 +818,49 @@ function AIExtractDialog({
   const [candCat, setCandCat] = useState("");
   const [candFreq, setCandFreq] = useState("");
   const [candAppl, setCandAppl] = useState("");
+  const [candTax, setCandTax] = useState("");
+
+  // Qualifying-questions step. `phase` is "questionnaire" until we have the
+  // entity's answers, then "extract" (the running / results view).
+  const [phase, setPhase] = useState<"questionnaire" | "extract">("questionnaire");
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  // Fetch the entity to read its saved finance_profile (and jurisdiction).
+  const entityClient = useQueryClient();
+  const entityQuery = useQuery({
+    queryKey: ["entity", license.entity_id],
+    queryFn: () => api.get<Entity>(`/api/entities/${license.entity_id}`),
+    enabled: open,
+  });
+  const juris = entityQuery.data?.jurisdiction_code ?? license.jurisdiction_code;
+  const gates = gatesForJurisdiction(juris);
+
+  // Persist candidates as Staging rules so the discovered list is FROZEN in the
+  // DB — it survives tab changes / re-opens and is read by Registrations,
+  // without re-calling Claude.
+  const autoPersist = useMutation({
+    mutationFn: (args: {
+      picked: AIExtractResponse["candidates"];
+      hint: string | null;
+    }) =>
+      api.post("/api/rules/bulk-create", {
+        jurisdiction_code: args.hint ?? license.jurisdiction_code,
+        rules: args.picked,
+        entity_ids: [license.entity_id],
+        status: "staging",
+      }),
+    onSuccess: () => onCreated(),
+  });
 
   const extractMutation = useMutation({
     mutationFn: () =>
       api.post<AIExtractResponse>(`/api/licenses/${license.id}/ai-extract`),
     onSuccess: (data) => {
       setResponse(data);
-      // Default-tick ONLY the genuinely new filings (not already in your
-      // tracked list). So "Search again" with nothing new ticks nothing —
-      // it won't create duplicates of what you already track.
+      // Genuinely new filings (not already tracked in staging/production).
+      const newOnes = data.candidates.filter(
+        (c) => !isTracked(c.name || c.form_name, existingForms),
+      );
       setKept(
         new Set(
           data.candidates
@@ -822,6 +869,10 @@ function AIExtractDialog({
             .map(({ i }) => i),
         ),
       );
+      // Freeze immediately: save the new candidates as Staging.
+      if (newOnes.length > 0) {
+        autoPersist.mutate({ picked: newOnes, hint: data.jurisdiction_hint });
+      }
     },
   });
 
@@ -845,6 +896,19 @@ function AIExtractDialog({
     },
   });
 
+  // Save the questionnaire answers onto the entity, then run the extraction.
+  const saveProfileMutation = useMutation({
+    mutationFn: () =>
+      api.patch<Entity>(`/api/entities/${license.entity_id}`, {
+        finance_profile: answers,
+      }),
+    onSuccess: () => {
+      entityClient.invalidateQueries({ queryKey: ["entity", license.entity_id] });
+      // Entering the extract phase triggers the run effect below.
+      setPhase("extract");
+    },
+  });
+
   function reset() {
     setResponse(null);
     setKept(new Set());
@@ -852,18 +916,81 @@ function AIExtractDialog({
     createMutation.reset();
   }
 
-  // Clicking "Find Regulations" opens this dialog — kick off the extraction
-  // straight away so the user lands on the running state, not an extra
-  // "click to start" screen. Re-run is via the "Search again" button.
+  // Decide the opening phase ONCE per open, after the entity loads: if it
+  // already has saved answers, skip straight to the extract (they answered
+  // before → don't nag); otherwise show the questionnaire. The once-guard keeps
+  // a background refetch (or "Edit answers") from snapping the phase back.
+  const phaseDecidedRef = useRef(false);
   useEffect(() => {
-    if (open && !response && !extractMutation.isPending && !extractMutation.isError) {
+    if (!open) {
+      phaseDecidedRef.current = false;
+      return;
+    }
+    if (phaseDecidedRef.current || !entityQuery.data) return;
+    phaseDecidedRef.current = true;
+    const saved = entityQuery.data.finance_profile;
+    if (saved && Object.keys(saved).length > 0) {
+      setAnswers(saved);
+      setPhase("extract");
+    } else {
+      setPhase("questionnaire");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, entityQuery.data]);
+
+  // Once in the extract phase, kick off the run so the user lands on the
+  // running state rather than a "click to start" screen. Skipped when autoRun
+  // is off (e.g. a list already exists) so we don't burn Claude tokens on every
+  // re-open / tab change — the user runs it explicitly via the button.
+  useEffect(() => {
+    if (
+      open &&
+      autoRun &&
+      phase === "extract" &&
+      !response &&
+      !extractMutation.isPending &&
+      !extractMutation.isError
+    ) {
       extractMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, phase, autoRun]);
+
+  function answer(key: string, value: string) {
+    setAnswers((a) => ({ ...a, [key]: value }));
+  }
+
+  const renderOptions = (key: string, options: GateOption[]) => (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => answer(key, o.value)}
+          className={cn(
+            "rounded-md border px-2.5 py-1 text-xs transition-colors",
+            answers[key] === o.value
+              ? "border-aspora-500 bg-aspora-50 text-aspora-700 font-medium"
+              : "border-border text-muted-foreground hover:bg-secondary",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) {
+      // Bring the panel into view so the user doesn't have to scroll down to it.
+      panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }, [open]);
 
   if (!open) return null;
   return (
+    <div ref={panelRef}>
     <Card className="border-aspora-300 bg-aspora-50/20">
       <CardContent className="p-5 space-y-4">
         <div className="flex items-start justify-between gap-2">
@@ -873,20 +1000,67 @@ function AIExtractDialog({
               Find Regulations
             </h3>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              reset();
-              onOpenChange(false);
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                reset();
+                onOpenChange(false);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-4">
-          {!response ? (
+          {phase === "questionnaire" ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                A few quick questions about{" "}
+                <strong>{entityQuery.data?.name ?? license.entity_name}</strong>{" "}
+                so we can mark each filing mandatory or conditional. Answer what
+                you know — skip the rest.
+              </p>
+              {entityQuery.isLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin text-aspora-600" />
+                  Loading…
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1 scrollbar-thin">
+                  {gates.map((g) => {
+                    const fups = followupsForJurisdiction(g, juris);
+                    return (
+                      <div
+                        key={g.id}
+                        className="rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                      >
+                        <div className="text-sm font-medium">{g.question}</div>
+                        <div className="text-xs text-muted-foreground mb-2">
+                          Drives: {g.drives}
+                        </div>
+                        {renderOptions(g.key, g.options)}
+                        {answers[g.key] === "yes" && fups.length > 0 && (
+                          <div className="mt-3 space-y-2.5 border-l-2 border-aspora-200 pl-3">
+                            {fups.map((f) => (
+                              <div key={f.key}>
+                                <div className="text-sm">{f.question}</div>
+                                <div className="mt-1.5">
+                                  {renderOptions(f.key, f.options)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : !response ? (
             extractMutation.isError ? (
               <div className="text-sm space-y-3">
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
@@ -898,10 +1072,18 @@ function AIExtractDialog({
                   Try again
                 </Button>
               </div>
-            ) : (
+            ) : extractMutation.isPending ? (
               <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin text-aspora-600 shrink-0" />
-                Finding finance regulations for this license… (~20–30s)
+                Finding all applicable regulations for this entity… (~20–30s)
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
+                <Button size="sm" onClick={() => extractMutation.mutate()}>
+                  <Sparkles className="h-4 w-4" />
+                  Find Regulations
+                </Button>
+                <span>You already have a list — running again only when you ask.</span>
               </div>
             )
           ) : !response.available ? (
@@ -1034,6 +1216,7 @@ function AIExtractDialog({
                   <div className="flex flex-wrap gap-2">
                     {sel(candReg, setCandReg, uniq(response.candidates.map((r) => r.authority)), "regulators")}
                     {sel(candCat, setCandCat, uniq(response.candidates.map((r) => r.category)), "categories")}
+                    {sel(candTax, setCandTax, uniq(response.candidates.map((r) => r.tax_type ?? "").filter((t) => t && t !== "Not a Tax")), "tax types")}
                     {sel(candFreq, setCandFreq, uniq(response.candidates.map((r) => r.frequency)), "frequencies")}
                     {sel(candAppl, setCandAppl, ["Mandatory", "Conditional", "Sector-specific"], "status")}
                   </div>
@@ -1053,6 +1236,7 @@ function AIExtractDialog({
                       return false;
                     if (candReg && r.authority !== candReg) return false;
                     if (candCat && r.category !== candCat) return false;
+                    if (candTax && r.tax_type !== candTax) return false;
                     if (candFreq && r.frequency !== candFreq) return false;
                     if (candAppl && r.applicability !== candAppl) return false;
                     return true;
@@ -1158,7 +1342,39 @@ function AIExtractDialog({
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
-          {!response ? (
+          {phase === "questionnaire" ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  reset();
+                  onOpenChange(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Skip — run without saving any answers (the run effect
+                  // fires on the phase change).
+                  setPhase("extract");
+                }}
+              >
+                Skip
+              </Button>
+              <Button
+                onClick={() => saveProfileMutation.mutate()}
+                disabled={saveProfileMutation.isPending}
+              >
+                {saveProfileMutation.isPending && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                <Sparkles className="h-4 w-4" />
+                Find Regulations
+              </Button>
+            </>
+          ) : !response ? (
             <Button
               variant="outline"
               onClick={() => {
@@ -1170,6 +1386,13 @@ function AIExtractDialog({
             </Button>
           ) : (
             <>
+              {response.available && response.candidates.length > 0 && (
+                <span className="text-xs text-emerald-700 self-center mr-auto">
+                  {autoPersist.isPending
+                    ? "Saving to Review…"
+                    : "✓ Saved to Review — frozen until you Search again"}
+                </span>
+              )}
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1181,22 +1404,13 @@ function AIExtractDialog({
               >
                 Search again
               </Button>
-              {response.available && response.candidates.length > 0 && (
-                <Button
-                  onClick={() => createMutation.mutate()}
-                  disabled={kept.size === 0 || createMutation.isPending}
-                >
-                  {createMutation.isPending && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )}
-                  Create {kept.size} rule{kept.size === 1 ? "" : "s"} as Staging
-                </Button>
-              )}
+              <Button onClick={() => onOpenChange(false)}>Done</Button>
             </>
           )}
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
@@ -1213,7 +1427,6 @@ export function LicenseDetailBody({
   isAdmin: boolean;
   onChanged: () => void;
 }) {
-  const [aiOpen, setAiOpen] = useState(false);
   const [ruleSearch, setRuleSearch] = useState("");
   const detailQueryClient = useQueryClient();
 
@@ -1359,10 +1572,21 @@ export function LicenseDetailBody({
                 <Field label="Name"><Input {...fld("name")} /></Field>
                 <Field label="License type"><Input {...fld("license_type")} /></Field>
                 <Field label="Authority"><Input {...fld("authority")} /></Field>
-                <Field label="Jurisdiction code"><Input {...fld("jurisdiction_code")} placeholder="uae / uk / us…" /></Field>
+                <Field label="Jurisdiction">
+                  <select
+                    value={form.jurisdiction_code}
+                    onChange={(e) => setForm((f) => ({ ...f, jurisdiction_code: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Pick a jurisdiction…</option>
+                    {JURISDICTION_OPTIONS.map((j) => (
+                      <option key={j.code} value={j.code}>{j.flag} {j.name}</option>
+                    ))}
+                  </select>
+                </Field>
                 <Field label="License number"><Input {...fld("license_number")} /></Field>
-                <Field label="Issue date"><Input type="date" {...fld("issue_date")} /></Field>
-                <Field label="Expiry date"><Input type="date" {...fld("expiry_date")} /></Field>
+                <Field label="Issue date"><DateField value={form.issue_date} onChange={(v) => setForm((f) => ({ ...f, issue_date: v }))} /></Field>
+                <Field label="Expiry date"><DateField value={form.expiry_date} onChange={(v) => setForm((f) => ({ ...f, expiry_date: v }))} /></Field>
                 <Field label="Notes"><Input {...fld("notes")} /></Field>
               </div>
               <div className="flex justify-end gap-2">
@@ -1448,23 +1672,6 @@ export function LicenseDetailBody({
                   <div className="text-sm font-semibold">
                     Applicable regulations
                   </div>
-                  <div className="flex items-center gap-2">
-                    {isAdmin && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAiOpen(true)}
-                        title={
-                          license.has_file
-                            ? "Read the uploaded license with Claude and find the filings it triggers"
-                            : "No PDF needed — Claude finds the finance filings this license type owes, ready to review and add"
-                        }
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Find Regulations
-                      </Button>
-                    )}
-                  </div>
                 </div>
 
                 {rulesQuery.isLoading ? (
@@ -1473,9 +1680,27 @@ export function LicenseDetailBody({
                       <Skeleton key={i} className="h-14 w-full" />
                     ))}
                   </div>
-                ) : !rulesQuery.data ? null : rulesQuery.data.direct.length === 0 ? null : (
+                ) : !rulesQuery.data || rulesQuery.data.direct.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border bg-secondary/20 px-4 py-6 text-center space-y-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/60 px-2.5 py-1 text-xs text-foreground">
+                      <span className="font-semibold tabular-nums">0</span>
+                      <span>approved</span>
+                    </span>
+                    <p className="text-sm text-muted-foreground">
+                      Nothing approved yet — approve filings in Review &amp; Assign for this
+                      entity and they'll appear here.
+                    </p>
+                  </div>
+                ) : (
                   <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
-                    <TrackingCounts counts={rulesQuery.data.counts} />
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/60 px-2.5 py-1 text-foreground">
+                        <span className="font-semibold tabular-nums">
+                          {rulesQuery.data.counts.total}
+                        </span>
+                        <span>active</span>
+                      </span>
+                    </div>
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
@@ -1515,19 +1740,6 @@ export function LicenseDetailBody({
               )}
             </div>
 
-            <AIExtractDialog
-              license={license}
-              open={aiOpen}
-              onOpenChange={setAiOpen}
-              existingForms={[
-                ...(rulesQuery.data?.direct ?? []),
-                ...(rulesQuery.data?.entity_other ?? []),
-              ].flatMap((r) => [r.form_name, r.name].filter(Boolean) as string[])}
-              onCreated={() => {
-                onChanged();
-              }}
-            />
-
         </div>
       </CardContent>
     </Card>
@@ -1552,34 +1764,6 @@ function Stat({
   );
 }
 
-function TrackingCounts({ counts }: { counts: Record<string, number> }) {
-  const items: { key: string; label: string; tone: string }[] = [
-    { key: "total", label: "Applicable rules", tone: "bg-secondary/60 text-foreground" },
-    { key: "not_scheduled", label: "No deadline scheduled", tone: "bg-slate-100 text-slate-700" },
-    { key: "unassigned", label: "Unassigned", tone: "bg-amber-100 text-amber-800" },
-    { key: "not_started", label: "Not started", tone: "bg-slate-100 text-slate-700" },
-    { key: "in_progress", label: "In progress", tone: "bg-blue-100 text-blue-700" },
-    { key: "pending_review", label: "Pending review", tone: "bg-purple-100 text-purple-700" },
-  ];
-  return (
-    <div className="flex flex-wrap gap-2 text-xs">
-      {items.map((it) => {
-        const n = counts[it.key] ?? 0;
-        if (it.key !== "total" && n === 0) return null;
-        return (
-          <span
-            key={it.key}
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${it.tone}`}
-          >
-            <span className="font-semibold tabular-nums">{n}</span>
-            <span>{it.label}</span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 function statusBadgeVariant(
   status: string | null,
 ): "completed" | "progress" | "review" | "neutral" | "overdue" {
@@ -1599,6 +1783,36 @@ function statusLabel(status: string | null): string {
 // Columns: Function · Regulator · Category · Obligation (plain English) ·
 // Frequency · Due · Mandatory/Conditional. Every column except the obligation
 // text gets a dropdown filter.
+// Canonical filter options so the Function / Category dropdowns always offer
+// the full set — even when no approved filing of that kind is present yet.
+// Category strings mirror the rule extractor's category list exactly so they
+// match the values stored on rules (the filter compares by equality).
+const FUNCTION_OPTIONS = ["Finance", "Compliance", "Legal", "HR"];
+const CATEGORY_OPTIONS = [
+  "Regulatory",
+  "AML / CFT",
+  "Corporate Tax",
+  "Information Returns",
+  "VAT",
+  "GST/HST",
+  "Sales/Use Tax",
+  "Excise Tax",
+  "Forex / Cross-Border",
+  "Corporate & Statutory",
+  "Payroll",
+  "Pensions",
+  "Social Security",
+  "Workers Compensation",
+  "Data Protection & Privacy",
+  "Cybersecurity",
+  "Consumer Protection",
+  "CIS",
+  "Statistics",
+  "EU Reporting",
+  "Accounting Control",
+  "Unclaimed Property",
+];
+
 function RegulationsTable({
   items,
   licenseId,
@@ -1620,9 +1834,11 @@ function RegulationsTable({
     Array.from(new Set(vals.filter((v): v is string => !!v))).sort((a, b) =>
       a.localeCompare(b),
     );
-  const fnOpts = uniq(items.map((r) => r.responsible_function));
+  // Full fixed list ∪ whatever's present, so every function/category is always
+  // selectable (and a custom value on a rule still shows up).
+  const fnOpts = uniq([...FUNCTION_OPTIONS, ...items.map((r) => r.responsible_function)]);
   const regOpts = uniq(items.map((r) => r.authority));
-  const catOpts = uniq(items.map((r) => r.category));
+  const catOpts = uniq([...CATEGORY_OPTIONS, ...items.map((r) => r.category)]);
   const freqOpts = uniq(items.map((r) => r.frequency));
 
   const rows = items.filter(
@@ -1667,20 +1883,19 @@ function RegulationsTable({
     <div className="space-y-2">
       {isAdmin && (
         <div className="text-xs text-muted-foreground">
-          Showing Finance filings only. These are auto-scheduled onto the
-          calendar — every Production filing in this jurisdiction appears
-          automatically when you open the license.
+          Across all functions (Finance, Legal, HR, Compliance). These are
+          auto-scheduled onto the calendar — every filing approved in Review
+          &amp; Assign for this entity appears automatically when you open
+          the license.
         </div>
       )}
       <div className="rounded-lg border border-border overflow-x-auto">
       <table className="w-full text-sm min-w-[920px]">
         <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground align-top">
           <tr>
-            <th className="px-3 py-2 text-left font-medium w-[110px]">
+            <th className="px-3 py-2 text-left font-medium w-[120px]">
               Function
-              <div className="mt-1 text-xs font-normal normal-case text-foreground">
-                Finance
-              </div>
+              <Sel value={fn} onChange={setFn} opts={fnOpts} label="" />
             </th>
             <th className="px-3 py-2 text-left font-medium w-[150px]">
               Regulator

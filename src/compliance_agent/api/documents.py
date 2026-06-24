@@ -59,6 +59,7 @@ def _serialize(doc: Document) -> DocumentOut:
         content_type=doc.content_type,
         size_bytes=doc.size_bytes,
         category=doc.category,
+        folder=doc.folder or doc.category.value if doc.category else doc.folder,
         tags=doc.tags,
         url=doc.storage_path if doc.content_type == LINK_CONTENT_TYPE else None,
         uploaded_by=serialize_user(doc.uploaded_by),
@@ -251,6 +252,7 @@ def _persist_upload(
     obligation_id: Optional[int],
     category: DocumentCategory,
     tags: Optional[str],
+    folder: Optional[str] = None,
 ) -> Document:
     entity = db.get(Entity, entity_id)
     if entity is None:
@@ -270,6 +272,7 @@ def _persist_upload(
         content_type=upload.content_type,
         size_bytes=size,
         category=category,
+        folder=(folder or "").strip() or "Filings",
         tags=tags,
         uploaded_by_id=user.id,
     )
@@ -303,11 +306,12 @@ def upload_to_entity(
     entity_id: int,
     file: UploadFile = File(...),
     category: DocumentCategory = Form(DocumentCategory.other),
+    folder: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> DocumentOut:
-    doc = _persist_upload(db, user, file, entity_id, None, category, tags)
+    doc = _persist_upload(db, user, file, entity_id, None, category, tags, folder)
     return _serialize(doc)
 
 

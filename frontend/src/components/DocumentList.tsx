@@ -56,6 +56,10 @@ interface Props {
   layout?: "rows" | "grid";
   showEntityColumn?: boolean;
   defaultCategory?: DocumentCategory;
+  /** Free-text folder — filters the list to this folder and tags uploads with it. */
+  folder?: string;
+  /** Optional case-insensitive filename filter (the page's search box). */
+  query?: string;
 }
 
 
@@ -114,18 +118,26 @@ export function DocumentList({
   layout = "rows",
   showEntityColumn = false,
   defaultCategory,
+  folder,
+  query,
 }: Props) {
   const queryClient = useQueryClient();
   // `defaultCategory` drives both the upload's tagged category AND the
   // list filter — picking "Templates" must hide Filings rows even though
   // they live on the same entity.
-  const queryKey = buildQueryKey(scope, defaultCategory);
+  const queryKey = [...buildQueryKey(scope, defaultCategory), folder ?? ""];
 
-  const { data: documents = [], isLoading } = useQuery({
+  const { data: rawDocuments = [], isLoading } = useQuery({
     queryKey,
     queryFn: () =>
       api.get<DocumentOut[]>(buildListPath(scope, defaultCategory)),
   });
+  // When a folder is set, filter the entity's docs to that folder client-side.
+  // Then apply the optional filename search from the page's search box.
+  const _q = (query ?? "").trim().toLowerCase();
+  const documents = rawDocuments
+    .filter((d) => (folder ? (d.folder || d.category) === folder : true))
+    .filter((d) => (_q ? (d.filename || "").toLowerCase().includes(_q) : true));
 
   // ----------------------------------------------------------------
   // Upload
@@ -139,6 +151,7 @@ export function DocumentList({
       const form = new FormData();
       form.append("file", file);
       if (defaultCategory) form.append("category", defaultCategory);
+      if (folder) form.append("folder", folder);
 
       if (scope.kind === "obligation") {
         return api.upload<DocumentOut>(
@@ -423,7 +436,7 @@ function DocumentRow({
         {doc.obligation_form_name ? (
           <Badge variant="default">{doc.obligation_form_name}</Badge>
         ) : (
-          <span className="text-xs italic">Entity-level</span>
+          <span className="text-xs">—</span>
         )}
       </td>
       <td className="px-3 py-2.5">

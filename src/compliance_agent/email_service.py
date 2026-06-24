@@ -10,6 +10,9 @@ Config (env):
   GMAIL_CLIENT_ID      — Google OAuth client id. When the Gmail trio is set,
   GMAIL_CLIENT_SECRET    we send through Gmail's HTTPS API (gmail.send scope)
   GMAIL_REFRESH_TOKEN    over port 443 — works on Render, no third party.
+                         Client id/secret fall back to GOOGLE_CLIENT_ID /
+                         GOOGLE_CLIENT_SECRET (the Google-login client), so a
+                         shared OAuth client only needs the refresh token here.
   GMAIL_SENDER         — From address (your Gmail / Workspace, e.g. you@aspora.com).
   RESEND_API_KEY       — Resend API key (re_...). Used next when set.
   RESEND_FROM          — From for Resend. Needs a domain verified in Resend
@@ -44,12 +47,20 @@ def base_url() -> str:
     return os.environ.get("COMPLIANCE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
+def _gmail_client_creds() -> tuple[Optional[str], Optional[str]]:
+    """OAuth client id/secret for the Gmail send path. Falls back to the
+    Google-login client (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) since reusing
+    one OAuth client for both sign-in and gmail.send is the common setup. The
+    refresh token stays the explicit opt-in — without GMAIL_REFRESH_TOKEN the
+    Gmail path is off regardless of these."""
+    cid = os.environ.get("GMAIL_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID")
+    secret = os.environ.get("GMAIL_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
+    return cid, secret
+
+
 def _gmail_configured() -> bool:
-    return bool(
-        os.environ.get("GMAIL_CLIENT_ID")
-        and os.environ.get("GMAIL_CLIENT_SECRET")
-        and os.environ.get("GMAIL_REFRESH_TOKEN")
-    )
+    cid, secret = _gmail_client_creds()
+    return bool(cid and secret and os.environ.get("GMAIL_REFRESH_TOKEN"))
 
 
 def smtp_configured() -> bool:
@@ -79,11 +90,12 @@ def _gmail_access_token() -> Optional[str]:
     try:
         import httpx
 
+        cid, secret = _gmail_client_creds()
         r = httpx.post(
             "https://oauth2.googleapis.com/token",
             data={
-                "client_id": os.environ["GMAIL_CLIENT_ID"],
-                "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+                "client_id": cid,
+                "client_secret": secret,
                 "refresh_token": os.environ["GMAIL_REFRESH_TOKEN"],
                 "grant_type": "refresh_token",
             },
@@ -98,10 +110,10 @@ def _gmail_access_token() -> Optional[str]:
         return None
 
 
-def _send_via_gmail_api(*, to: str, subject: str, text: str, html: Optional[str]) -> bool:
+def _send_via_gmail_api(*, to: str, subject: str, text: str, html: Optional[str]) -> tuple[bool, Optional[str]]:
     """Send through the Gmail HTTPS API (gmail.send scope). Uses the configured
     refresh token to mint an access token, then posts the raw MIME message.
-    Works on hosts that block SMTP (e.g. Render). Returns True on delivery."""
+    Works on hosts that block SMTP (e.g. Render). Returns (ok, failure_reason)."""
     sender = (
         os.environ.get("GMAIL_SENDER")
         or os.environ.get("SMTP_FROM")
@@ -110,7 +122,7 @@ def _send_via_gmail_api(*, to: str, subject: str, text: str, html: Optional[str]
     )
     token = _gmail_access_token()
     if not token:
-        return False
+        return False, "Gmail API: could not refresh the access token (check GMAIL_CLIENT_ID / SECRET / REFRESH_TOKEN)."
     try:
         import httpx
 
@@ -124,16 +136,18 @@ def _send_via_gmail_api(*, to: str, subject: str, text: str, html: Optional[str]
         )
         if r.status_code in (200, 201):
             logger.info("Sent email via Gmail API to %s — subject=%r", to, subject)
-            return True
-        logger.warning("Gmail API send failed: status=%s body=%r", r.status_code, r.text[:300])
-        return False
+            return True, None
+        reason = f"Gmail API: status {r.status_code} — {r.text[:200]}"
+        logger.warning("Gmail API send failed: %s", reason)
+        return False, reason
     except Exception as e:  # noqa: BLE001
-        logger.warning("Gmail API send crashed: %s", e)
-        return False
+        reason = f"Gmail API: {type(e).__name__}: {e}"
+        logger.warning("Gmail API send crashed: %s", reason)
+        return False, reason
 
 
-def _send_via_resend(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> bool:
-    """Send through Resend's HTTPS API. Returns True on delivery."""
+def _send_via_resend(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> tuple[bool, Optional[str]]:
+    """Send through Resend's HTTPS API. Returns (ok, failure_reason)."""
     from_addr = (
         os.environ.get("RESEND_FROM")
         or os.environ.get("SMTP_FROM")
@@ -153,16 +167,18 @@ def _send_via_resend(api_key: str, *, to: str, subject: str, text: str, html: Op
         )
         if r.status_code in (200, 201):
             logger.info("Sent email via Resend to %s — subject=%r", to, subject)
-            return True
-        logger.warning("Resend send failed: status=%s body=%r", r.status_code, r.text[:300])
-        return False
+            return True, None
+        reason = f"Resend: status {r.status_code} — {r.text[:300]}"
+        logger.warning("Resend send failed: %s", reason)
+        return False, reason
     except Exception as e:  # noqa: BLE001
-        logger.warning("Resend send crashed: %s", e)
-        return False
+        reason = f"Resend: {type(e).__name__}: {e}"
+        logger.warning("Resend send crashed: %s", reason)
+        return False, reason
 
 
-def _send_via_brevo(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> bool:
-    """Send through Brevo's HTTPS API. Returns True on delivery. The sender
+def _send_via_brevo(api_key: str, *, to: str, subject: str, text: str, html: Optional[str]) -> tuple[bool, Optional[str]]:
+    """Send through Brevo's HTTPS API. Returns (ok, failure_reason). The sender
     email must be a verified sender (or verified domain) in the Brevo account."""
     sender_email = (
         os.environ.get("BREVO_FROM")
@@ -194,12 +210,14 @@ def _send_via_brevo(api_key: str, *, to: str, subject: str, text: str, html: Opt
         )
         if r.status_code in (200, 201):
             logger.info("Sent email via Brevo to %s — subject=%r", to, subject)
-            return True
-        logger.warning("Brevo send failed: status=%s body=%r", r.status_code, r.text[:300])
-        return False
+            return True, None
+        reason = f"Brevo: status {r.status_code} — {r.text[:300]}"
+        logger.warning("Brevo send failed: %s", reason)
+        return False, reason
     except Exception as e:  # noqa: BLE001
-        logger.warning("Brevo send crashed: %s", e)
-        return False
+        reason = f"Brevo: {type(e).__name__}: {e}"
+        logger.warning("Brevo send crashed: %s", reason)
+        return False, reason
 
 
 def send_email(*, to: str, subject: str, body_text: str, body_html: Optional[str] = None) -> bool:
@@ -222,25 +240,39 @@ def send_email_detailed(
     """Same as send_email() but also returns the exact failure reason. Used by
     the Settings → Integrations test button. Tries the HTTPS providers first
     (they work where SMTP ports are blocked), then SMTP with detailed errors."""
-    if _gmail_configured() and _send_via_gmail_api(
-        to=to, subject=subject, text=body_text, html=body_html
-    ):
-        return True, None
+    # Collect every provider's failure reason — returning only the LAST
+    # error (historically the SMTP fallback's "Network is unreachable" on
+    # Render) masked the real cause, e.g. Resend's sandbox 403.
+    errors: list[str] = []
+    if _gmail_configured():
+        ok, reason = _send_via_gmail_api(
+            to=to, subject=subject, text=body_text, html=body_html
+        )
+        if ok:
+            return True, None
+        errors.append(reason or "Gmail API: failed")
     resend_key = os.environ.get("RESEND_API_KEY")
-    if resend_key and _send_via_resend(
-        resend_key, to=to, subject=subject, text=body_text, html=body_html
-    ):
-        return True, None
+    if resend_key:
+        ok, reason = _send_via_resend(
+            resend_key, to=to, subject=subject, text=body_text, html=body_html
+        )
+        if ok:
+            return True, None
+        errors.append(reason or "Resend: failed")
     brevo_key = os.environ.get("BREVO_API_KEY")
-    if brevo_key and _send_via_brevo(
-        brevo_key, to=to, subject=subject, text=body_text, html=body_html
-    ):
-        return True, None
+    if brevo_key:
+        ok, reason = _send_via_brevo(
+            brevo_key, to=to, subject=subject, text=body_text, html=body_html
+        )
+        if ok:
+            return True, None
+        errors.append(reason or "Brevo: failed")
 
     host = os.environ.get("SMTP_HOST")
     if not host:
         _log_to_console(to, subject, body_text)
-        return False, "SMTP_HOST is not set on the server."
+        errors.append("SMTP: SMTP_HOST is not set on the server.")
+        return False, " · ".join(errors)
 
     port = int(os.environ.get("SMTP_PORT", "587"))
     user = os.environ.get("SMTP_USER")
@@ -278,7 +310,7 @@ def send_email_detailed(
         )
         logger.warning("SMTP auth failed: %s", msg_text)
         _log_to_console(to, subject, body_text)
-        return False, msg_text
+        return False, " · ".join(errors + [f"SMTP: {msg_text}"])
     except smtplib.SMTPResponseException as e:
         msg_text = (
             f"SMTP server responded {e.smtp_code}: "
@@ -286,12 +318,12 @@ def send_email_detailed(
         )
         logger.warning("SMTP response error: %s", msg_text)
         _log_to_console(to, subject, body_text)
-        return False, msg_text
+        return False, " · ".join(errors + [f"SMTP: {msg_text}"])
     except Exception as e:  # noqa: BLE001
         msg_text = f"{type(e).__name__}: {e}"
         logger.warning("SMTP send failed (%s) — falling back to console log.", msg_text)
         _log_to_console(to, subject, body_text)
-        return False, msg_text
+        return False, " · ".join(errors + [f"SMTP: {msg_text}"])
 
 
 def _log_to_console(to: str, subject: str, body: str) -> None:

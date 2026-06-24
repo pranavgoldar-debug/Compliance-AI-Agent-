@@ -28,19 +28,25 @@ import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { fmtShortDate, JURISDICTIONS } from "@/lib/format";
+import { fmtShortDate } from "@/lib/format";
+import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { cn } from "@/lib/utils";
 import type { Entity, Obligation, ObligationStatus, UserBrief } from "@/types/api";
 
-type Scope = "assigned" | "watching" | "completed" | "all";
+type Scope = "assigned" | "unassigned" | "watching" | "completed" | "all";
 type SortKey = "due_date" | "recently_updated" | "priority";
 
 const SCOPES: { key: Scope; label: string }[] = [
   { key: "assigned", label: "Assigned to me" },
-  { key: "watching", label: "Watching" },
+  { key: "unassigned", label: "Unassigned" },
   { key: "completed", label: "Completed" },
   { key: "all", label: "All" },
 ];
+
+// Open work nobody owns yet — the slice the dashboard's Unassigned tile
+// deep-links to (/tasks?scope=unassigned). Derived client-side from scope=all.
+const isUnassigned = (o: Obligation) =>
+  !o.assignee && o.status !== "completed" && o.status !== "not_applicable";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "due_date", label: "Due date (default)" },
@@ -100,7 +106,7 @@ function TaskRow({ ob }: { ob: Obligation }) {
       onKeyDown={(e) => {
         if (e.key === "Enter") openObligation(ob.id);
       }}
-      className="group w-full grid grid-cols-[1.4fr_2fr_120px_120px_90px_60px] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm cursor-pointer"
+      className="group w-full grid grid-cols-[1.4fr_2fr_120px_140px_minmax(150px,1fr)] gap-4 px-4 py-3 items-center hover:bg-secondary/40 transition-colors text-sm cursor-pointer"
     >
       <div className="flex items-center gap-2 min-w-0">
         <JurisdictionBadge code={ob.entity_jurisdiction_code} showName={false} />
@@ -122,10 +128,9 @@ function TaskRow({ ob }: { ob: Obligation }) {
         daysRemaining={ob.days_remaining}
         showDays
       />
-      <EffortBandBadge band={ob.effort_band} />
 
-      <div className="flex items-center justify-end gap-1.5">
-        <AssigneeChip user={ob.assignee} size="sm" />
+      <div className="flex items-center justify-end gap-1.5 min-w-0">
+        <AssigneeChip user={ob.assignee} size="sm" showName />
         <RowQuickActions ob={ob} />
       </div>
     </div>
@@ -233,6 +238,14 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
           {items.length} item{items.length === 1 ? "" : "s"}
         </span>
       </div>
+      {/* Column headers — same grid template as TaskRow. */}
+      <div className="grid grid-cols-[1.4fr_2fr_120px_140px_minmax(150px,1fr)] gap-4 px-4 py-2 items-center text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border bg-secondary/10">
+        <div>Entity / Authority</div>
+        <div>Obligation</div>
+        <div>Due</div>
+        <div>Status</div>
+        <div className="text-right">Assignee</div>
+      </div>
       <div className="divide-y divide-border">
         {items.map((ob) => (
           <TaskRow key={ob.id} ob={ob} />
@@ -302,18 +315,29 @@ export function TasksPage({
       );
     return { ...base, statuses: seeded };
   })();
-  // When the user arrives with a URL pre-filter, default scope to "all" so
-  // they see every match (not just their own assignments).
-  const [scope, setScope] = useState<Scope>(
-    initialFilters.statuses.length > 0 ? "all" : "assigned",
-  );
+  // ?scope=<tab> deep-links straight to that tab — the dashboard's Unassigned
+  // tile uses ?scope=unassigned, the "needs attention" banner uses ?scope=all.
+  // Otherwise, when the user arrives with a URL pre-filter (status or
+  // awaiting-payment), default scope to "all" so they see every match, not just
+  // their own assignments.
+  const initialScope: Scope = (() => {
+    const s =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("scope")
+        : null;
+    if (s === "assigned" || s === "unassigned" || s === "completed" || s === "all")
+      return s;
+    return initialFilters.statuses.length > 0 || initialAwaitingPayment ? "all" : "assigned";
+  })();
+  const [scope, setScope] = useState<Scope>(initialScope);
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data: rawData, isLoading, isFetching } = useQuery({
     queryKey: ["tasks", scope, department, awaitingPayment],
     queryFn: () => {
-      const qs = new URLSearchParams({ scope });
+      // The API has no unassigned scope — fetch everything and slice client-side.
+      const qs = new URLSearchParams({ scope: scope === "unassigned" ? "all" : scope });
       if (department !== "all") qs.set("department", department);
       if (awaitingPayment) qs.set("awaiting_payment", "1");
       return api.get<Obligation[]>(`/api/tasks?${qs.toString()}`);
@@ -328,6 +352,11 @@ export function TasksPage({
     // indicator instead.
     placeholderData: keepPreviousData,
   });
+  // Unassigned scope slices the all-fetch down to ownerless open work.
+  const data = useMemo(
+    () => (scope === "unassigned" ? rawData?.filter(isUnassigned) : rawData),
+    [rawData, scope],
+  );
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
     queryFn: () => api.get<Entity[]>("/api/entities"),
@@ -351,6 +380,7 @@ export function TasksPage({
       // one number immediately on first load.
       return {
         assigned: scope === "assigned" ? data?.length ?? null : null,
+        unassigned: scope === "unassigned" ? data?.length ?? null : null,
         watching: scope === "watching" ? data?.length ?? null : null,
         completed: scope === "completed" ? data?.length ?? null : null,
         all: scope === "all" ? data?.length ?? null : null,
@@ -364,6 +394,7 @@ export function TasksPage({
           o.status !== "completed" &&
           o.status !== "not_applicable",
       ).length,
+      unassigned: all.filter(isUnassigned).length,
       // Watching needs the comment-author list — we don't have that on
       // the client. Best approximation: items where I'm the assignee OR
       // I'm tagged in payment_reference (rare). Leave as the active fetch.
@@ -372,19 +403,6 @@ export function TasksPage({
       all: all.length,
     };
   }, [allTasksQuery.data, data, scope, userId]);
-
-  // Department + awaiting-payment chip counts, sliced by the CURRENT scope
-  // so they tell the user "if I click this chip, how many will I see?".
-  // Falls back to the active query's data while the all-fetch is pending.
-  const chipCounts = useMemo(() => {
-    const src = data ?? [];
-    return {
-      all: src.length,
-      compliance: src.filter((o) => o.department === "compliance").length,
-      finance: src.filter((o) => o.department === "finance").length,
-      awaitingPayment: src.filter((o) => o.is_awaiting_payment).length,
-    };
-  }, [data]);
 
   // Apply filters + sort.
   const visible = useMemo(() => {
@@ -422,8 +440,8 @@ export function TasksPage({
     (filters.dueWithinDays != null ? 1 : 0);
 
   // Header copy. The page is a single combined "Compliance & Finance"
-  // queue — the Awaiting payment chip + department chips are how teams
-  // slice their own work without us splitting them into separate pages.
+  // queue — scope tabs + filters are how teams slice their own work
+  // without us splitting them into separate pages.
   const pageTitle = "Filings";
   const pageDescription =
     "Your filing queue — every obligation generated from the licenses you track.";
@@ -467,10 +485,9 @@ export function TasksPage({
         />
         <FilterPopover
           label="Jurisdiction"
-          options={Object.entries(JURISDICTIONS).map(([code, j]) => ({
-            value: code,
-            label: `${j.flag} ${j.name}`,
-          }))}
+          options={jurisdictionOptionsInUse(entities.map((e) => e.jurisdiction_code)).map(
+            (o) => ({ value: o.value, label: o.name }),
+          )}
           selected={filters.jurisdictions}
           onChange={(vals) => setFilters((f) => ({ ...f, jurisdictions: vals }))}
         />
@@ -489,6 +506,19 @@ export function TasksPage({
           value={filters.dueWithinDays}
           onChange={(v) => setFilters((f) => ({ ...f, dueWithinDays: v }))}
         />
+        {/* The Awaiting-payment chip is gone, but ?awaiting_payment=1 links
+            (legacy /finance redirect) still pre-filter; surface an off
+            switch only while that hidden filter is active. */}
+        {awaitingPayment && (
+          <button
+            type="button"
+            onClick={() => setAwaitingPayment(false)}
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 h-8 text-xs transition-colors border-amber-300 bg-amber-50 text-amber-800 font-medium"
+            title="Showing only filings whose payment leg is still open — click to clear"
+          >
+            Awaiting payment ✕
+          </button>
+        )}
         {activeFilterCount > 0 && (
           <button
             onClick={() => setFilters(emptyFilters())}
@@ -536,16 +566,20 @@ export function TasksPage({
               title={
                 scope === "assigned"
                   ? "Nothing on your plate"
-                  : scope === "completed"
-                    ? "No completed items yet"
-                    : "All caught up"
+                  : scope === "unassigned"
+                    ? "Everything has an owner"
+                    : scope === "completed"
+                      ? "No completed items yet"
+                      : "All caught up"
               }
               description={
                 scope === "assigned"
                   ? "All caught up. Time for a coffee."
-                  : scope === "watching"
-                    ? "Comment on or open an obligation to start watching it."
-                    : "No tasks match the current filters."
+                  : scope === "unassigned"
+                    ? "Every open filing is assigned to someone."
+                    : scope === "watching"
+                      ? "Comment on or open an obligation to start watching it."
+                      : "No tasks match the current filters."
               }
             />
           </div>

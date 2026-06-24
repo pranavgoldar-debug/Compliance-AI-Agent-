@@ -14,10 +14,11 @@ import os
 from datetime import date, timedelta
 from typing import Any, Optional
 
+import anthropic
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from compliance_agent.ai.llm_client import make_client
+from compliance_agent.ai.llm_client import ai_available, log_usage, make_client
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -28,6 +29,7 @@ from compliance_agent.db import (
     Obligation,
     ObligationStatus,
     Rule,
+    RuleStatus,
     User,
     get_session,
 )
@@ -42,6 +44,8 @@ You answer questions about the user's compliance data: legal entities, regulator
 
 Rules:
 - Use tools to ground every factual answer. Don't fabricate counts, dates, or IDs.
+- Every tool reads the APPROVED data only — the same obligations the Compliance Calendar shows. Staging drafts awaiting review are invisible to you; if a user asks about something you can't find, suggest it may still be awaiting approval in Review & Assign.
+- "What's overdue?" → call list_obligations with status=overdue (or dashboard_summary for just the count). "What's due soon?" → status=in_alert_window or a due_from/due_to range.
 - Cite specific records when relevant: "Aspora India Pvt Ltd — GSTR-3B due 2026-06-20 (obligation #4123)".
 - For overview questions, prefer dashboard_summary; for entity-level questions use list_obligations with entity_id.
 - Today is treated as the current calendar day — pass dates as ISO YYYY-MM-DD when filtering.
@@ -52,7 +56,10 @@ Rules:
 
 
 def _is_live() -> bool:
-    return os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
+    # Live AND a usable API key is configured — checking the key too means a
+    # half-configured server (LIVE=1 but no key) returns the graceful "off"
+    # message instead of 500-ing when the SDK client can't initialise.
+    return ai_available()
 
 
 # ---------------------------------------------------------------------------
@@ -79,10 +86,12 @@ TOOLS = [
             "properties": {
                 "jurisdiction_code": {
                     "type": "string",
-                    "enum": [
-                        "india", "uk", "us", "eu", "uae", "singapore", "canada", "lithuania",
-                    ],
-                    "description": "Restrict to one jurisdiction.",
+                    "description": (
+                        "Restrict to one jurisdiction. Use the entity's stored code — a "
+                        "legacy slug (india, uk, us, eu, uae, singapore, canada, lithuania) "
+                        "or an ISO 3166-1 alpha-2 code for any other country (e.g. 'br', 'de'). "
+                        "Call list_entities first if unsure which codes exist."
+                    ),
                 }
             },
         },
@@ -104,9 +113,10 @@ TOOLS = [
                 },
                 "jurisdiction_code": {
                     "type": "string",
-                    "enum": [
-                        "india", "uk", "us", "eu", "uae", "singapore", "canada", "lithuania",
-                    ],
+                    "description": (
+                        "A legacy slug (india, uk, us, eu, uae, singapore, canada, "
+                        "lithuania) or an ISO 3166-1 alpha-2 code for any other country."
+                    ),
                 },
                 "status": {
                     "type": "string",
@@ -152,28 +162,33 @@ TOOLS = [
 
 def _tool_dashboard_summary(db: Session, _args: dict[str, Any]) -> dict[str, Any]:
     open_statuses = [ObligationStatus.not_started, ObligationStatus.in_progress, ObligationStatus.pending_review]
+    # Counts mirror the calendar: only obligations from APPROVED (production)
+    # rules — staging drafts aren't real commitments yet.
+    approved = select(func.count(Obligation.id)).join(Obligation.rule).where(
+        Rule.status == RuleStatus.production
+    )
     overdue = db.execute(
-        select(func.count(Obligation.id)).where(
+        approved.where(
             Obligation.due_date < today(),
             Obligation.status.in_(open_statuses),
         )
     ).scalar_one()
     in_alert = db.execute(
-        select(func.count(Obligation.id)).where(
+        approved.where(
             Obligation.due_date >= today(),
             Obligation.due_date <= today() + timedelta(days=ALERT_WINDOW_DAYS),
             Obligation.status.in_(open_statuses),
         )
     ).scalar_one()
     safe = db.execute(
-        select(func.count(Obligation.id)).where(
+        approved.where(
             Obligation.due_date > today() + timedelta(days=ALERT_WINDOW_DAYS),
             Obligation.status.in_(open_statuses),
         )
     ).scalar_one()
     first_of_month = today().replace(day=1)
     completed = db.execute(
-        select(func.count(Obligation.id)).where(
+        approved.where(
             Obligation.status == ObligationStatus.completed,
             Obligation.completed_at >= first_of_month,
         )
@@ -209,8 +224,12 @@ def _tool_list_entities(db: Session, args: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_list_obligations(db: Session, args: dict[str, Any]) -> dict[str, Any]:
     limit = min(40, max(1, int(args.get("limit") or 40)))
-    stmt = select(Obligation).options(
-        joinedload(Obligation.rule), joinedload(Obligation.entity)
+    # Approved rules only — the same slice the calendar shows.
+    stmt = (
+        select(Obligation)
+        .join(Obligation.rule)
+        .where(Rule.status == RuleStatus.production)
+        .options(joinedload(Obligation.rule), joinedload(Obligation.entity))
     )
 
     if entity_id := args.get("entity_id"):
@@ -278,7 +297,8 @@ def _tool_list_obligations(db: Session, args: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_list_rules(db: Session, args: dict[str, Any]) -> dict[str, Any]:
     limit = min(40, max(1, int(args.get("limit") or 40)))
-    stmt = select(Rule)
+    # Approved catalogue only — staging drafts stay invisible to the copilot.
+    stmt = select(Rule).where(Rule.status == RuleStatus.production)
     if jc := args.get("jurisdiction_code"):
         stmt = stmt.where(Rule.jurisdiction_code == jc)
     if cat := args.get("category"):
@@ -321,6 +341,33 @@ TOOL_HANDLERS = {
     "list_rules": _tool_list_rules,
     "get_today": _tool_get_today,
 }
+
+
+def _blocks_to_dicts(content: Any) -> list[dict[str, Any]]:
+    """Serialise response content blocks (SDK objects OR dicts) into plain
+    dicts before they go back into the message list. The OpenRouter shim's
+    message converter only understands dicts — feeding it SDK objects breaks
+    the tool round-trip (tool_use blocks get stringified, then the follow-up
+    tool_result references an undeclared call and the API rejects it)."""
+    out: list[dict[str, Any]] = []
+    for b in content or []:
+        if isinstance(b, dict):
+            out.append(b)
+            continue
+        btype = getattr(b, "type", None)
+        if btype == "text":
+            out.append({"type": "text", "text": getattr(b, "text", "")})
+        elif btype == "tool_use":
+            out.append(
+                {
+                    "type": "tool_use",
+                    "id": getattr(b, "id", ""),
+                    "name": getattr(b, "name", ""),
+                    "input": getattr(b, "input", {}) or {},
+                }
+            )
+        # Other block kinds (thinking, etc.) aren't round-tripped.
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -374,13 +421,18 @@ def chat(
         max_iterations = 6
         for _ in range(max_iterations):
             response = client.messages.create(
-                model="claude-opus-4-7",
+                model="claude-opus-4-8",
                 max_tokens=4096,
                 system=SYSTEM_PROMPT,
                 tools=TOOLS,
                 messages=api_messages,
             )
-            api_messages.append({"role": "assistant", "content": response.content})
+            log_usage(response, model="claude-opus-4-8", label="ask-aspora")
+            # Plain dicts only — SDK block objects break the OpenRouter shim's
+            # tool round-trip (see _blocks_to_dicts).
+            api_messages.append(
+                {"role": "assistant", "content": _blocks_to_dicts(response.content)}
+            )
 
             if response.stop_reason != "tool_use":
                 break

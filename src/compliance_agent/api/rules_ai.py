@@ -31,8 +31,10 @@ from compliance_agent.rule_extractor import (
     CandidateRule,
     RuleExtractionResult,
     RuleExtractorUnavailable,
+    discovery_debug_enabled,
     extract_rules_from_text,
     is_live,
+    summarize_discovery,
 )
 
 
@@ -49,6 +51,9 @@ class ExtractResponse(BaseModel):
     jurisdiction_hint: Optional[str] = None
     rules: list[CandidateRule]
     notes: Optional[str] = None
+    # Debug-only discovery audit (extracted facts + counts). Populated only when
+    # COMPLIANCE_AGENT_DISCOVERY_DEBUG=1; the production UI ignores it.
+    debug_audit: Optional[dict] = None
 
 
 @router.post("/extract", response_model=ExtractResponse)
@@ -97,6 +102,7 @@ def extract_rules(
         jurisdiction_hint=result.jurisdiction_hint or payload.jurisdiction_hint,
         rules=result.rules,
         notes=result.notes,
+        debug_audit=summarize_discovery(result) if discovery_debug_enabled() else None,
     )
 
 
@@ -151,7 +157,11 @@ def bulk_create_rules(
             applicability_note=cand.applicability_note,
             tax_type=cand.tax_type,
             plain_description=cand.plain_description,
-            responsible_function=derive_function(cand.category, cand.area),
+            responsible_function=(
+                cand.owner_team
+                if getattr(cand, "owner_team", None) in ("Finance", "Compliance", "Legal", "HR")
+                else derive_function(cand.category, cand.area)
+            ),
             status=payload.status,
             created_by_id=user.id,
         )
@@ -159,6 +169,13 @@ def bulk_create_rules(
         db.add(rule)
         created.append(rule)
     db.flush()
+
+    # Sync the calendar (a no-op while these are staging — a rule only gets a
+    # calendar obligation once it's APPROVED to production).
+    from compliance_agent.api.rules import ensure_obligations_for_rule
+
+    for rule in created:
+        ensure_obligations_for_rule(db, rule)
 
     log_activity(
         db,

@@ -35,6 +35,39 @@
     --radius: 0.75rem;
   }
 
+  /* Dark theme — applied when <html> has the `.dark` class (toggled in the
+     Topbar, persisted in localStorage; default light). Slate neutrals; the
+     Aspora purple stays the brand hue, lightened for contrast on dark. */
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 40% 11%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 40% 11%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 262 83% 67%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 262 40% 24%;
+    --accent-foreground: 262 83% 90%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 22%;
+    --input: 217 33% 22%;
+    --ring: 262 83% 67%;
+  }
+
   * {
     @apply border-border;
   }

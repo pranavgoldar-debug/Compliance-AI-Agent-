@@ -64,8 +64,13 @@ def list_users_admin(
     db: Session = Depends(get_session),
     _: User = Depends(require_admin),
 ) -> list[UserOut]:
-    """Full user list incl. inactive users. Admin only."""
-    stmt = select(User).order_by(User.is_active.desc(), User.full_name, User.email)
+    """Full user list incl. inactive users, but EXCLUDING permanently-deleted
+    leavers (they survive only as name tombstones for history). Admin only."""
+    stmt = (
+        select(User)
+        .where(User.is_deleted.is_(False))
+        .order_by(User.is_active.desc(), User.full_name, User.email)
+    )
     return [UserOut.model_validate(u) for u in db.execute(stmt).scalars().all()]
 
 
@@ -153,18 +158,47 @@ def update_user(
     return UserOut.model_validate(user)
 
 
-@router.delete("/admin/{user_id}", status_code=204)
+@router.delete("/admin/{user_id}")
 def deactivate_user(
     user_id: int,
+    reassign_to: int | None = None,
     db: Session = Depends(get_session),
     actor: User = Depends(require_admin),
-) -> None:
-    """Soft delete — sets is_active=False so existing references stay intact."""
+) -> dict:
+    """Deactivate a user (audit-safe soft delete — is_active=False, history
+    kept) AND clear their workload so it doesn't strand: their OPEN filings are
+    handed to ``reassign_to`` if given, otherwise unassigned (so they surface in
+    Filings → Unassigned). Pending Google Calendar events follow; reminders stop
+    (the reminder job skips inactive assignees)."""
+    from compliance_agent.db import Obligation, ObligationStatus
+    from compliance_agent.api.notifications import emit_assignment
+    from compliance_agent import calendar_service
+
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found.")
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="You can't deactivate your own account.")
+
+    new_owner: User | None = None
+    if reassign_to is not None:
+        new_owner = db.get(User, reassign_to)
+        if new_owner is None or not new_owner.is_active:
+            raise HTTPException(status_code=400, detail="Reassignee must be an active user.")
+        if new_owner.id == user.id:
+            raise HTTPException(status_code=400, detail="Can't reassign to the user being deactivated.")
+
+    open_obs = db.execute(
+        select(Obligation).where(
+            Obligation.assignee_id == user.id,
+            Obligation.status.not_in(
+                [ObligationStatus.completed, ObligationStatus.not_applicable]
+            ),
+        )
+    ).scalars().all()
+    for ob in open_obs:
+        ob.assignee_id = new_owner.id if new_owner else None
+
     user.is_active = False
     log_activity(
         db,
@@ -172,5 +206,73 @@ def deactivate_user(
         action="user.deactivated",
         target_type="user",
         target_id=user.id,
+        payload={
+            "open_filings": len(open_obs),
+            "reassigned_to": new_owner.id if new_owner else None,
+        },
     )
     db.commit()
+
+    # Post-commit fan-out: notify the new owner of each handed-over filing, and
+    # keep the shared Google Calendar in step (reassign → update, unassign → remove).
+    if new_owner:
+        for ob in open_obs:
+            try:
+                emit_assignment(db, assignee=new_owner, obligation=ob, actor=actor)
+            except Exception:  # noqa: BLE001
+                pass
+    if calendar_service.is_configured():
+        for ob in open_obs:
+            calendar_service.sync_obligation(ob.id)
+
+    return {
+        "deactivated": True,
+        "open_filings": len(open_obs),
+        "reassigned_to": new_owner.id if new_owner else None,
+    }
+
+
+@router.delete("/admin/{user_id}/purge")
+def purge_user(
+    user_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> dict:
+    """Permanently remove a leaver's IDENTITY while keeping a name tombstone.
+
+    Only allowed on an already-INACTIVE user (deactivate first — that step
+    hands off their open work). We scrub the PII that constitutes their
+    identity — email, password, Slack id — and set is_deleted, but KEEP
+    full_name so historical filings / audit entries can still show who did it
+    (the UI greys a deleted user's name). They vanish from the user list and
+    can never log in. Irreversible."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.id == actor.id:
+        raise HTTPException(status_code=400, detail="You can't delete your own account.")
+    if user.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Deactivate the user first — that hands off their open work — then delete.",
+        )
+
+    kept_name = user.full_name or user.email
+    # Scrub identity/PII; keep full_name as the history label.
+    user.email = f"deleted-user-{user.id}@removed.invalid"
+    user.password_hash = "!"  # unusable hash — login impossible
+    user.slack_user_id = None
+    user.is_active = False
+    user.is_deleted = True
+
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="user.deleted",
+        target_type="user",
+        target_id=user.id,
+        payload={"name": kept_name},
+    )
+    db.commit()
+    return {"deleted": True, "name_kept": kept_name}
+

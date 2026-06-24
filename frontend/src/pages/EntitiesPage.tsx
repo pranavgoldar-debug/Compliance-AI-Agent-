@@ -1,12 +1,13 @@
 // Entities — every Aspora legal entity. Table + Card grid toggle, multi-select
 // filters, search by name/type/reg #.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   ChevronDown,
   LayoutGrid,
   List,
+  Loader2,
   Lock,
   Plus,
   Search,
@@ -14,9 +15,17 @@ import {
   Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
+import { FiscalYearEndPicker } from "@/components/FiscalYearEndPicker";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,10 +35,12 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, userInitials, JURISDICTIONS } from "@/lib/format";
+import { fmtRelative, userInitials, jurisdiction } from "@/lib/format";
+import { jurisdictionOptionsInUse } from "@/lib/countries";
+import { CountrySelect } from "@/components/CountrySelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import type { Entity, UserBrief } from "@/types/api";
+import type { Entity, OwnershipStage } from "@/types/api";
 
 
 type ViewMode = "table" | "grid";
@@ -51,18 +62,14 @@ export function EntitiesPage() {
   const [q, setQ] = useState("");
   const [jurisdictions, setJurisdictions] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
-  const [leadIds, setLeadIds] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
+  const [addOpen, setAddOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["entities"],
     queryFn: () => api.get<Entity[]>("/api/entities"),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
-  });
-  const { data: users = [] } = useQuery({
-    queryKey: ["users"],
-    queryFn: () => api.get<UserBrief[]>("/api/users"),
   });
 
   const allTypes = useMemo(() => {
@@ -84,16 +91,14 @@ export function EntitiesPage() {
     }
     if (jurisdictions.length) arr = arr.filter((e) => jurisdictions.includes(e.jurisdiction_code));
     if (types.length) arr = arr.filter((e) => types.includes(e.legal_type));
-    if (leadIds.length)
-      arr = arr.filter((e) => e.country_lead && leadIds.includes(String(e.country_lead.id)));
     return arr;
-  }, [data, q, jurisdictions, types, leadIds]);
+  }, [data, q, jurisdictions, types]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Entities"
-        description="Every Aspora legal entity, with active obligation counts and country leads."
+        description="Every Aspora legal entity, with active obligation counts."
         actions={
           <div className="flex items-center gap-2">
             <ExportMenu
@@ -103,7 +108,7 @@ export function EntitiesPage() {
               }}
             />
             {isAdmin ? (
-              <Button>
+              <Button onClick={() => setAddOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add entity
               </Button>
@@ -130,10 +135,9 @@ export function EntitiesPage() {
         </div>
         <FilterPopover
           label="Jurisdiction"
-          options={Object.entries(JURISDICTIONS).map(([code, j]) => ({
-            value: code,
-            label: `${j.flag} ${j.name}`,
-          }))}
+          options={jurisdictionOptionsInUse((data ?? []).map((e) => e.jurisdiction_code)).map(
+            (o) => ({ value: o.value, label: o.name }),
+          )}
           selected={jurisdictions}
           onChange={setJurisdictions}
         />
@@ -142,13 +146,6 @@ export function EntitiesPage() {
           options={allTypes.map((t) => ({ value: t, label: t }))}
           selected={types}
           onChange={setTypes}
-          searchable
-        />
-        <FilterPopover
-          label="Country lead"
-          options={users.map((u) => ({ value: String(u.id), label: u.full_name }))}
-          selected={leadIds}
-          onChange={setLeadIds}
           searchable
         />
 
@@ -193,7 +190,7 @@ export function EntitiesPage() {
           }
           action={
             isAdmin && data && data.length === 0 ? (
-              <Button>
+              <Button onClick={() => setAddOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add entity
               </Button>
@@ -218,10 +215,234 @@ export function EntitiesPage() {
       ) : (
         <GridView entities={filtered} />
       )}
+
+      <AddEntityDialog open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );
 }
 
+
+function AddEntityDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [legalType, setLegalType] = useState("");
+  const [jurisdictionCode, setJurisdictionCode] = useState("");
+  const [shortCode, setShortCode] = useState("");
+  const [regNumber, setRegNumber] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [address, setAddress] = useState("");
+  const [fye, setFye] = useState("");
+  const [incDate, setIncDate] = useState("");
+  const [nature, setNature] = useState("");
+  const [ownership, setOwnership] = useState<OwnershipStage[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setLegalType("");
+      setJurisdictionCode("");
+      setShortCode("");
+      setRegNumber("");
+      setTaxId("");
+      setAddress("");
+      setFye("");
+      setIncDate("");
+      setNature("");
+      setOwnership([]);
+      setError(null);
+    }
+  }, [open]);
+
+  const setStage = (i: number, patch: Partial<OwnershipStage>) =>
+    setOwnership((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addStage = () => setOwnership((rows) => [...rows, { name: "", role: "" }]);
+  const removeStage = (i: number) =>
+    setOwnership((rows) => rows.filter((_, idx) => idx !== i));
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const cleaned = ownership
+        .map((o) => ({ name: o.name.trim(), role: o.role.trim() }))
+        .filter((o) => o.name);
+      return api.post("/api/entities", {
+        name: name.trim(),
+        legal_type: legalType.trim(),
+        jurisdiction_code: jurisdictionCode,
+        short_code: shortCode.trim() || null,
+        registration_number: regNumber.trim() || null,
+        tax_id: taxId.trim() || null,
+        address: address.trim() || null,
+        incorporation_date: incDate || null,
+        fiscal_year_end: fye.trim() || null,
+        annual_return_date: null,
+        nature_of_operation: nature.trim() || null,
+        ownership: cleaned.length ? cleaned : null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>Add entity</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Legal name *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Jurisdiction *</label>
+              <CountrySelect value={jurisdictionCode} onChange={setJurisdictionCode} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Legal type</label>
+              <Input
+                value={legalType}
+                placeholder="Private Limited / LLC / FZE…"
+                onChange={(e) => setLegalType(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Short code</label>
+              <Input
+                value={shortCode}
+                placeholder="VINC, NESS…"
+                onChange={(e) => setShortCode(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Registration number</label>
+              <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">GST / Tax No</label>
+            <Input
+              value={taxId}
+              placeholder="GSTIN / VAT / TRN…"
+              onChange={(e) => setTaxId(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Address</label>
+            <textarea
+              value={address}
+              placeholder="Registered office address"
+              onChange={(e) => setAddress(e.target.value)}
+              rows={2}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Nature of operation</label>
+            <textarea
+              value={nature}
+              placeholder="What the entity does — e.g. cross-border remittance & payments."
+              onChange={(e) => setNature(e.target.value)}
+              rows={2}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Incorporation date</label>
+              <DateField value={incDate} onChange={setIncDate} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Fiscal year end / ARD</label>
+              <FiscalYearEndPicker value={fye} onChange={setFye} />
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium">Ownership</label>
+              <span className="text-[11px] text-muted-foreground">
+                Ultimate parent → … → this entity
+              </span>
+            </div>
+            {ownership.length > 0 && (
+              <div className="space-y-2">
+                {ownership.map((stage, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={stage.name}
+                      placeholder="Owner / parent name"
+                      className="flex-1"
+                      onChange={(e) => setStage(i, { name: e.target.value })}
+                    />
+                    <Input
+                      value={stage.role}
+                      placeholder="Stake % (e.g. 100)"
+                      className="w-28 shrink-0"
+                      onChange={(e) => setStage(i, { role: e.target.value })}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeStage(i)}
+                      aria-label="Remove owner"
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button variant="outline" size="sm" onClick={addStage}>
+              <Plus className="h-4 w-4" />
+              Add owner
+            </Button>
+          </div>
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !name.trim() || !jurisdictionCode}
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Create entity
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+type SortKey =
+  | "jurisdiction"
+  | "name"
+  | "type"
+  | "active"
+  | "overdue"
+  | "due_soon"
+  | "last";
 
 function TableView({
   entities,
@@ -235,6 +456,46 @@ function TableView({
   onDeleteMany: (ids: number[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Click a column header to sort; click again to flip direction. Defaults to
+  // jurisdiction so you can eyeball all entities of one country together.
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "jurisdiction",
+    dir: "asc",
+  });
+  const toggleSort = (key: SortKey) =>
+    setSort((s) =>
+      s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" },
+    );
+
+  const sorted = useMemo(() => {
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const val = (e: Entity): string | number => {
+      switch (sort.key) {
+        case "jurisdiction":
+          return jurisdiction(e.jurisdiction_code).name;
+        case "name":
+          return e.name.toLowerCase();
+        case "type":
+          return e.legal_type.toLowerCase();
+        case "active":
+          return e.active_obligations_count;
+        case "overdue":
+          return e.overdue_obligations_count;
+        case "due_soon":
+          return e.in_alert_window_count;
+        case "last":
+          return e.last_filed_at ? new Date(e.last_filed_at).getTime() : 0;
+      }
+    };
+    return [...entities].sort((a, b) => {
+      const av = val(a);
+      const bv = val(b);
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return a.name.localeCompare(b.name);
+    });
+  }, [entities, sort]);
+
   const toggle = (id: number) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -245,6 +506,36 @@ function TableView({
   const toggleAll = () =>
     setSelected(allSelected ? new Set() : new Set(entities.map((e) => e.id)));
   const selectedIds = entities.filter((e) => selected.has(e.id)).map((e) => e.id);
+
+  const SortTh = ({
+    label,
+    sortKey,
+    align = "left",
+    title,
+  }: {
+    label: string;
+    sortKey: SortKey;
+    align?: "left" | "right";
+    title?: string;
+  }) => (
+    <th
+      className={cn(
+        "px-4 py-2.5 font-medium cursor-pointer select-none hover:text-foreground",
+        align === "right" ? "text-right" : "text-left",
+      )}
+      onClick={() => toggleSort(sortKey)}
+      title={title}
+    >
+      <span className={cn("inline-flex items-center gap-1", align === "right" && "flex-row-reverse")}>
+        {label}
+        {sort.key === sortKey && (
+          <ChevronDown
+            className={cn("h-3 w-3 transition-transform", sort.dir === "asc" && "rotate-180")}
+          />
+        )}
+      </span>
+    </th>
+  );
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -264,7 +555,7 @@ function TableView({
         </div>
       )}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[1000px]">
+        <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
               {isAdmin && (
@@ -277,19 +568,22 @@ function TableView({
                   />
                 </th>
               )}
-              <th className="px-4 py-2.5 text-left font-medium">Entity</th>
-              <th className="px-4 py-2.5 text-left font-medium">Type</th>
-              <th className="px-4 py-2.5 text-left font-medium">Jurisdiction</th>
+              <SortTh label="Jurisdiction" sortKey="jurisdiction" />
+              <SortTh label="Entity" sortKey="name" />
+              <SortTh label="Type" sortKey="type" />
               <th className="px-4 py-2.5 text-left font-medium">Fiscal YE</th>
-              <th className="px-4 py-2.5 text-left font-medium">Country lead</th>
-              <th className="px-4 py-2.5 text-right font-medium">Active</th>
-              <th className="px-4 py-2.5 text-right font-medium">Overdue</th>
-              <th className="px-4 py-2.5 text-right font-medium">In alert</th>
-              <th className="px-4 py-2.5 text-left font-medium">Last activity</th>
+              <SortTh label="Active" sortKey="active" align="right" />
+              <SortTh label="Overdue" sortKey="overdue" align="right" />
+              <SortTh
+                label="Due soon"
+                sortKey="due_soon"
+                align="right"
+                title="Obligations due within the next few weeks (approaching their deadline)."
+              />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {entities.map((e) => (
+            {sorted.map((e) => (
               <tr
                 key={e.id}
                 className="hover:bg-secondary/30 cursor-pointer"
@@ -311,6 +605,9 @@ function TableView({
                   </td>
                 )}
                 <td className="px-4 py-2.5">
+                  <JurisdictionBadge code={e.jurisdiction_code} />
+                </td>
+                <td className="px-4 py-2.5">
                   <Link
                     to={`/entities/${e.id}`}
                     className="flex items-center gap-3 min-w-0 hover:text-aspora-700"
@@ -318,35 +615,11 @@ function TableView({
                     <div className="h-8 w-8 rounded-lg bg-aspora-100 grid place-items-center text-aspora-700 font-semibold text-[10px] shrink-0">
                       {e.short_code || userInitials(e.name)}
                     </div>
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{e.name}</div>
-                      <div className="text-xs text-muted-foreground truncate font-mono">
-                        {e.short_code
-                          ? e.registration_number || `Code: ${e.short_code}`
-                          : e.registration_number || "No reg #"}
-                      </div>
-                    </div>
+                    <div className="font-medium truncate">{e.name}</div>
                   </Link>
                 </td>
                 <td className="px-4 py-2.5 text-muted-foreground">{e.legal_type}</td>
-                <td className="px-4 py-2.5">
-                  <JurisdictionBadge code={e.jurisdiction_code} />
-                </td>
                 <td className="px-4 py-2.5 text-muted-foreground">{e.fiscal_year_end || "—"}</td>
-                <td className="px-4 py-2.5">
-                  {e.country_lead ? (
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Avatar className="h-6 w-6">
-                        <AvatarFallback className="text-[10px]">
-                          {userInitials(e.country_lead.full_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="truncate">{e.country_lead.full_name}</span>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground italic text-xs">Unassigned</span>
-                  )}
-                </td>
                 <td className="px-4 py-2.5 text-right tabular-nums font-medium">
                   {e.active_obligations_count}
                 </td>
@@ -363,9 +636,6 @@ function TableView({
                   ) : (
                     <span className="text-muted-foreground">0</span>
                   )}
-                </td>
-                <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                  {e.last_filed_at ? fmtRelative(e.last_filed_at) : "No filings yet"}
                 </td>
               </tr>
             ))}
@@ -399,16 +669,8 @@ function GridView({ entities }: { entities: Entity[] }) {
               </div>
 
               <dl className="grid grid-cols-2 gap-y-1 text-xs">
-                <dt className="text-muted-foreground">Reg #</dt>
-                <dd className="font-mono text-[11px] truncate">
-                  {e.registration_number || "—"}
-                </dd>
                 <dt className="text-muted-foreground">FYE</dt>
                 <dd>{e.fiscal_year_end || "—"}</dd>
-                <dt className="text-muted-foreground">Country lead</dt>
-                <dd className="truncate">
-                  {e.country_lead?.full_name?.split(" ")[0] || "—"}
-                </dd>
               </dl>
 
               <div className="flex items-center gap-1.5 pt-1 border-t border-border">
@@ -417,7 +679,7 @@ function GridView({ entities }: { entities: Entity[] }) {
                   <Badge variant="overdue">{e.overdue_obligations_count} overdue</Badge>
                 )}
                 {e.in_alert_window_count > 0 && (
-                  <Badge variant="alert">{e.in_alert_window_count} alert</Badge>
+                  <Badge variant="alert">{e.in_alert_window_count} due soon</Badge>
                 )}
               </div>
             </CardContent>

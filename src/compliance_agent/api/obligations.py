@@ -37,11 +37,13 @@ from compliance_agent.db import (
     Comment,
     Department,
     Document,
+    Entity,
     Notification,
     NotificationKind,
     Obligation,
     ObligationStatus,
     Role,
+    Rule,
     User,
     get_session,
 )
@@ -73,6 +75,9 @@ def list_obligations(
     _: User = Depends(get_current_user),
 ) -> list[ObligationOut]:
     stmt = _base_query()
+    # Hide obligations of archived entities — archiving an entity archives its
+    # filings (they stay in the DB, just off the active views).
+    stmt = stmt.where(Obligation.entity.has(Entity.archived_at.is_(None)))
     if entity_id is not None:
         stmt = stmt.where(Obligation.entity_id == entity_id)
     if assignee_id is not None:
@@ -229,6 +234,16 @@ def update_obligation(
         obligation.completed_at = None
         obligation.completed_by_id = None
 
+    # Reverse-sync: an assignee set/cleared on the filing flows up to its
+    # rule's owner, so the Review & Assign (Approved) table reflects an
+    # assignment made on the filing itself. Forward sync (rule.owner ->
+    # obligations) already exists; this closes the loop. Set the owner
+    # directly so a multi-entity rule's sibling filings aren't disturbed.
+    if "assignee_id" in data and obligation.assignee_id != prev_assignee_id:
+        rule = obligation.rule or db.get(Rule, obligation.rule_id)
+        if rule is not None and rule.owner_id != obligation.assignee_id:
+            rule.owner_id = obligation.assignee_id
+
     # Notifications: assignee changed → ping the new owner.
     if "assignee_id" in data and obligation.assignee_id and obligation.assignee_id != prev_assignee_id:
         new_assignee = db.get(User, obligation.assignee_id)
@@ -270,6 +285,12 @@ def update_obligation(
         payload={"changed_fields": list(data.keys())},
     )
     db.commit()
+    # Google Calendar sync — post-commit so the background thread reads the
+    # new state. Assignment / status / due-date changes update the shared event.
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        calendar_service.sync_obligation(obligation.id)
     obligation = db.execute(
         _base_query().where(Obligation.id == obligation.id)
     ).scalars().unique().one()
@@ -303,6 +324,12 @@ def delete_obligation(
     # Notifications + comments are scoped to this obligation; drop them.
     db.execute(sa_delete(Notification).where(Notification.obligation_id == obligation_id))
     db.execute(sa_delete(Comment).where(Comment.obligation_id == obligation_id))
+
+    # Remove its shared Google Calendar event BEFORE the row goes (the
+    # calendar_events mapping cascades on delete, taking the event id with it).
+    from compliance_agent import calendar_service
+
+    calendar_service.forget_obligations(db, [obligation_id])
 
     log_activity(
         db,
@@ -577,6 +604,7 @@ def bulk_update(
             raise HTTPException(status_code=400, detail="Assignee not found.")
 
     updated = 0
+    synced_ids: list[int] = []
     for o in obligations:
         changed_fields: list[str] = []
         prev_assignee_id = o.assignee_id
@@ -600,9 +628,17 @@ def bulk_update(
             o.assignee_id = new_assignee.id
             changed_fields.append("assignee_id")
 
+        # Reverse-sync the (bulk) assignee change up to each rule's owner so
+        # the Review & Assign table matches what's set on the calendar.
+        if "assignee_id" in changed_fields:
+            rule = o.rule or db.get(Rule, o.rule_id)
+            if rule is not None and rule.owner_id != o.assignee_id:
+                rule.owner_id = o.assignee_id
+
         if not changed_fields:
             continue
         updated += 1
+        synced_ids.append(o.id)
 
         if "assignee_id" in changed_fields and new_assignee is not None and prev_assignee_id != new_assignee.id:
             emit_assignment(db, assignee=new_assignee, obligation=o, actor=user)
@@ -628,6 +664,12 @@ def bulk_update(
         )
 
     db.commit()
+    # Google Calendar sync for every changed filing (post-commit).
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        for oid in synced_ids:
+            calendar_service.sync_obligation(oid)
     return BulkUpdateResult(updated=updated, skipped=missing)
 
 
@@ -660,6 +702,8 @@ def calendar_range(
     stmt = (
         select(Obligation)
         .where(Obligation.due_date >= start, Obligation.due_date <= end)
+        # Archived entities' filings stay off the calendar.
+        .where(Obligation.entity.has(Entity.archived_at.is_(None)))
         .options(
             joinedload(Obligation.rule),
             joinedload(Obligation.entity),

@@ -199,64 +199,91 @@ def emit_assignment(
     obligation: Obligation,
     actor: User,
 ) -> None:
-    """Persist an 'assigned' notification for the new assignee. No-op if the
-    assignee just self-assigned (the typical mark-it-mine flow). Also pings
-    Slack (channel-wide) when the workspace has a webhook and the assignee
-    has notify_slack enabled."""
-    if assignee.id == actor.id:
-        return
+    """Persist an 'assigned' notification for the new assignee and fan out to
+    Slack + email. Self-assignment (the mark-it-mine flow) skips the in-app
+    bell and the Slack ping — notifying yourself about your own click is
+    noise — but the EMAIL still sends, so every assignment leaves a mail
+    trail (admins approving-and-assigning to themselves expect it)."""
+    self_assigned = assignee.id == actor.id
     body = (
         f"{obligation.rule.form_name} — {obligation.entity.name}"
         if obligation.rule and obligation.entity
         else "Compliance item"
     )
-    db.add(
-        Notification(
-            user_id=assignee.id,
-            kind=NotificationKind.assigned,
-            title=f"{actor.full_name or actor.email} assigned you a compliance item",
-            body=body,
-            link_url=f"/obligations/{obligation.id}",
-            obligation_id=obligation.id,
-            actor_id=actor.id,
+    if not self_assigned:
+        db.add(
+            Notification(
+                user_id=assignee.id,
+                kind=NotificationKind.assigned,
+                title=f"{actor.full_name or actor.email} assigned you a compliance item",
+                body=body,
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=actor.id,
+            )
         )
-    )
-    # Side-channel fan-out (best-effort, never raises).
+    # Slack ping fires for self-assignments too (like the email) — the channel
+    # is the team's shared record. Routed to the owner team's channel when a
+    # per-function webhook is configured.
     if assignee.notify_slack and slack_service.is_configured(db):
         msg = slack_service.assignment_blocks(
             obligation=obligation, assignee=assignee, actor=actor
         )
-        slack_service.post(msg["text"], blocks=msg["blocks"])
+        slack_service.post(
+            msg["text"],
+            blocks=msg["blocks"],
+            function=(obligation.rule.responsible_function if obligation.rule else None),
+        )
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
+    # Uses the branded assignment template (email_templates.assignment_email).
     if assignee.notify_email and smtp_configured():
+        from datetime import date as _date
+
+        from compliance_agent.email_templates import assignment_email
+
         link = f"{base_url().rstrip('/')}/obligations/{obligation.id}"
+        rule = obligation.rule
+        entity = obligation.entity
+        form = rule.form_name if rule else "Compliance item"
+        juris = (rule.jurisdiction_code if rule else "—").upper()
         try:
-            send_email(
-                to=assignee.email,
-                subject=f"Assigned: {body}",
-                body_text=(
-                    f"{actor.full_name or actor.email} assigned you a compliance item.\n\n"
-                    f"{body}\n"
-                    f"Due: {obligation.due_date.isoformat()}\n\n"
-                    f"Open it: {link}"
+            subject, text, html = assignment_email(
+                assignee_name=(assignee.full_name or assignee.email.split("@")[0]),
+                assigned_by_name=actor.full_name or actor.email,
+                assigned_by_role=getattr(getattr(actor, "role", None), "value", "") or "admin",
+                assigned_by_email=actor.email,
+                task_title=form,
+                task_id=f"OBL-{obligation.id}",
+                task_description=(
+                    (rule.plain_description if rule else None)
+                    or (rule.due_date_rule if rule else None)
+                    or "See the obligation for details."
                 ),
-                body_html=(
-                    f"<p><strong>{actor.full_name or actor.email}</strong> assigned you "
-                    f"a compliance item.</p>"
-                    f"<p>{body}<br/>Due: {obligation.due_date.isoformat()}</p>"
-                    f'<p><a href="{link}">Open in Compliance OS</a></p>'
-                ),
+                linked_obligation_name=body,
+                jurisdiction=juris,
+                form_code=form,
+                entity_name=entity.name if entity else "—",
+                evidence_required="Filing acknowledgement / proof of submission",
+                due_date=obligation.due_date,
+                assigned_at=_date.today(),
+                open_url=link,
             )
+            send_email(to=assignee.email, subject=subject, body_text=text, body_html=html)
         except Exception:  # noqa: BLE001 — never block the assignment on email
-            pass
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "assignment email to %s failed", assignee.email, exc_info=True
+            )
 
     # Finance hand-off via ClickUp: if the assignee is on the finance team and
     # ClickUp is connected, drop a task so they can action it there. Guarded on
     # clickup_task_id so we never create a duplicate (the payment-request flow
     # may already have made one).
     if (
-        assignee.department == Department.finance
+        not self_assigned
+        and assignee.department == Department.finance
         and not obligation.clickup_task_id
     ):
         from compliance_agent import clickup_service

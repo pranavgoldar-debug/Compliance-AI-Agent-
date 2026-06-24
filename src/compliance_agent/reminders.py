@@ -59,41 +59,60 @@ class ReminderResult:
     slack_sent: bool
 
 
-def _build_email_body(obligation: Obligation, days_remaining: int) -> tuple[str, str]:
+def _assigner_name(db: Session, obligation: Obligation) -> str:
+    """Who assigned this filing — named in the escalation line ('… {name} is
+    copied automatically'). Resolved from the latest 'assigned' notification's
+    actor, falling back to the rule's approver, then a generic phrase."""
+    actor_id = db.execute(
+        select(Notification.actor_id)
+        .where(
+            Notification.obligation_id == obligation.id,
+            Notification.kind == NotificationKind.assigned,
+            Notification.actor_id.is_not(None),
+        )
+        .order_by(Notification.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if actor_id is None and obligation.rule is not None:
+        actor_id = obligation.rule.approver_id
+    if actor_id:
+        user = db.get(User, actor_id)
+        if user is not None:
+            return user.full_name or user.email
+    return "your manager"
+
+
+def _build_email_body(db: Session, obligation: Obligation, days_remaining: int) -> tuple[str, str, str]:
+    """(subject, text, html) for the branded deadline-alert template."""
+    from compliance_agent.email_service import base_url
+    from compliance_agent.email_templates import deadline_alert_email
+
     rule = obligation.rule
     entity = obligation.entity
+    assignee = obligation.assignee
     form = rule.form_name if rule else "Compliance item"
-    authority = rule.authority if rule else "—"
-    entity_name = entity.name if entity else "—"
-    subject = f"[Aspora] Reminder: {form} due in {days_remaining}d ({entity_name})"
-    body = (
-        f"Hi,\n\n"
-        f"This is a deadline reminder from Aspora Compliance OS.\n\n"
-        f"Filing:     {form}\n"
-        f"Entity:     {entity_name}\n"
-        f"Authority:  {authority}\n"
-        f"Frequency:  {rule.frequency if rule else '—'}\n"
-        f"Due date:   {obligation.due_date.isoformat()}  ({days_remaining} days)\n"
-        f"Status:     {obligation.status.value if obligation.status else '—'}\n\n"
-        f"Open it: /obligations/{obligation.id}\n\n"
-        f"You're receiving this because you're the assignee. "
-        f"Toggle reminders in Settings → Notifications.\n"
-    )
-    return subject, body
-
-
-def _slack_text(obligation: Obligation, assignee: User, days_remaining: int) -> str:
-    form = obligation.rule.form_name if obligation.rule else "Compliance item"
-    entity = obligation.entity.name if obligation.entity else "—"
-    handle = (
-        f"<@{assignee.slack_user_id}>"
-        if getattr(assignee, "slack_user_id", None)
-        else (assignee.full_name or assignee.email)
-    )
-    return (
-        f":alarm_clock: Reminder — {handle} *{form}* ({entity}) "
-        f"is due `{obligation.due_date.isoformat()}` "
-        f"({days_remaining} day{'s' if days_remaining != 1 else ''} from now)."
+    status = (obligation.status.value if obligation.status else "—").replace("_", " ").title()
+    updated = getattr(obligation, "updated_at", None)
+    return deadline_alert_email(
+        owner_name=(
+            (assignee.full_name or assignee.email.split("@")[0]) if assignee else "there"
+        ),
+        obligation_name=form,
+        days_remaining=days_remaining,
+        due_date=obligation.due_date,
+        regulator_name=(rule.authority if rule else "—") or "—",
+        jurisdiction=(rule.jurisdiction_code if rule else "—").upper(),
+        form_code=form,
+        entity_name=entity.name if entity else "—",
+        entity_ref=(getattr(entity, "short_code", None) or f"#{entity.id}") if entity else "—",
+        obligation_type=(rule.category if rule else "—") or "—",
+        frequency=(rule.frequency if rule else "—") or "—",
+        period_covered=obligation.period_label or "—",
+        status=status,
+        last_action="status update",
+        last_action_date=updated.date().isoformat() if updated else "—",
+        open_url=f"{base_url().rstrip('/')}/obligations/{obligation.id}",
+        escalation_contact_name=_assigner_name(db, obligation),
     )
 
 
@@ -200,12 +219,12 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                 continue
 
             assignee: Optional[User] = ob.assignee
-            if assignee is None:
+            if assignee is None or not assignee.is_active:
                 continue
             if _already_reminded_at_offset(db, assignee.id, ob.id, offset):
                 continue
 
-            subject, body = _build_email_body(ob, days_left)
+            subject, body, body_html = _build_email_body(db, ob, days_left)
             email_sent = False
             slack_sent = False
 
@@ -227,6 +246,7 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                         to=assignee.email,
                         subject=subject,
                         body_text=body,
+                        body_html=body_html,
                     )
 
                 if (
@@ -234,9 +254,15 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                     and slack_on
                     and slack_service.is_configured(db)
                 ):
+                    msg = slack_service.deadline_blocks(
+                        obligation=ob, assignee=assignee, days_remaining=days_left
+                    )
                     slack_sent = bool(
                         slack_service.post(
-                            _slack_text(ob, assignee, days_left)
+                            msg["text"],
+                            blocks=msg["blocks"],
+                            sync=True,
+                            function=(ob.rule.responsible_function if ob.rule else None),
                         )
                     )
 

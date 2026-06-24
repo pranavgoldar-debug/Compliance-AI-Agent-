@@ -16,7 +16,7 @@ Call sites stay the same:
     from compliance_agent.ai.llm_client import make_client
     client = make_client()
     response = client.messages.create(
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
         max_tokens=4096,
         system="...",
         messages=[{"role": "user", "content": "..."}],
@@ -40,8 +40,12 @@ Limitations of the OpenRouter shim:
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +88,7 @@ def make_client():
 def resolve_model(model: str) -> str:
     """Map our internal model string to whatever the active backend wants.
 
-    Anthropic path: passes through unchanged (e.g. claude-opus-4-7).
+    Anthropic path: passes through unchanged (e.g. claude-opus-4-8).
     OpenRouter path: returns OPENROUTER_MODEL if set, else a sensible
     default (anthropic/claude-sonnet-4-5 — fast + cheap for tool flows).
     """
@@ -94,6 +98,86 @@ def resolve_model(model: str) -> str:
             "anthropic/claude-sonnet-4-5",
         )
     return model
+
+
+# ---------------------------------------------------------------------------
+# Per-run token-usage logging — so real spend is visible in the server logs.
+# ---------------------------------------------------------------------------
+# Anthropic list price, USD per 1M tokens (input, output). OpenRouter is
+# pass-through, so these are a close proxy for the OpenRouter path too. Cache
+# reads bill ~0.1x input and cache writes ~1.25x input (5-minute TTL).
+_PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-sonnet-4-5": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def _price_for(model: str) -> tuple[Optional[float], Optional[float]]:
+    """(input, output) USD per 1M tokens for `model`, or (None, None) if we
+    don't have a price for it. Strips an OpenRouter-style 'anthropic/' prefix
+    and any ':variant' suffix before matching."""
+    key = model.split("/")[-1].split(":")[0]
+    return _PRICING_PER_MTOK.get(key, (None, None))
+
+
+def log_usage(response: Any, *, model: str, label: str) -> None:
+    """Log token usage (plus a best-effort USD estimate) for one AI call.
+
+    Token counts come straight from the response and are exact. The dollar
+    figure is an ESTIMATE from Anthropic list prices for the model actually
+    billed (`resolve_model`, so the OpenRouter model is used on that path, not
+    the requested one); it's omitted when we have no price for that model.
+    No-op when the backend didn't return a usage object."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+
+    # Two shapes: Anthropic (input_tokens/output_tokens/cache_*) where
+    # input_tokens is the uncached remainder, or OpenAI-via-OpenRouter
+    # (prompt_tokens/completion_tokens) where prompt_tokens is the full input
+    # and any cached tokens are a subset reported in prompt_tokens_details.
+    if hasattr(usage, "input_tokens"):
+        uncached_in = int(getattr(usage, "input_tokens", 0) or 0)
+        out = int(getattr(usage, "output_tokens", 0) or 0)
+        cache_read = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+        cache_write = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+    else:
+        total_in = int(getattr(usage, "prompt_tokens", 0) or 0)
+        out = int(getattr(usage, "completion_tokens", 0) or 0)
+        details = getattr(usage, "prompt_tokens_details", None)
+        cache_read = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
+        cache_write = 0
+        uncached_in = total_in - cache_read
+
+    billed_model = resolve_model(model)
+    in_rate, out_rate = _price_for(billed_model)
+    if in_rate is not None and out_rate is not None:
+        cost = (
+            uncached_in * in_rate
+            + cache_read * in_rate * 0.10
+            + cache_write * in_rate * 1.25
+            + out * out_rate
+        ) / 1_000_000
+        cost_str = f"~${cost:.4f}"
+    else:
+        cost_str = "n/a"
+
+    logger.info(
+        "AI usage [%s] backend=%s model=%s in=%d out=%d cache_read=%d "
+        "cache_write=%d est_cost=%s",
+        label,
+        active_backend(),
+        billed_model,
+        uncached_in + cache_read + cache_write,
+        out,
+        cache_read,
+        cache_write,
+        cost_str,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,13 +251,52 @@ class _Messages:
         **_extra: Any,
     ):
         oa_messages = _anth_to_openai_messages(system, messages)
-        completion = self._openai.beta.chat.completions.parse(
-            model=resolve_model(model),
-            messages=oa_messages,
+        model_id = resolve_model(model)
+        # OpenAI-native structured output (json_schema). Works for OpenAI models
+        # on OpenRouter, but many providers — incl. Anthropic models via
+        # OpenRouter — don't ENFORCE the schema, so the reply comes back as
+        # prose/markdown and the SDK's strict json.loads raises. Try it; on any
+        # failure, fall back to asking for plain JSON and validating it ourselves.
+        if output_format is not None:
+            try:
+                completion = self._openai.beta.chat.completions.parse(
+                    model=model_id,
+                    messages=oa_messages,
+                    max_tokens=max_tokens,
+                    response_format=output_format,
+                )
+                shaped = _AnthropicShapedParseResponse(completion)
+                if shaped.parsed_output is not None:
+                    return shaped
+            except Exception:
+                pass
+        return self._parse_json_fallback(model_id, oa_messages, max_tokens, output_format)
+
+    def _parse_json_fallback(self, model_id, oa_messages, max_tokens, output_format):
+        """Provider-agnostic structured output: instruct the model to emit a raw
+        JSON object matching the schema, then extract + validate it. Used when
+        json_schema isn't enforced (e.g. Anthropic models via OpenRouter)."""
+        msgs = list(oa_messages)
+        if output_format is not None:
+            schema = json.dumps(output_format.model_json_schema())
+            instruction = (
+                "\n\nReturn ONLY a single JSON object that conforms to this JSON "
+                "Schema. No prose, no explanation, no markdown code fences:\n" + schema
+            )
+            if (
+                msgs
+                and msgs[-1].get("role") == "user"
+                and isinstance(msgs[-1].get("content"), str)
+            ):
+                msgs[-1] = {**msgs[-1], "content": msgs[-1]["content"] + instruction}
+            else:
+                msgs.append({"role": "user", "content": instruction.strip()})
+        completion = self._openai.chat.completions.create(
+            model=model_id,
+            messages=msgs,
             max_tokens=max_tokens,
-            response_format=output_format,
         )
-        return _AnthropicShapedParseResponse(completion)
+        return _ManualParseResponse(completion, output_format)
 
 
 # ---------------------------------------------------------------------------
@@ -364,9 +487,44 @@ class _AnthropicShapedParseResponse:
         self.usage = getattr(completion, "usage", None)
 
 
+def _extract_json(text: str) -> str:
+    """Pull the JSON object/array out of a model reply that may be wrapped in
+    markdown fences or padded with prose (the non-strict providers do this)."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[A-Za-z0-9]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t).strip()
+    starts = [i for i in (t.find("{"), t.find("[")) if i != -1]
+    if not starts:
+        return t
+    start = min(starts)
+    end = max(t.rfind("}"), t.rfind("]"))
+    return t[start : end + 1] if end > start else t
+
+
+class _ManualParseResponse:
+    """Like _AnthropicShapedParseResponse, but we parse the model's text reply as
+    JSON ourselves and validate it against the Pydantic output_format — for
+    providers that don't enforce json_schema structured output."""
+
+    def __init__(self, completion, output_format) -> None:
+        choice = completion.choices[0]
+        raw = getattr(choice.message, "content", None) or ""
+        self.parsed_output = None
+        self.stop_reason = "no_output"
+        if output_format is not None and raw.strip():
+            try:
+                self.parsed_output = output_format.model_validate_json(_extract_json(raw))
+                self.stop_reason = "end_turn"
+            except Exception:
+                self.stop_reason = "no_output"
+        self.usage = getattr(completion, "usage", None)
+
+
 __all__ = [
     "ai_available",
     "active_backend",
     "make_client",
     "resolve_model",
+    "log_usage",
 ]

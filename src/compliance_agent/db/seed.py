@@ -18,6 +18,8 @@ import random
 from datetime import date, timedelta
 from typing import Optional
 
+import os
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -591,6 +593,38 @@ def _backfill_effort_bands(db: Session) -> int:
     if touched:
         db.flush()
     return touched
+
+
+def seed_admin_only() -> dict[str, int]:
+    """Minimal first-boot bootstrap: ensure a single admin login exists so the
+    app is usable, WITHOUT seeding any demo entities, rules or obligations.
+
+    This is the default auto-seed: real entities + licenses are uploaded by the
+    user, and obligations are generated from those (never from the demo data)
+    until the full demo seed is explicitly requested. Credentials come from
+    COMPLIANCE_ADMIN_EMAIL / COMPLIANCE_ADMIN_PASSWORD, falling back to the demo
+    admin so existing logins keep working. Idempotent.
+    """
+    from compliance_agent.db import init_db
+
+    email = os.environ.get("COMPLIANCE_ADMIN_EMAIL") or DEMO_USERS[0]["email"]
+    password = os.environ.get("COMPLIANCE_ADMIN_PASSWORD") or DEMO_USERS[0]["password"]
+    full_name = os.environ.get("COMPLIANCE_ADMIN_NAME") or DEMO_USERS[0]["full_name"]
+
+    init_db()
+    with session_scope() as db:
+        existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        if existing:
+            return {"users": 0}
+        db.add(
+            User(
+                email=email,
+                password_hash=hash_password(password),
+                full_name=full_name,
+                role=Role.admin,
+            )
+        )
+    return {"users": 1}
 
 
 def run_seed(

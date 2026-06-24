@@ -2,7 +2,9 @@ from compliance_agent.db.base import Base, SessionLocal, engine, get_session, in
 from compliance_agent.db.models import (
     Activity,
     Applicability,
+    CalendarEvent,
     Comment,
+    DEFAULT_DOCUMENT_FOLDERS,
     Department,
     Document,
     DocumentCategory,
@@ -27,6 +29,7 @@ from compliance_agent.db.models import (
 
 __all__ = [
     "Base",
+    "CalendarEvent",
     "SessionLocal",
     "engine",
     "get_session",
@@ -44,6 +47,7 @@ __all__ = [
     "Department",
     "Document",
     "DocumentCategory",
+    "DEFAULT_DOCUMENT_FOLDERS",
     "Notification",
     "NotificationKind",
     "PasswordResetToken",

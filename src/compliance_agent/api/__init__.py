@@ -10,6 +10,7 @@ from compliance_agent.api.documents import (
 )
 from compliance_agent.api.entities import router as entities_router
 from compliance_agent.api.exports import router as exports_router
+from compliance_agent.api.jurisdictions import router as jurisdictions_router
 from compliance_agent.api.integrations import (
     admin_router as integrations_admin_router,
     cron_router as integrations_cron_router,
@@ -17,6 +18,7 @@ from compliance_agent.api.integrations import (
     webhook_router as integrations_webhook_router,
 )
 from compliance_agent.api.notifications import router as notifications_router
+from compliance_agent.api.playbook import router as playbook_router
 from compliance_agent.api.obligations import (
     calendar_router,
     router as obligations_router,
@@ -40,11 +42,13 @@ __all__ = [
     "document_obligation_upload_router",
     "entities_router",
     "exports_router",
+    "jurisdictions_router",
     "integrations_admin_router",
     "integrations_cron_router",
     "integrations_me_router",
     "integrations_webhook_router",
     "notifications_router",
+    "playbook_router",
     "obligations_router",
     "calendar_router",
     "retention_router",

@@ -22,6 +22,8 @@ import {
   Trash2,
   Pencil,
   X,
+  BookOpen,
+  RotateCcw,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -31,8 +33,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
+import { Markdown } from "@/components/Markdown";
 import { useAuth } from "@/contexts/AuthContext";
-import { JURISDICTIONS, userInitials } from "@/lib/format";
+import { JURISDICTIONS, userInitials, parseBackendDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -46,6 +49,7 @@ import type { Entity, Role, Rule, UserBrief, UserOut } from "@/types/api";
 
 
 type TabKey =
+  | "playbook"
   | "profile"
   | "users"
   | "integrations"
@@ -56,7 +60,9 @@ type TabKey =
 
 
 const TABS: { key: TabKey; label: string; adminOnly?: boolean; icon: React.ComponentType<{ className?: string }> }[] = [
+  // Everyone — how the workspace works + the rules for writing due dates.
   { key: "profile", label: "Profile", icon: Bell },
+  { key: "playbook", label: "Playbook & Guide", icon: BookOpen },
   { key: "users", label: "Users & Roles", adminOnly: true, icon: Building2 },
   { key: "integrations", label: "Integrations", adminOnly: true, icon: Slack },
   { key: "jurisdictions", label: "Jurisdictions", adminOnly: true, icon: Globe },
@@ -118,6 +124,7 @@ export function SettingsPage() {
         </nav>
 
         <div className="min-w-0">
+          {tab === "playbook" && <PlaybookTab />}
           {tab === "profile" && <ProfileTab user={user} />}
           {tab === "users" && isAdmin && <UsersTab />}
           {tab === "integrations" && isAdmin && <IntegrationsTab />}
@@ -127,6 +134,309 @@ export function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Playbook & Guide — everyone-visible guide; admins can edit the whole thing.
+// Content is markdown, persisted server-side (/api/playbook). When nothing is
+// saved we render DEFAULT_PLAYBOOK_MD below, which is also what the editor
+// seeds from — so admins edit from the real guide, not a blank box.
+// ---------------------------------------------------------------------------
+const DEFAULT_PLAYBOOK_MD = `## Aspora Compliance OS — Playbook & Guide
+
+New here? Read this once, top to bottom. It walks the whole journey — from adding a company to a filing being signed off — in the order you'll actually do it. **Admins** set everything up; **employees** work the filings assigned to them.
+
+### How it all fits together
+
+Everything flows in one direction — each step feeds the next:
+
+\`\`\`
+Entity → Licence → Primary Activity → Compliance (discover) →
+Review & Assign (approve + owner) → Calendar → Filings (do the work) → Filed
+\`\`\`
+
+- **Entity** — a company you manage (e.g. *Aspora UK Ltd*).
+- **Licence** — a permit/authorisation it holds. Helps the AI work out what it must file.
+- **Rule** — a recurring requirement (e.g. *VAT return, quarterly*).
+- **Obligation / Filing** — one real, due-dated instance of a rule (e.g. *that VAT return, due 7 Aug*). This is what people actually work on.
+
+---
+
+### Step 1 — Add the entity (company)
+
+Go to **Entities → "Add entity"** (admin only). Fill in:
+
+- **Legal name** and **Jurisdiction** — required.
+- **Legal type**, **Short code**, **Registration number** — optional identifiers.
+- **Nature of operation** — one line on what the company does (e.g. *cross-border remittance & payments*). **The AI reads this to discover regulations**, so write it properly.
+- **Fiscal year end / ARD** — *important.* The last day of the company's financial year — the date its accounts are made up to (e.g. *31 March*). Most deadlines are *"X months after the year-end"*, so the calendar can't place them without it.
+- **Why "/ ARD"?** **ARD (Accounting Reference Date)** is the UK Companies House name for that **same date** — in this app **ARD = fiscal year end**, one date with two names. (It is *not* the *annual return / confirmation statement*, which is a separate filing.)
+- **Ownership** — optional parent → subsidiary chain.
+
+Save, then open the entity. You'll see five tabs: **Overview · Licences · Primary Activity · Compliance · Documents.**
+
+---
+
+### Step 2 — Add its licence(s)
+
+Open the **Licences** tab → **"Upload license"**. Attach the licence PDF (the AI can auto-fill the details) or type them in. A licence records the authority, number and expiry — and, with the nature of operations, tells discovery what this company is regulated to do.
+
+> **Required before discovery:** the **Refresh Regulations** button stays disabled until the entity has at least one licence uploaded *and* a nature of operations — the AI reads the licence text itself to ground what it finds.
+
+---
+
+### Step 3 — Set the Primary Activity
+
+Open the **Primary Activity** tab and answer each activity **Yes / No / TBD** (TBD = *to be decided* — everything starts there until you answer) — e.g. *"Does the entity trade cross-border?"*
+
+- **What they do:** gate the follow-up questions, and decide whether a discovered filing ends up **mandatory** or **conditional** for this entity.
+- **What they don't do:** they **don't change what discovery finds.** Discovery always assumes every activity could apply; the assessment narrows it down afterwards.
+
+---
+
+### Step 4 — Discover the regulations
+
+Open the **Compliance** tab → **"Refresh Regulations"** (the Sparkles button). The AI reads the nature of operations, jurisdiction and licences (~20–30s) and fills the **"Discovered (AI generated)"** list with every finance filing this company could owe. (Finance only — Legal / HR / governance are out of scope.)
+
+Missed something? Use **"Add regulation"** — a two-tab dialog:
+
+- **Manual entry** — type the filing and build its due date visually (frequency → rule) with a live **"Next due"** preview, so you don't guess. Where the app knows authoritative links for the jurisdiction, pick one under **Suggested sources**.
+- **Import** — upload your obligations register as **Excel or CSV**. Columns auto-map (adjustable), each row is validated, and a blank template is downloadable.
+
+Anything you add lands as a **draft on this entity's discovered list** — exactly like the AI's finds. Nothing is live yet.
+
+---
+
+### Step 5 — Find what actually applies
+
+Still in **Compliance**, click **"Activities"**. Answer the follow-up and operation-specific questions (they appear based on your Primary Activity answers), then click **"Find applicable regulations"** (~15–25s). The AI sorts the discovered list into three columns:
+
+- **Mandatory** — required for this entity now.
+- **Conditional** — applies only if a threshold or trigger is met.
+- **Not applicable** — ruled out by your activity answers; it won't be filed.
+
+Tick the ones you want (mandatory + conditional come pre-ticked) and click **"Add … to Review & Assign"**. That is the moment a draft leaves the entity and enters the shared **Review & Assign** queue.
+
+---
+
+### Step 6 — Review & Assign (approve + pick owners)
+
+Open **Review & Assign** in the sidebar (admin only). Two tabs:
+
+- **For Action** — everything waiting for you; each item carries an **"Awaiting review"** badge.
+- **Approved** — already live.
+
+Click a **For Action** card to expand it, then:
+
+1. **Check / fix the details** — hit **"Edit"** to correct the form name, authority, category, due-date rule, applicability, tax type, etc.
+2. **Assign ownership** — set an **Assignee** (the person who does the work) and an **Approver** (the admin who signs it off). The app may auto-suggest a team.
+3. Click **"Approve & assign"**.
+
+On approve, the rule moves to **Approved** and the app **automatically generates the dated obligation(s)** from its frequency + due-date rule — and they show up on the Calendar immediately. (You can still change the owner later from the Approved tab; it re-syncs to the calendar.)
+
+*Don't need it?* **Archive** (reversible, keeps history) or **Delete** (permanent).
+
+---
+
+### Step 7 — It's on the Calendar
+
+Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, tax type, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
+
+---
+
+### Step 8 — Do the work (Filings)
+
+**Filings** (sidebar) is each person's queue. Tabs: **Assigned to me · Completed · All**. Items are grouped **Overdue → In alert window → In progress → Upcoming → Completed**, each with a coloured **status pill**: *Not started · In progress · Pending review · Completed · N/A.*
+
+Open a filing and the buttons walk you through a **4-step handoff**:
+
+1. **Compliance prepares** — add the filing reference, upload proof, then **"Mark filing complete"**.
+2. **Admin verifies** — **"Approve & hand off to finance"** (if a payment is due), or close it; or **"Send back"** to fix.
+3. **Finance pays** — enter the amount + transaction reference, then **"Mark payment complete"**.
+4. **Admin signs off** — **"Approve & close"**. The filing is now **Filed** and moves to Completed.
+
+(No payment needed? The admin just closes it at step 2.)
+
+---
+
+### Writing due dates
+
+Most of the time you'll use the **visual due-date builder** in *Add regulation* — pick the frequency and the rule, and watch the **"Next due"** preview. You only type a due date as **free text** when editing a rule's deadline in Review & Assign, or in an **import file's deadline column**. When you do, use one of these shapes:
+
+| What you want | Type it like this | Frequency |
+|---|---|---|
+| Monthly, on a fixed day | \`by the 25th of the following month\` | Monthly |
+| Annual, fixed calendar date | \`by 30 Jun\` · \`31 Dec\` | Annually |
+| Within N months of FY-end | \`within 9 months of the financial year end\` | Annually |
+| Month + day after period end | \`15th day of the 6th month after the end of the tax period\` | Annually / Quarterly |
+
+> **Avoid vague text** like \`annually\`, \`as required\`, or \`see regulation\`. If the parser can't read a real deadline it falls back to "today + interval", so the date drifts day-to-day instead of sitting on the true statutory deadline.
+
+**What the frequencies mean:**
+
+| Frequency | Meaning | Example |
+|---|---|---|
+| Annual | Once a year | Annual accounts |
+| Semi-annual | Twice a year | Half-yearly regulatory return |
+| Quarterly | Every quarter | VAT return |
+| Monthly | Every month | Payroll / RTI |
+| One-time | Once, on a specific date | Initial registration |
+| Event-based | Only when something happens — no scheduled date | Change-in-control notification |
+| Continuous | Must be kept in place at all times — no scheduled date | AML programme, sanctions screening |
+
+> **Event-based** and **Continuous** filings don't get calendar dates — pick them in the due-date builder and the rule is tracked without a schedule.
+
+---
+
+### Reminders & Slack
+
+Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status (**In progress / For review / Filed**) without leaving Slack — the website updates automatically.
+
+**Get @-mentioned in Slack (one-time, per person):** Slack only pings you when the app knows your Slack **member ID** — a display name isn't enough.
+
+1. In Slack: click your profile photo → **Profile** → **⋮ (three dots)** → **"Copy member ID"** (looks like \`U07ABC123\`).
+2. In the app: **Settings → Profile → "Your Slack member id"** → paste → **Save**.
+
+Once set, alert cards mention you with a real blue **@name** (and your status-button clicks in Slack are credited to your user). Without it, cards just show your name in bold — no ping. Turn the email/Slack toggles on under **Settings → Profile**.
+
+### Google Calendar
+
+Every **assigned** filing is pushed automatically to the shared **"Aspora Compliance"** Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing.
+
+- **Assign / reassign** → the event appears or updates within seconds.
+- **Complete, mark N/A, or unassign** (in the app or via the Slack buttons) → the event disappears.
+- One filing = one event, no duplicates — the app keeps them in sync on its own.
+
+**Seeing the calendar (one-time, per person):** ask an admin to share the *Aspora Compliance* calendar with you ("See all event details"), then click **"Add this calendar"** in the invite email and make sure its checkbox is ticked in Google Calendar's sidebar. After that, every assignment shows up automatically — nothing to do per filing.
+
+> **The app is the source of truth.** Don't edit or delete these events inside Google Calendar — the app will overwrite manual changes on its next sync. To change a date or owner, change it on the filing.
+
+*(Admins: the connection itself is configured once under **Settings → Integrations → Google Calendar** — setup steps and a "Send test event" button live on that card.)*
+
+---
+
+### Where everything lives
+
+| Page | What it's for |
+|---|---|
+| **Home** | Overdue / due-soon / awaiting-review at a glance. |
+| **Calendar** | Every due date across entities — the source of truth. |
+| **Filings** | Your work queue: prepare, attach proof, mark complete. |
+| **Documents** | Licence PDFs and proof-of-filing. |
+| **Entities** | Companies, fiscal year-ends, and licences (admin). |
+| **Review & Assign** | Approve discovered filings and set owners (admin). |
+| **Regulation Library** | Browse the full finance-filing catalogue. |
+| **Audit Log** | Who did what, when (admin). |
+
+---
+
+### In one breath
+
+Add the **entity** → upload its **licence** → set its **Primary Activity** → **Refresh Regulations** → **Find applicable regulations** → send them to **Review & Assign** → **Approve & assign** an owner → it lands on the **Calendar** and in that person's **Filings** → Compliance prepares, Admin verifies, Finance pays, Admin closes → **Filed.**
+
+Most days you live in **Calendar** and **Filings**; the setup steps (1–6) you only repeat when you add a company or a new licence.
+`;
+
+
+interface PlaybookData {
+  markdown: string | null;
+  updated_at: string | null;
+}
+
+
+function PlaybookTab() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery({
+    queryKey: ["playbook"],
+    queryFn: () => api.get<PlaybookData>("/api/playbook"),
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const save = useMutation({
+    mutationFn: (markdown: string) =>
+      api.post<PlaybookData>("/api/playbook", { markdown }),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["playbook"], fresh);
+      setEditing(false);
+    },
+  });
+
+  const content = data?.markdown ?? DEFAULT_PLAYBOOK_MD;
+
+  if (editing) {
+    return (
+      <Card>
+        <CardContent className="p-6 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold">Edit the Playbook</h3>
+            <span className="text-[11px] text-muted-foreground">
+              Markdown — headings (#), **bold**, lists, tables, and &gt; callouts
+            </span>
+          </div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+            className="w-full h-[60vh] rounded-md border border-input bg-background p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-aspora-300"
+          />
+          {save.error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {(save.error as Error).message}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Button onClick={() => save.mutate(draft)} disabled={save.isPending}>
+              {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Save
+            </Button>
+            <Button variant="outline" onClick={() => setEditing(false)} disabled={save.isPending}>
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
+            <Button
+              variant="ghost"
+              className="ml-auto text-muted-foreground"
+              onClick={() => setDraft(DEFAULT_PLAYBOOK_MD)}
+              disabled={save.isPending}
+              title="Replace the editor contents with the built-in default guide"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset to default
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-6">
+        {isAdmin && (
+          <div className="flex justify-end -mt-1 mb-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDraft(data?.markdown ?? DEFAULT_PLAYBOOK_MD);
+                setEditing(true);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          </div>
+        )}
+        <Markdown source={content} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -159,7 +469,6 @@ function ProfileTab({ user }: { user: UserBrief }) {
     if (prefs?.slack_user_id !== undefined) setSlackId(prefs.slack_user_id ?? "");
   }, [prefs?.slack_user_id]);
 
-  const [calOn, setCalOn] = useState(false);  // cosmetic — calendar integration not yet wired
   return (
     <div className="space-y-4">
       <Card>
@@ -212,16 +521,9 @@ function ProfileTab({ user }: { user: UserBrief }) {
           <ToggleRow
             icon={<Mail className="h-4 w-4" />}
             label="Email"
-            description="Password resets + reminder pings to your inbox. Needs SMTP_HOST / SMTP_USER / SMTP_PASSWORD env vars on the server."
+            description="Assignment alerts, deadline reminders and password resets to your inbox — sent via the email integration configured under Settings → Integrations."
             checked={prefs?.notify_email ?? true}
             onChange={(v) => patchPrefs.mutate({ notify_email: v })}
-          />
-          <ToggleRow
-            icon={<CalendarIcon className="h-4 w-4" />}
-            label="Google Calendar events"
-            description="Not yet wired. Use the Calendar tab in-app to see every due date for now."
-            checked={calOn}
-            onChange={setCalOn}
           />
 
           <div className="pt-3 border-t border-border">
@@ -245,9 +547,25 @@ function ProfileTab({ user }: { user: UserBrief }) {
                 Save
               </Button>
             </div>
+            {slackId.trim() !== "" &&
+              !/\b[UW][A-Za-z0-9]{5,}\b/.test(slackId.trim().toUpperCase()) && (
+                <div className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 max-w-md">
+                  That doesn't look like a member ID — it starts with{" "}
+                  <span className="font-mono">U</span> (e.g.{" "}
+                  <span className="font-mono">U07ABC123</span>). Your display name
+                  won't work: in Slack click your profile photo → <strong>Profile</strong>{" "}
+                  → <strong>⋮</strong> → <strong>"Copy member ID"</strong>.
+                </div>
+              )}
+            {patchPrefs.error && (
+              <div className="mt-1 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5 max-w-md">
+                {(patchPrefs.error as Error).message}
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground mt-1">
               When set, Slack alerts ping you with a real <code className="font-mono">@</code>{" "}
-              mention. Find it in Slack → your profile → "Copy member ID".
+              mention — and your status-button clicks in Slack are credited to you.
+              Find it in Slack → your profile → ⋮ → "Copy member ID".
             </p>
           </div>
         </CardContent>
@@ -260,28 +578,26 @@ function ProfileTab({ user }: { user: UserBrief }) {
           </h3>
           <p className="text-xs text-muted-foreground">
             When `compliance-agent send-reminders` runs (daily cron), it pings
-            the assignee at each offset below for the relevant effort band.
-            Each (person, filing, offset) fires exactly once.
+            the assignee at the offset below for the filing's cadence. Each
+            (person, filing, offset) fires exactly once.
           </p>
           <div className="rounded-lg border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Effort band</th>
                   <th className="px-3 py-2 text-left font-medium">Typical cadence</th>
                   <th className="px-3 py-2 text-left font-medium">Reminders sent</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {[
-                  { band: "1w", cadence: "Monthly", offsets: "7 days before" },
-                  { band: "2w", cadence: "Quarterly", offsets: "25 + 15 days before" },
-                  { band: "4w", cadence: "Half-yearly", offsets: "30 + 15 days before" },
-                  { band: "8w", cadence: "Annual", offsets: "45 + 30 days before" },
-                  { band: "12w", cadence: "Multi-year / long-form", offsets: "60 + 30 days before" },
+                  { cadence: "Monthly", offsets: "7 days before" },
+                  { cadence: "Quarterly", offsets: "30 days before" },
+                  { cadence: "Half-yearly", offsets: "45 days before" },
+                  { cadence: "Annual", offsets: "60 days before" },
+                  { cadence: "Multi-year / long-form", offsets: "90 days before" },
                 ].map((r) => (
-                  <tr key={r.band}>
-                    <td className="px-3 py-2 font-mono text-xs">{r.band}</td>
+                  <tr key={r.cadence}>
                     <td className="px-3 py-2 text-muted-foreground">{r.cadence}</td>
                     <td className="px-3 py-2">{r.offsets}</td>
                   </tr>
@@ -289,11 +605,6 @@ function ProfileTab({ user }: { user: UserBrief }) {
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            To change the policy, edit{" "}
-            <code className="font-mono">_REMINDER_OFFSETS</code> in{" "}
-            <code className="font-mono">src/compliance_agent/api/_helpers.py</code>.
-          </p>
         </CardContent>
       </Card>
 
@@ -527,7 +838,7 @@ function UsersTab() {
                     )}
                   </td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
+                    {u.last_login_at ? parseBackendDate(u.last_login_at).toLocaleDateString() : "Never"}
                   </td>
                   <td className="px-5 py-3">
                     {u.is_active ? (
@@ -569,6 +880,7 @@ function UsersTab() {
       />
       <EditUserDialog
         user={editing}
+        candidates={users.filter((u) => u.is_active && u.id !== editing?.id)}
         onClose={() => setEditing(null)}
         meId={me?.id ?? null}
       />
@@ -593,6 +905,7 @@ function InviteUserDialog({
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<Role>("employee");
+  const [team, setTeam] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -611,6 +924,7 @@ function InviteUserDialog({
         email: email.trim().toLowerCase(),
         full_name: fullName.trim(),
         role,
+        department: team,
         password,
       }),
     onSuccess: (u) => {
@@ -619,6 +933,7 @@ function InviteUserDialog({
       setEmail("");
       setFullName("");
       setRole("employee");
+      setTeam("");
       setPassword("");
       setError(null);
       onOpenChange(false);
@@ -661,6 +976,24 @@ function InviteUserDialog({
               <option value="employee">Employee</option>
               <option value="admin">Admin</option>
             </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Team</label>
+            <select
+              value={team}
+              onChange={(e) => setTeam(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">— None —</option>
+              <option value="compliance">Compliance</option>
+              <option value="finance">Finance</option>
+              <option value="legal">Legal</option>
+              <option value="hr">HR</option>
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              The function this person owns — drives routing and the team filter.
+              Pick "None" for admins or non-team accounts.
+            </p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Initial password</label>
@@ -767,15 +1100,18 @@ function CredCopyRow({ label, value, mono }: { label: string; value: string; mon
 }
 
 
+
 // ---------------------------------------------------------------------------
 // Edit user dialog
 // ---------------------------------------------------------------------------
 function EditUserDialog({
   user,
+  candidates,
   onClose,
   meId,
 }: {
   user: UserOut | null;
+  candidates: UserOut[];
   onClose: () => void;
   meId: number | null;
 }) {
@@ -786,6 +1122,8 @@ function EditUserDialog({
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [reassignTo, setReassignTo] = useState("");
 
   // Reset state when the dialog opens with a new user.
   useEffect(() => {
@@ -796,6 +1134,8 @@ function EditUserDialog({
       setNewPassword("");
       setError(null);
       setConfirmDeactivate(false);
+      setConfirmDelete(false);
+      setReassignTo("");
     }
   }, [user]);
 
@@ -819,9 +1159,13 @@ function EditUserDialog({
   });
 
   const deactivateMutation = useMutation({
-    mutationFn: () => api.delete<void>(`/api/users/admin/${user!.id}`),
+    mutationFn: () => {
+      const qs = reassignTo ? `?reassign_to=${reassignTo}` : "";
+      return api.delete<{ open_filings: number }>(`/api/users/admin/${user!.id}${qs}`);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
       onClose();
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
@@ -829,6 +1173,15 @@ function EditUserDialog({
 
   const reactivateMutation = useMutation({
     mutationFn: () => api.patch<UserOut>(`/api/users/admin/${user!.id}`, { is_active: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClose();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const purgeMutation = useMutation({
+    mutationFn: () => api.delete<{ deleted: boolean }>(`/api/users/admin/${user!.id}/purge`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       onClose();
@@ -881,10 +1234,13 @@ function EditUserDialog({
               <option value="">— None —</option>
               <option value="compliance">Compliance</option>
               <option value="finance">Finance</option>
+              <option value="legal">Legal</option>
+              <option value="hr">HR</option>
             </select>
             <p className="text-[11px] text-muted-foreground">
-              Compliance prepares filings, finance logs payments. Pick
-              "None" for admins or non-team accounts.
+              The function this person owns — drives routing and the
+              Workspace's team filter. Pick "None" for admins or non-team
+              accounts.
             </p>
           </div>
           <div className="space-y-1">
@@ -908,12 +1264,30 @@ function EditUserDialog({
             <div className="pt-3 border-t border-border">
               {user.is_active ? (
                 confirmDeactivate ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2">
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 space-y-2.5">
                     <div className="text-sm font-medium text-red-800">
                       Deactivate {user.full_name}?
                     </div>
                     <div className="text-xs text-red-700/80">
-                      They lose access immediately. Obligations they own keep referencing them.
+                      They lose access immediately. Completed history stays credited to
+                      them; deadline reminders stop. Hand their open filings over below.
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-red-800">
+                        Reassign their open filings to
+                      </label>
+                      <select
+                        value={reassignTo}
+                        onChange={(e) => setReassignTo(e.target.value)}
+                        className="h-9 w-full rounded-md border border-red-200 bg-white px-2 text-sm"
+                      >
+                        <option value="">— Leave unassigned (→ Filings → Unassigned) —</option>
+                        {candidates.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.full_name || c.email}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -946,16 +1320,54 @@ function EditUserDialog({
                     Deactivate user
                   </Button>
                 )
+              ) : confirmDelete ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 space-y-2.5">
+                  <div className="text-sm font-medium text-red-800">
+                    Permanently delete {user.full_name}?
+                  </div>
+                  <div className="text-xs text-red-700/80">
+                    Removes their account, login and contact details for good — they
+                    disappear from this list. Their <strong>name is kept</strong> on past
+                    filings and the audit log (shown greyed, e.g. "{user.full_name} (removed)")
+                    so history stays readable. This <strong>can't be undone</strong>.
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)}>
+                      <X className="h-3.5 w-3.5" />
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={() => purgeMutation.mutate()}
+                      disabled={purgeMutation.isPending}
+                    >
+                      {purgeMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Yes, delete permanently
+                    </Button>
+                  </div>
+                </div>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => reactivateMutation.mutate()}
-                  disabled={reactivateMutation.isPending}
-                >
-                  {reactivateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Reactivate
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => reactivateMutation.mutate()}
+                    disabled={reactivateMutation.isPending}
+                  >
+                    {reactivateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Reactivate
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDelete(true)}
+                    className="text-red-700 border-red-200 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete permanently
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -984,7 +1396,19 @@ interface SlackConfig {
   webhook_url_masked: string | null;
   has_webhook: boolean;
   default_channel: string | null;
+  function_webhooks_masked: Record<string, string>;
 }
+
+// Owner teams that can have their own Slack channel (one incoming webhook is
+// bound to one channel, so per-team routing = one webhook per team).
+// Channel inputs shown in the UI. Compliance and Legal share ONE webhook (they
+// route to the same Slack channel), so the merged input maps to both function
+// keys; everything else is 1:1.
+const SLACK_GROUPS: { id: string; label: string; fns: string[] }[] = [
+  { id: "finance", label: "Finance", fns: ["finance"] },
+  { id: "compliance_legal", label: "Compliance & Legal", fns: ["compliance", "legal"] },
+  { id: "hr", label: "HR", fns: ["hr"] },
+];
 
 interface ClickUpConfig {
   configured: boolean;
@@ -1003,6 +1427,7 @@ function IntegrationsTab() {
       <SlackCard />
       <ClickUpCard />
       <GmailCard />
+      <GoogleCalendarCard />
       <ComingSoonGrid />
     </div>
   );
@@ -1019,6 +1444,7 @@ function SlackCard() {
   const [editing, setEditing] = useState(false);
   const [webhook, setWebhook] = useState("");
   const [channel, setChannel] = useState("");
+  const [fnHooks, setFnHooks] = useState<Record<string, string>>({});
   const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
 
   useEffect(() => {
@@ -1026,12 +1452,17 @@ function SlackCard() {
   }, [cfg]);
 
   const saveMutation = useMutation({
-    mutationFn: (body: { webhook_url?: string; default_channel?: string; enabled?: boolean }) =>
-      api.post<SlackConfig>("/api/admin/integrations/slack", body),
+    mutationFn: (body: {
+      webhook_url?: string;
+      default_channel?: string;
+      enabled?: boolean;
+      function_webhooks?: Record<string, string>;
+    }) => api.post<SlackConfig>("/api/admin/integrations/slack", body),
     onSuccess: (fresh) => {
       queryClient.setQueryData(["integrations", "slack"], fresh);
       setEditing(false);
       setWebhook("");
+      setFnHooks({});
       setResult(null);
     },
   });
@@ -1095,6 +1526,29 @@ function SlackCard() {
               <span className="text-muted-foreground">Default channel</span>
               <span className="font-mono">{cfg.default_channel || "(webhook default)"}</span>
             </div>
+            {SLACK_GROUPS.filter((g) => g.fns.some((fn) => cfg.function_webhooks_masked?.[fn])).map((g) => {
+              const fn = g.fns.find((f) => cfg.function_webhooks_masked?.[f]) ?? g.fns[0];
+              return (
+                <div key={g.id} className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">{g.label} channel</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-mono truncate">{cfg.function_webhooks_masked[fn]}</span>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-red-600"
+                      title={`Remove the ${g.label} channel webhook`}
+                      onClick={() =>
+                        saveMutation.mutate({
+                          function_webhooks: Object.fromEntries(g.fns.map((f) => [f, ""])),
+                        })
+                      }
+                    >
+                      ✕
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -1193,19 +1647,51 @@ function SlackCard() {
                 className="font-mono text-xs mt-1"
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Per-team channels (optional) — alerts route to the owner team's channel
+              </label>
+              <p className="text-[11px] text-muted-foreground mt-0.5 mb-1">
+                A webhook is bound to one channel, so paste one webhook per team
+                (same Slack app → "Add New Webhook to Workspace" → pick that
+                team's channel). Anything without a team webhook uses the default above.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {SLACK_GROUPS.map((g) => (
+                  <div key={g.id}>
+                    <label className="text-[11px] text-muted-foreground">
+                      {g.label}
+                      {g.fns.some((fn) => cfg.function_webhooks_masked?.[fn]) ? " (set — paste to replace)" : ""}
+                    </label>
+                    <Input
+                      value={fnHooks[g.id] ?? ""}
+                      onChange={(e) => setFnHooks((h) => ({ ...h, [g.id]: e.target.value }))}
+                      placeholder="https://hooks.slack.com/services/…"
+                      className="font-mono text-xs mt-0.5"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
                 Cancel
               </Button>
               <Button
                 size="sm"
-                onClick={() =>
+                onClick={() => {
+                  const fw: Record<string, string> = {};
+                  for (const g of SLACK_GROUPS) {
+                    const v = (fnHooks[g.id] ?? "").trim();
+                    if (v) for (const fn of g.fns) fw[fn] = v; // one URL → all fns in the group
+                  }
                   saveMutation.mutate({
                     webhook_url: webhook.trim() || undefined,
                     default_channel: channel.trim() || undefined,
                     enabled: true,
-                  })
-                }
+                    ...(Object.keys(fw).length ? { function_webhooks: fw } : {}),
+                  });
+                }}
                 disabled={
                   saveMutation.isPending ||
                   (!webhook.trim() && !cfg.configured) ||
@@ -1501,11 +1987,6 @@ function GmailCard() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          <strong>Your own Gmail, no third party.</strong> We send over the Gmail HTTPS API
-          (port 443), so Render's SMTP-port block doesn't matter — no Brevo / Resend / SMTP needed.
-        </div>
-
         <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
           <div className="font-medium">Set up Gmail API (one-time)</div>
           <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
@@ -1577,13 +2058,123 @@ GMAIL_SENDER=you@aspora.com`}
 }
 
 
+interface GoogleCalendarConfig {
+  configured: boolean;
+  calendar_id: string | null;
+  has_oauth: boolean;
+}
+
+function GoogleCalendarCard() {
+  const { data: cfg } = useQuery({
+    queryKey: ["integrations", "gcal"],
+    queryFn: () => api.get<GoogleCalendarConfig>("/api/admin/integrations/google-calendar"),
+  });
+  const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
+  const testMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>(
+        "/api/admin/integrations/google-calendar/test",
+      ),
+    onSuccess: (r) => setResult(r),
+  });
+  if (!cfg) return null;
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
+            <CalendarIcon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="font-semibold">Google Calendar</div>
+              {cfg.configured ? (
+                <Badge variant="completed">
+                  <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                  Connected
+                </Badge>
+              ) : (
+                <Badge variant="neutral">Not configured</Badge>
+              )}
+              <Badge variant="neutral">Config via .env</Badge>
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              Pushes every assigned filing onto a shared calendar the moment it's
+              assigned — titled "filing — entity (Assignee: name)". Reassign updates
+              the event; completing removes it.
+            </div>
+          </div>
+          {cfg.configured && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending}
+            >
+              {testMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CalendarIcon className="h-3.5 w-3.5" />
+              )}
+              Send test event
+            </Button>
+          )}
+        </div>
+
+        {cfg.configured && (
+          <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Calendar ID</span>
+            <span className="font-mono truncate">{cfg.calendar_id}</span>
+          </div>
+        )}
+
+        {result && (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              result.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-destructive/30 bg-destructive/5 text-destructive",
+            )}
+          >
+            {result.detail}
+          </div>
+        )}
+
+        {!cfg.configured && (
+          <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
+            <div className="font-medium">Set up (one-time — reuses the Gmail OAuth client)</div>
+            <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+              <li>
+                Google Cloud Console → same project → enable the <strong>Google Calendar API</strong>.
+              </li>
+              <li>
+                Re-mint the refresh token at developers.google.com/oauthplayground with BOTH scopes:{" "}
+                <code className="font-mono">…/auth/gmail.send</code> and{" "}
+                <code className="font-mono">…/auth/calendar.events</code> → update{" "}
+                <code className="font-mono">GMAIL_REFRESH_TOKEN</code>.
+              </li>
+              <li>
+                In Google Calendar: create an "Aspora Compliance" calendar → its settings →
+                "Integrate calendar" → copy the <strong>Calendar ID</strong> → share the calendar
+                with the team.
+              </li>
+              <li>
+                Render → Environment: set <code className="font-mono">GOOGLE_CALENDAR_ID</code> to
+                that ID → redeploy → use "Send test event".
+              </li>
+            </ol>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
 function ComingSoonGrid() {
   const items: { name: string; description: string; icon: React.ReactNode }[] = [
-    {
-      name: "Google Calendar",
-      description: "Per-user OAuth — drops events on each due date",
-      icon: <CalendarIcon className="h-5 w-5" />,
-    },
     {
       name: "Zoho Books",
       description: "Sync filed-payment amounts back to accounting",
@@ -1624,7 +2215,14 @@ function ComingSoonGrid() {
 // ---------------------------------------------------------------------------
 // Jurisdictions
 // ---------------------------------------------------------------------------
+type CustomJurisdiction = { code: string; name: string; flag: string; iso2: string };
+
 function JurisdictionsTab() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
     queryFn: () => api.get<Entity[]>("/api/entities"),
@@ -1632,6 +2230,25 @@ function JurisdictionsTab() {
   const { data: rules = [] } = useQuery({
     queryKey: ["rules", "production"],
     queryFn: () => api.get<Rule[]>("/api/rules?status=production"),
+  });
+  const { data: custom = [] } = useQuery({
+    queryKey: ["jurisdictions"],
+    queryFn: () => api.get<CustomJurisdiction[]>("/api/jurisdictions"),
+  });
+
+  // Built-in set + any admin-added jurisdictions (custom wins on code clash).
+  const merged: Record<string, { name: string; flag: string; iso2: string }> = {
+    ...JURISDICTIONS,
+  };
+  for (const j of custom) {
+    merged[j.code] = { name: j.name, flag: j.flag || "🏳️", iso2: j.iso2 };
+  }
+  const customCodes = new Set(custom.map((j) => j.code));
+
+  const del = useMutation({
+    mutationFn: (code: string) => api.delete(`/api/jurisdictions/${code}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["jurisdictions"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
   return (
@@ -1645,7 +2262,7 @@ function JurisdictionsTab() {
           </div>
         </div>
         <ul className="divide-y divide-border">
-          {Object.entries(JURISDICTIONS).map(([code, j]) => {
+          {Object.entries(merged).map(([code, j]) => {
             const entCount = entities.filter((e) => e.jurisdiction_code === code).length;
             const ruleCount = rules.filter((r) => r.jurisdiction_code === code).length;
             const lastUpdate = rules
@@ -1665,17 +2282,147 @@ function JurisdictionsTab() {
                   {lastUpdate ? "Updated " + new Date(lastUpdate).toLocaleDateString() : "—"}
                 </div>
                 <Badge variant={active ? "completed" : "neutral"}>{active ? "Active" : "Inactive"}</Badge>
+                {isAdmin && customCodes.has(code) && (
+                  <button
+                    type="button"
+                    title="Delete this jurisdiction"
+                    disabled={del.isPending}
+                    onClick={() => {
+                      if (
+                        entCount > 0 || ruleCount > 0
+                          ? window.confirm(
+                              `"${j.name}" still has ${entCount} entit${entCount === 1 ? "y" : "ies"} and ${ruleCount} rule(s). Delete it anyway? (They keep their jurisdiction code; it just won't show a name/flag.)`,
+                            )
+                          : window.confirm(`Delete "${j.name}"?`)
+                      ) {
+                        del.mutate(code);
+                      }
+                    }}
+                    className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
-        <div className="px-5 py-3 border-t border-border text-right">
-          <button className="text-xs text-aspora-700 hover:underline" disabled>
-            Request a new jurisdiction →
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="px-5 py-3 border-t border-border text-right">
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add jurisdiction
+            </Button>
+          </div>
+        )}
       </CardContent>
+      <AddJurisdictionDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        existingCodes={Object.keys(merged)}
+        onAdded={() => queryClient.invalidateQueries({ queryKey: ["jurisdictions"] })}
+      />
     </Card>
+  );
+}
+
+
+function AddJurisdictionDialog({
+  open,
+  onOpenChange,
+  existingCodes,
+  onAdded,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  existingCodes: string[];
+  onAdded: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [flag, setFlag] = useState("");
+  const [iso2, setIso2] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setCode("");
+      setFlag("");
+      setIso2("");
+      setError(null);
+    }
+  }, [open]);
+
+  const add = useMutation({
+    mutationFn: () =>
+      api.post("/api/jurisdictions", {
+        code: code.trim().toLowerCase(),
+        name: name.trim(),
+        flag: flag.trim(),
+        iso2: iso2.trim().toLowerCase(),
+      }),
+    onSuccess: () => {
+      onAdded();
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  const dupCode = code.trim() && existingCodes.includes(code.trim().toLowerCase());
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Add jurisdiction</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Name</label>
+            <Input value={name} placeholder="e.g. Saudi Arabia" autoFocus onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1 col-span-1">
+              <label className="text-xs font-medium">Code</label>
+              <Input value={code} placeholder="ksa" onChange={(e) => setCode(e.target.value)} />
+            </div>
+            <div className="space-y-1 col-span-1">
+              <label className="text-xs font-medium">ISO-2</label>
+              <Input value={iso2} placeholder="sa" maxLength={2} onChange={(e) => setIso2(e.target.value)} />
+            </div>
+            <div className="space-y-1 col-span-1">
+              <label className="text-xs font-medium">Flag</label>
+              <Input value={flag} placeholder="🇸🇦" onChange={(e) => setFlag(e.target.value)} />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Code is the short id stored on entities/rules (lowercase, e.g.{" "}
+            <code className="font-mono">uae</code>).
+          </p>
+          {dupCode && (
+            <div className="text-xs text-amber-700">That code already exists.</div>
+          )}
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => add.mutate()}
+            disabled={add.isPending || !name.trim() || !code.trim() || !!dupCode}
+          >
+            {add.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add jurisdiction
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1688,29 +2435,27 @@ function AlertPoliciesTab() {
     <Card>
       <CardContent className="p-6 space-y-5">
         <div>
-          <h3 className="font-semibold">Lead-time mapping</h3>
-          <p className="text-xs text-muted-foreground">Effort band → days before due date the alert fires.</p>
+          <h3 className="font-semibold">Reminder lead times</h3>
+          <p className="text-xs text-muted-foreground">Filing cadence → days before the due date the first alert fires, and how often reminders then repeat.</p>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-secondary/30 text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">Effort band</th>
+              <th className="px-3 py-2 text-left font-medium">Filing cadence</th>
               <th className="px-3 py-2 text-left font-medium">Days before due</th>
               <th className="px-3 py-2 text-left font-medium">Reminder cadence</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {[
-              { b: "1w", d: 14, c: "Daily after alert" },
-              { b: "2w", d: 28, c: "Every 2 days" },
-              { b: "4w", d: 56, c: "Weekly until 14d, daily after" },
-              { b: "8w", d: 112, c: "Weekly" },
-              { b: "12w", d: 168, c: "Bi-weekly until 28d, weekly after" },
+              { cadence: "Monthly", d: 7, c: "Daily after alert" },
+              { cadence: "Quarterly", d: 30, c: "Every 2 days" },
+              { cadence: "Half-yearly", d: 45, c: "Weekly" },
+              { cadence: "Annual", d: 60, c: "Weekly until 14d, daily after" },
+              { cadence: "Multi-year / long-form", d: 90, c: "Bi-weekly until 28d, weekly after" },
             ].map((r) => (
-              <tr key={r.b}>
-                <td className="px-3 py-2">
-                  <Badge variant="default">{r.b}</Badge>
-                </td>
+              <tr key={r.cadence}>
+                <td className="px-3 py-2">{r.cadence}</td>
                 <td className="px-3 py-2 tabular-nums">{r.d}</td>
                 <td className="px-3 py-2 text-muted-foreground">{r.c}</td>
               </tr>
@@ -1809,7 +2554,7 @@ function RetentionTab() {
 
         {data.oldest_at && (
           <p className="text-xs text-muted-foreground">
-            Oldest event: {new Date(data.oldest_at).toLocaleString()}
+            Oldest event: {parseBackendDate(data.oldest_at).toLocaleString()}
           </p>
         )}
 

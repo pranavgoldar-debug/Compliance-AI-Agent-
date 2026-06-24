@@ -73,10 +73,10 @@ export function AskAspora() {
         <button
           onClick={() => setOpen(true)}
           className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-aspora-600 text-white px-4 py-3 shadow-lg shadow-aspora-600/30 hover:bg-aspora-700 transition-colors"
-          aria-label="Open Ask Aspora"
+          aria-label="Open Ask Aida"
         >
           <Sparkles className="h-5 w-5" />
-          <span className="text-sm font-medium">Ask Aspora</span>
+          <span className="text-sm font-medium">Ask Aida</span>
         </button>
       )}
 
@@ -90,7 +90,7 @@ export function AskAspora() {
                 <Sparkles className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-sm font-semibold">Ask Aspora</div>
+                <div className="text-sm font-semibold">Ask Aida</div>
                 <div className="text-[11px] opacity-80">Your compliance copilot</div>
               </div>
             </div>

@@ -10,10 +10,24 @@ provide `ANTHROPIC_API_KEY` to switch to live Claude extraction.
 """
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from importlib.resources import files
 from pathlib import Path
 from typing import Optional
+
+# Make application logs (AI token usage, discovery debug, warnings) actually
+# visible in the server output. Uvicorn only configures its own loggers, so
+# without this our `compliance_agent.*` INFO logs are dropped. Attach a stdout
+# handler directly to the package logger so it works under uvicorn / Render.
+_app_logger = logging.getLogger("compliance_agent")
+_app_logger.setLevel(os.environ.get("LOG_LEVEL", "INFO").upper())
+if not _app_logger.handlers:
+    _h = logging.StreamHandler(sys.stdout)
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _app_logger.addHandler(_h)
+    _app_logger.propagate = False
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -31,11 +45,13 @@ from compliance_agent.api import (
     documents_router,
     entities_router,
     exports_router,
+    jurisdictions_router,
     integrations_admin_router,
     integrations_cron_router,
     integrations_me_router,
     integrations_webhook_router,
     notifications_router,
+    playbook_router,
     obligations_router,
     retention_router,
     licenses_router,
@@ -102,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(dashboard_router)
     app.include_router(entities_router)
+    app.include_router(jurisdictions_router)  # Custom jurisdictions (admin-add)
     app.include_router(rules_router)
     app.include_router(rules_ai_router)  # AI Rule extraction (admin)
     app.include_router(rules_import_router)  # Bulk CSV / Excel rule import (admin)
@@ -115,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(document_obligation_upload_router)
     app.include_router(activities_router)
     app.include_router(notifications_router)
+    app.include_router(playbook_router)
     app.include_router(exports_router)
     app.include_router(system_router)
     app.include_router(ai_assist_router)  # Phase 7 AI assist endpoints

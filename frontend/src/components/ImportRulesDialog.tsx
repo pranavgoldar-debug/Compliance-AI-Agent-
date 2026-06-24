@@ -118,7 +118,7 @@ export function ImportRulesDialog({ open, onOpenChange }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["rules-staging-count"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-count"] });
       reset();
       onOpenChange(false);
     },

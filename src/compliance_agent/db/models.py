@@ -54,6 +54,7 @@ class Department(str, enum.Enum):
     compliance = "compliance"  # files returns, manages regulatory submissions
     finance = "finance"        # pays bills, verifies payment references
     legal = "legal"            # reviews contracts, opinions, change notifications
+    hr = "hr"                  # payroll / employment obligations
     risk = "risk"              # risk-assessment outputs, audits
     operations = "operations"  # day-to-day operational tasks
 
@@ -136,6 +137,12 @@ class User(Base):
     # Personal Slack member id (e.g. U0123ABCD). When set, our channel-wide
     # webhook pings can <@-mention> this user. Optional.
     slack_user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Hard-delete tombstone: when an admin permanently removes a user who has
+    # left the org, we scrub their PII (email/password/slack) and set this —
+    # the row survives only as a name label so historical filings / audit
+    # entries can still show "who did it" (rendered greyed in the UI). They
+    # can't log in and are hidden from the user list.
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Functional department — drives "Request payment from finance" routing.
     # Nullable so the admin can leave it unset for users who don't fit a single
     # bucket; those users are excluded from department-specific fanouts.
@@ -168,8 +175,40 @@ class Entity(Base):
     # for cross-referencing rows in the Aspora Global Compliance Tracker.
     short_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
     registration_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # GST / Tax registration number, and registered address — admin-set.
+    tax_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     incorporation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     fiscal_year_end: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "31-Mar", "31-Dec"
+    # Annual Return Date (e.g. "30-Sep") when it DIFFERS from the fiscal year-end.
+    # NULL means "same as fiscal_year_end" — deadlines anchored on the ARD then
+    # fall back to the FYE. Stored as "DD-Mon" like fiscal_year_end.
+    annual_return_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # What the entity actually does — free-text business description, admin-set.
+    nature_of_operation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Admin-answered profile (VAT-registered? payroll? revenue band? related-
+    # party txns? relevant activity?) used by "Find Regulations" to decide
+    # which finance filings are mandatory / conditional / not-applicable.
+    finance_profile: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Owners / controllers (UBO): list of {name, percent} dicts.
+    ownership: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Bank details: {account_name, bank_name, account_number, iban, swift, currency}.
+    bank_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Adaptive qualification: AI-generated secondary questions + their answers +
+    # the last reassessment result. Shape:
+    #   {"questions": [{key, question, options:[{value,label}], drives}],
+    #    "answers": {key: value},
+    #    "assessment": [{form_name, verdict, reasoning, triggering_factors,
+    #                    frequency, due, basis}]}
+    qualification: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # User-creatable document folders for this entity (list of names). Seeded
+    # with the defaults on first read.
+    document_folders: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    # Last "Find applicable regulations" result ({items, notes}), persisted so
+    # the inventory survives navigation / reload and only recomputes on demand.
+    last_assessment: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     country_lead_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     country_lead: Mapped[Optional[User]] = relationship(
@@ -211,11 +250,27 @@ class Rule(Base):
     authority: Mapped[str] = mapped_column(String(255), nullable=False)
     frequency: Mapped[str] = mapped_column(String(120), nullable=False)
     due_date_rule: Mapped[str] = mapped_column(Text, nullable=False)
+    # Structured due-date spec set by the Due-Date Builder (frequency + basis +
+    # day/month or offset/unit/snap, or a one-time date). When present it is the
+    # SOURCE OF TRUTH for the calendar's computed dates; due_date_rule holds the
+    # human summary. See compliance_agent.due_date_spec.
+    due_date_spec: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     payment_rule: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     applicability: Mapped[Applicability] = mapped_column(
         SAEnum(Applicability), nullable=False, default=Applicability.mandatory
     )
     applicability_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Spec §3/§4 discovery fields. `condition` is the machine boolean-tree
+    # (condition_engine) evaluated deterministically against the entity's
+    # answers; the rest are provenance/scope metadata from Round-1 discovery.
+    condition: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    triggering_activity: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    anchor: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    confidence: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # Has a human sent this discovered item to Review & Assign? Discovery sets
+    # False; the "Add to Review & Assign" action sets True. NULL = legacy rule
+    # (treated as sent, so it keeps showing in Review & Assign).
+    sent_to_review: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     # Direct / Indirect / Not-a-Tax classification — set by the AI extractor
     # and editable by admins on the Rules page.
     tax_type: Mapped[TaxType] = mapped_column(
@@ -251,6 +306,13 @@ class Rule(Base):
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
     created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    # Review & Assign workflow: who owns / reviews / approves this obligation,
+    # and when it was approved (staging → production). All nullable.
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approver_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     entities: Mapped[list[Entity]] = relationship(
         "Entity", secondary="rule_entities", back_populates="rules"
@@ -384,6 +446,10 @@ class Activity(Base):
 # ---------------------------------------------------------------------------
 # Documents — uploaded files attached to entities and/or obligations
 # ---------------------------------------------------------------------------
+# Default per-entity document folders, seeded on first read.
+DEFAULT_DOCUMENT_FOLDERS = ["Filings", "Templates", "Incorporation Documents", "Investor Reporting"]
+
+
 class DocumentCategory(str, enum.Enum):
     # Active categories — surfaced in the UI as upload targets.
     filings = "Filings"
@@ -429,6 +495,9 @@ class Document(Base):
     category: Mapped[DocumentCategory] = mapped_column(
         SAEnum(DocumentCategory), nullable=False, default=DocumentCategory.other, index=True
     )
+    # Free-text folder name (dynamic, user-creatable) — supersedes `category` as
+    # the organising dimension in the Documents UI. Defaults to "Filings".
+    folder: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
     tags: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # comma-separated
 
     uploaded_by_id: Mapped[Optional[int]] = mapped_column(
@@ -630,3 +699,21 @@ class License(Base):
     )
 
     entity: Mapped[Entity] = relationship("Entity")
+
+
+class CalendarEvent(Base):
+    """Obligation → Google Calendar event mapping for the shared
+    'Aspora Compliance' calendar (calendar_service). One row per obligation
+    that currently has a pushed event; deleted when the event is removed."""
+
+    __tablename__ = "calendar_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    obligation_id: Mapped[int] = mapped_column(
+        ForeignKey("obligations.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    calendar_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

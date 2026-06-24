@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from typing import Optional
 
@@ -64,10 +65,22 @@ def is_configured(db: Session) -> bool:
 # ---------------------------------------------------------------------------
 # Posting
 # ---------------------------------------------------------------------------
-def post(text: str, *, blocks: Optional[list] = None, sync: bool = False) -> Optional[bool]:
+def post(
+    text: str,
+    *,
+    blocks: Optional[list] = None,
+    sync: bool = False,
+    function: Optional[str] = None,
+) -> Optional[bool]:
     """Post to the configured workspace channel. Returns True/False on
     delivery when sync=True; otherwise schedules a background send and
     returns None.
+
+    ``function`` routes by owner team: when the config has a webhook saved
+    for that function (Finance / Compliance / Legal / HR — a Slack incoming
+    webhook is bound to one channel, so per-channel routing means one
+    webhook per channel), the message goes there; otherwise it falls back
+    to the default webhook.
 
     Never raises — Slack errors are logged but never bubble up to the API
     caller. The whole point is fire-and-forget alerting.
@@ -78,6 +91,10 @@ def post(text: str, *, blocks: Optional[list] = None, sync: bool = False) -> Opt
             with session_scope() as db:
                 cfg = get_config(db)
             url = (cfg or {}).get("webhook_url")
+            if function:
+                url = ((cfg or {}).get("function_webhooks") or {}).get(
+                    str(function).strip().lower()
+                ) or url
             if not url or not (cfg or {}).get("enabled", True):
                 return False
             import httpx
@@ -117,9 +134,13 @@ def post(text: str, *, blocks: Optional[list] = None, sync: bool = False) -> Opt
 def _mention(user: Optional[User]) -> str:
     if user is None:
         return "*unassigned*"
-    if user.slack_user_id:
-        return f"<@{user.slack_user_id}>"
-    return f"*{user.full_name or user.email}*"
+    # Only a real member ID produces a working <@…> mention — anything else
+    # (a display name saved before validation existed) falls back to the
+    # plain name instead of rendering as broken markup.
+    sid = (user.slack_user_id or "").strip().upper()
+    if sid and re.fullmatch(r"[UW][A-Z0-9]{5,}", sid):
+        return f"<@{sid}>"
+    return f"*{(user.full_name or user.email).strip()}*"
 
 
 def _app_base_url() -> str:
@@ -142,23 +163,22 @@ def _days_word(days: int) -> str:
     return f"overdue by {abs(days)} day{'s' if days != -1 else ''}"
 
 
-def _ob_context_fields(obligation: Obligation) -> list[dict]:
-    """The 4 facts that go inside every obligation-related card —
-    rendered as a 2x2 grid of fields in Slack."""
+def _ob_context_fields(obligation: Obligation, *, include_assignee: bool = True) -> list[dict]:
+    """The facts that go inside every obligation-related card — rendered as a
+    2-col grid in Slack. Assignment cards skip the Assignee field (the first
+    line already mentions who's on the hook)."""
     entity = obligation.entity.name if obligation.entity else "—"
     from compliance_agent.api._helpers import days_remaining
 
     days = days_remaining(obligation.due_date)
-    assignee = (
-        obligation.assignee.full_name or obligation.assignee.email
-        if obligation.assignee
-        else "Unassigned"
-    )
-    return [
+    fields = [
         {"type": "mrkdwn", "text": f"*Entity*\n{entity}"},
         {"type": "mrkdwn", "text": f"*Due*\n{obligation.due_date.isoformat()} ({_days_word(days)})"},
-        {"type": "mrkdwn", "text": f"*Assignee*\n{assignee}"},
     ]
+    if include_assignee:
+        # Slack <@id> mention renders the assignee's name highlighted (blue).
+        fields.append({"type": "mrkdwn", "text": f"*Assignee*\n{_mention(obligation.assignee)}"})
+    return fields
 
 
 def _view_button(obligation: Obligation, label: str = "View in Aspora") -> dict:
@@ -218,6 +238,50 @@ def verify_slack_signature(signing_secret: str, timestamp: str, raw_body: bytes,
     return _hmac.compare_digest(digest, signature.strip())
 
 
+def deadline_blocks(
+    *, obligation: Obligation, assignee: Optional[User], days_remaining: int
+) -> dict:
+    """Deadline-alert card for the channel: urgency dot + due line, the
+    canonical key / entity / status context, Open + status buttons (wired to
+    the interactivity endpoint) and an Owner footer with the escalation note."""
+    rule = obligation.rule
+    form = rule.form_name if rule else "Compliance item"
+    entity = obligation.entity.name if obligation.entity else "—"
+    juris = (rule.jurisdiction_code if rule else "—").upper()
+    status = (obligation.status.value if obligation.status else "—").replace("_", " ").title()
+    due = obligation.due_date.strftime("%d-%b-%y")
+    dot = "🔴" if days_remaining <= 7 else "🟡" if days_remaining <= 15 else "🟢"
+    text = f"{dot} {form} due in {days_remaining} {_days_word(days_remaining)} — {due} ({entity})"
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"{dot} *{form}* due in *{days_remaining} "
+                    f"{_days_word(days_remaining)}* — {due}\n"
+                    f"`{juris}` · `{form}` · {entity} · status: *{status}*"
+                ),
+            },
+        },
+        _view_button(obligation, "Open"),
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"Owner: {_mention(assignee)} · T-7 copies the assigner, "
+                        "overdue pages compliance-leads"
+                    ),
+                }
+            ],
+        },
+        {"type": "divider"},
+    ]
+    return {"text": text, "blocks": blocks}
+
+
 def assignment_blocks(
     *, obligation: Obligation, assignee: User, actor: User
 ) -> dict:
@@ -225,7 +289,7 @@ def assignment_blocks(
     form = obligation.rule.form_name if obligation.rule else "Compliance item"
     entity = obligation.entity.name if obligation.entity else "—"
     text = (
-        f":bell: {assignee.full_name or assignee.email}, you're on "
+        f":bell: {_mention(assignee)}, you're on "
         f"{form} ({entity})."
     )
     blocks = [
@@ -239,11 +303,11 @@ def assignment_blocks(
                 "type": "mrkdwn",
                 "text": (
                     f"{_mention(assignee)} you're now on the hook for *{form}*.\n"
-                    f"Assigned by {actor.full_name or actor.email}."
+                    f"Assigned by {(actor.full_name or actor.email).strip()}."
                 ),
             },
         },
-        {"type": "section", "fields": _ob_context_fields(obligation)},
+        {"type": "section", "fields": _ob_context_fields(obligation, include_assignee=False)},
         _view_button(obligation, "Open the obligation →"),
         {"type": "divider"},
     ]
@@ -263,7 +327,7 @@ def mention_blocks(
         snippet = snippet[:237] + "…"
     text = (
         f":speech_balloon: {mentioned.full_name or mentioned.email} mentioned by "
-        f"{actor.full_name or actor.email} on {form}."
+        f"{(actor.full_name or actor.email).strip()} on {form}."
     )
     blocks = [
         {
@@ -275,7 +339,7 @@ def mention_blocks(
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"{_mention(mentioned)} — *{actor.full_name or actor.email}* "
+                    f"{_mention(mentioned)} — *{(actor.full_name or actor.email).strip()}* "
                     f"tagged you on *{form}*:\n"
                     f">>> {snippet}"
                 ),
@@ -318,7 +382,7 @@ def overdue_blocks(*, obligation: Obligation, days_late: int) -> dict:
 def filed_blocks(*, obligation: Obligation, actor: User) -> dict:
     form = obligation.rule.form_name if obligation.rule else "Compliance item"
     entity = obligation.entity.name if obligation.entity else "—"
-    text = f":white_check_mark: {form} for {entity} filed by {actor.full_name or actor.email}."
+    text = f":white_check_mark: {form} for {entity} filed by {(actor.full_name or actor.email).strip()}."
     blocks = [
         {
             "type": "header",
@@ -330,7 +394,7 @@ def filed_blocks(*, obligation: Obligation, actor: User) -> dict:
                 "type": "mrkdwn",
                 "text": (
                     f"*{form}* for *{entity}* was just filed by "
-                    f"*{actor.full_name or actor.email}*."
+                    f"*{(actor.full_name or actor.email).strip()}*."
                 ),
             },
         },
@@ -358,14 +422,14 @@ def payment_request_blocks(*, obligation: Obligation, actor: User) -> dict:
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"*Filing approved* by *{actor.full_name or actor.email}*. "
+                    f"*Filing approved* by *{(actor.full_name or actor.email).strip()}*. "
                     f"Finance — please log the payment amount + UTR to close it out."
                     + (f"\n\n*Payment rule:* _{amount_hint}_" if amount_hint else "")
                 ),
             },
         },
         {"type": "section", "fields": _ob_context_fields(obligation)},
-        _view_button(obligation, "Pay & log UTR →"),
+        _view_button(obligation),
         {"type": "divider"},
     ]
     return {"text": text, "blocks": blocks}
@@ -377,7 +441,7 @@ def submit_for_review_blocks(*, obligation: Obligation, actor: User) -> dict:
     entity = obligation.entity.name if obligation.entity else "—"
     dept = (obligation.department or "compliance").value if hasattr(obligation.department, "value") else "compliance"
     submitter_label = "payment" if dept == "finance" else "filing"
-    text = f":eyes: {form} ({entity}) — {submitter_label} submitted for review by {actor.full_name or actor.email}."
+    text = f":eyes: {form} ({entity}) — {submitter_label} submitted for review by {(actor.full_name or actor.email).strip()}."
     blocks = [
         {
             "type": "header",
@@ -391,7 +455,7 @@ def submit_for_review_blocks(*, obligation: Obligation, actor: User) -> dict:
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"*{actor.full_name or actor.email}* submitted "
+                    f"*{(actor.full_name or actor.email).strip()}* submitted "
                     f"*{submitter_label}* on *{form}* for admin review."
                 ),
             },

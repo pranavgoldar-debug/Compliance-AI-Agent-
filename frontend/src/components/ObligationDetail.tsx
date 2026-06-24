@@ -255,6 +255,9 @@ export function ObligationDetail({ obligationId, variant, onClose }: Props) {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      // Reverse-sync sets the rule's owner from the filing's assignee, so
+      // refresh Review & Assign (the Approved table reads rule.owner_id).
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
       queryClient.invalidateQueries({ queryKey: ["entities"] });
       queryClient.invalidateQueries({ queryKey: ["sidebar-task-count"] });
@@ -327,6 +330,45 @@ function Header({
   variant: "drawer" | "page";
   onClose?: () => void;
 }) {
+  const { user: currentUser } = useAuth();
+  const queryClient = useQueryClient();
+
+  // On-demand: verify this filing's deadline against the live regulator source
+  // (Claude web search). Read-only — shows the confirmed deadline + citation;
+  // does not change the rule. Anthropic-only.
+  const verifyDueDate = useMutation<{
+    available: boolean;
+    verified?: boolean;
+    due_date_rule?: string | null;
+    source_url?: string | null;
+    source_quote?: string | null;
+    confidence?: string | null;
+    summary?: string | null;
+    notes?: string | null;
+  }>({
+    mutationFn: () =>
+      api.post(`/api/rules/${obligation.rule_id}/verify-due-date`),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  // Apply a verified deadline: overwrite the rule's due-date text + source and
+  // reschedule its pending obligations onto the recomputed date.
+  const applyDueDate = useMutation({
+    mutationFn: () =>
+      api.post(`/api/rules/${obligation.rule_id}/apply-due-date`, {
+        due_date_rule: verifyDueDate.data?.due_date_rule,
+        source_url: verifyDueDate.data?.source_url ?? null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["obligation"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <div
       className={cn(
@@ -366,7 +408,102 @@ function Header({
             />
             <Badge variant="neutral">Due {fmtDate(obligation.due_date)}</Badge>
             {obligation.period_label && <Badge variant="neutral">{obligation.period_label}</Badge>}
+            {currentUser?.role === "admin" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => verifyDueDate.mutate()}
+                disabled={verifyDueDate.isPending || !obligation.rule_id}
+                title="Check this deadline against the regulator's website (Claude web search)"
+              >
+                {verifyDueDate.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                Verify due date
+              </Button>
+            )}
           </div>
+          {verifyDueDate.data && (
+            <div className="mt-2 rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs space-y-1">
+              {!verifyDueDate.data.available ? (
+                <span className="text-muted-foreground">{verifyDueDate.data.notes}</span>
+              ) : verifyDueDate.data.verified ? (
+                <>
+                  <div className="flex items-center gap-1.5 font-medium text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Verified from source
+                    {verifyDueDate.data.confidence
+                      ? ` · ${verifyDueDate.data.confidence} confidence`
+                      : ""}
+                  </div>
+                  {verifyDueDate.data.due_date_rule && (
+                    <div>
+                      <span className="text-muted-foreground">Deadline:</span>{" "}
+                      {verifyDueDate.data.due_date_rule}
+                    </div>
+                  )}
+                  {verifyDueDate.data.source_quote && (
+                    <div className="italic text-muted-foreground">
+                      "{verifyDueDate.data.source_quote}"
+                    </div>
+                  )}
+                  {verifyDueDate.data.source_url && (
+                    <a
+                      href={verifyDueDate.data.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-aspora-700 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Source
+                    </a>
+                  )}
+                  {verifyDueDate.data.due_date_rule && (
+                    <div className="pt-1">
+                      <Button
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => applyDueDate.mutate()}
+                        disabled={applyDueDate.isPending || applyDueDate.isSuccess}
+                        title="Overwrite this filing's deadline with the verified one and reschedule its obligations"
+                      >
+                        {applyDueDate.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : applyDueDate.isSuccess ? (
+                          <CheckCircle2 className="h-3 w-3" />
+                        ) : null}
+                        {applyDueDate.isSuccess ? "Applied" : "Apply this deadline"}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5 font-medium text-amber-700">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Couldn't confirm from an authoritative source
+                  </div>
+                  {(verifyDueDate.data.summary || verifyDueDate.data.notes) && (
+                    <div className="text-muted-foreground">
+                      {verifyDueDate.data.summary || verifyDueDate.data.notes}
+                    </div>
+                  )}
+                  {verifyDueDate.data.source_url && (
+                    <a
+                      href={verifyDueDate.data.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-aspora-700 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Source
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-start gap-3">
@@ -433,48 +570,21 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
   const prepareTeam =
     fn === "finance" ? "Finance" : fn === "legal" ? "Legal" : "Compliance";
 
-  // Which step is "active right now"?
-  let activeStep: 1 | 2 | 3 | 4 | 5 = 1; // 5 = done
+  // Work stages — driven purely by the obligation's status. The assignee moves
+  // it along via the status control; there's no admin verify/sign-off gate.
+  let activeStep: 1 | 2 | 3 | 4 = 1; // 4 = all done (completed)
   if (obligation.status === "completed") {
-    activeStep = 5;
-  } else if (obligation.status === "pending_review") {
-    // Pick which admin step we're at based on whose leg just submitted.
-    // Finance just submitted → final sign-off (step 4). Compliance just
-    // submitted → verify filing (step 2). Without this, the stepper
-    // appeared to "go backwards to step 2" right after finance hit
-    // Submit, which made the user think their work was lost.
-    activeStep = isFinanceLeg ? 4 : 2;
-  } else if (isFinanceLeg) {
-    activeStep = 3;
+    activeStep = 4;
+  } else if (obligation.status === "in_progress" || obligation.status === "pending_review") {
+    activeStep = 2;
   } else {
     activeStep = 1;
   }
 
-  const steps: { n: number; title: string; team: string; action: string }[] = [
-    {
-      n: 1,
-      title: "Prepare filing",
-      team: prepareTeam,
-      action: "Fill the filing reference + supporting docs, then Submit for review.",
-    },
-    {
-      n: 2,
-      title: "Verify filing",
-      team: "Admin",
-      action: "Review compliance's work. Approve & hand off to finance, or Send back.",
-    },
-    {
-      n: 3,
-      title: "Log payment",
-      team: "Finance",
-      action: "Enter payment amount + UTR / transaction id, then Submit for review.",
-    },
-    {
-      n: 4,
-      title: "Final sign-off",
-      team: "Admin",
-      action: "Verify the payment reference. Click Approve & close.",
-    },
+  const steps: { n: number; title: string; action: string }[] = [
+    { n: 1, title: "Not started", action: "Update the status to In progress when work begins." },
+    { n: 2, title: "In progress", action: "Filing under way — mark it Completed once filed." },
+    { n: 3, title: "Completed", action: "Filed and complete." },
   ];
 
   const active = steps.find((s) => s.n === activeStep);
@@ -502,16 +612,6 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
                 <div className="min-w-0 flex-1">
                   <div
                     className={cn(
-                      "text-[11px] font-semibold uppercase tracking-wider truncate",
-                      isDone && "text-emerald-700",
-                      isActive && "text-amber-700",
-                      !isDone && !isActive && "text-muted-foreground",
-                    )}
-                  >
-                    {s.team}
-                  </div>
-                  <div
-                    className={cn(
                       "text-xs truncate",
                       isActive ? "font-medium text-foreground" : "text-muted-foreground",
                     )}
@@ -535,7 +635,7 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
 
       {/* Active step's action */}
       <div className="px-5 py-2 border-t border-border/60 bg-amber-50/40">
-        {activeStep === 5 ? (
+        {obligation.status === "completed" ? (
           <div className="text-sm flex items-center gap-2">
             <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-emerald-600 text-white text-[11px]">
               ✓
@@ -547,9 +647,7 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
           </div>
         ) : active ? (
           <div className="text-sm">
-            <span className="font-medium text-amber-900">
-              Now: {active.team} — {active.title}.
-            </span>{" "}
+            <span className="font-medium text-amber-900">{active.title}.</span>{" "}
             <span className="text-foreground/70">{active.action}</span>
           </div>
         ) : null}
@@ -754,37 +852,16 @@ function ActionBar({
           // without a UTR (refund, internal transfer) and still expect
           // final sign-off, not a return to filing-verify.
           if (status === "pending_review") {
-            const isFinalReview = obligation.department === "finance";
             return isAdmin ? (
               <>
-                {isFinalReview ? (
-                  <Button
-                    size="sm"
-                    onClick={() => onPatch({ status: "completed" })}
-                    disabled={saving}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Approve & close
-                  </Button>
-                ) : (
-                  <>
-                    <HandoffToFinanceButton
-                      obligationId={obligation.id}
-                      users={users}
-                      disabled={saving}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onPatch({ status: "completed" })}
-                      disabled={saving}
-                      title="No payment needed — close it without sending to finance"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Approve without payment
-                    </Button>
-                  </>
-                )}
+                <Button
+                  size="sm"
+                  onClick={() => onPatch({ status: "completed" })}
+                  disabled={saving}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Approve & close
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1043,10 +1120,7 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
           Regulator portal
         </h3>
         <div className="text-sm text-muted-foreground italic">
-          No regulator URL captured for this rule yet. Admin can add one
-          on the Compliance Rules page (click the source cell on the
-          rule's row) so the team can see the regulation + template
-          straight from here.
+          No regulator URL captured for this rule yet.
         </div>
       </section>
     );
@@ -1087,7 +1161,7 @@ function RegulatorPortalSection({ obligation }: { obligation: Obligation }) {
         {isAdmin
           ? submissionHref
             ? "Everyone sees the regulation page. The green button is the e-filing portal where you submit + pay."
-            : "Everyone sees the regulation page. The green button opens it as the submission/payment portal (no separate portal URL set — add one on Compliance Rules → edit row)."
+            : "No regulator URL captured for this rule yet."
           : "Read the regulation and grab the template. Admin handles the actual submission + payment."}
       </div>
 

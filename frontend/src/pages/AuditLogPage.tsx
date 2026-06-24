@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, userInitials } from "@/lib/format";
+import { fmtRelative, fmtTime, parseBackendDate, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, Entity, UserBrief } from "@/types/api";
 
@@ -116,7 +117,7 @@ export function AuditLogPage() {
   const groupedByDay = useMemo(() => {
     const groups = new Map<string, ActivityOut[]>();
     for (const a of filtered) {
-      const day = new Date(a.created_at).toDateString();
+      const day = parseBackendDate(a.created_at).toDateString();
       if (!groups.has(day)) groups.set(day, []);
       groups.get(day)!.push(a);
     }
@@ -214,11 +215,11 @@ export function AuditLogPage() {
               <ChevronDown className="h-3.5 w-3.5 ml-1" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 p-3 space-y-2">
+          <PopoverContent className="w-72 p-3 space-y-2">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Since</div>
-            <Input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+            <DateField value={since} onChange={setSince} />
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Until</div>
-            <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+            <DateField value={until} onChange={setUntil} />
             {(since || until) && (
               <button
                 onClick={() => {
@@ -291,10 +292,7 @@ function ActivityRow({ activity }: { activity: ActivityOut }) {
   return (
     <li className="px-4 py-3 flex items-start gap-3 hover:bg-secondary/30">
       <span className="text-xs tabular-nums text-muted-foreground w-20 shrink-0 mt-1">
-        {new Date(activity.created_at).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
+        {fmtTime(activity.created_at)}
       </span>
       <Avatar className="h-7 w-7 shrink-0 mt-0.5">
         <AvatarFallback className="text-[10px]">
@@ -352,6 +350,21 @@ function humaniseAction(action: string): string {
 }
 
 
+// User-facing labels for the internal rule lifecycle, matching the Review &
+// Assign tabs — so the audit log reads "For Action" / "Approved" instead of the
+// raw "staging" / "production".
+const STATUS_LABELS: Record<string, string> = {
+  staging: "For Action",
+  production: "Approved",
+  archived: "Archived",
+  retired: "Retired",
+};
+const STATUS_KEYS = new Set(["from", "to", "status", "from_status", "to_status"]);
+
+function payloadValue(key: string, value: string): string {
+  return STATUS_KEYS.has(key) && value in STATUS_LABELS ? STATUS_LABELS[value] : value;
+}
+
 function renderPayload(payload: Record<string, unknown>) {
   const fields = (payload.changed_fields ?? payload.fields) as string[] | undefined;
   if (Array.isArray(fields) && fields.length > 0) {
@@ -368,7 +381,7 @@ function renderPayload(payload: Record<string, unknown>) {
       if (v === null || typeof v === "object") return null;
       return (
         <Badge key={k} variant="neutral" className="text-[10px]">
-          {k}: <span className="font-mono ml-1">{String(v)}</span>
+          {k}: <span className="font-mono ml-1">{payloadValue(k, String(v))}</span>
         </Badge>
       );
     });

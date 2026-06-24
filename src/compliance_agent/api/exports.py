@@ -240,7 +240,6 @@ def export_entities(
 ):
     stmt = (
         select(Entity)
-        .options(joinedload(Entity.country_lead))
         .order_by(Entity.name)
     )
     if jurisdiction_code:
@@ -279,10 +278,8 @@ def export_entities(
                 e.registration_number or "",
                 e.incorporation_date.isoformat() if e.incorporation_date else "",
                 e.fiscal_year_end or "",
-                (e.country_lead.full_name if e.country_lead else "") or "",
                 active,
                 overdue,
-                e.archived_at.isoformat() if e.archived_at else "",
             ]
         )
 
@@ -293,10 +290,8 @@ def export_entities(
         "Registration #",
         "Incorporation date",
         "Fiscal year end",
-        "Country lead",
         "Active obligations",
         "Overdue",
-        "Archived at",
     ]
     return _emit(format, "aspora-entities", "Entities", headers, rows)
 
@@ -309,6 +304,12 @@ def export_rules(
     format: str = Query("csv"),
     status: Optional[RuleStatus] = Query(None),
     jurisdiction_code: Optional[str] = Query(None),
+    in_review: Optional[bool] = Query(
+        None,
+        description="When true, only rules sent to Review & Assign "
+        "(sent_to_review is True) — matches the For Action tab, so the export "
+        "excludes freshly-discovered drafts.",
+    ),
     db: Session = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
@@ -317,6 +318,8 @@ def export_rules(
         stmt = stmt.where(Rule.status == status)
     if jurisdiction_code:
         stmt = stmt.where(Rule.jurisdiction_code == jurisdiction_code)
+    if in_review:
+        stmt = stmt.where(Rule.sent_to_review.is_(True))
     rules = db.execute(stmt).scalars().all()
     # FINANCE_ONLY switch: keep the rules export Finance-only too.
     rules = [r for r in rules if keep_function(r.category, r.area, r.responsible_function)]

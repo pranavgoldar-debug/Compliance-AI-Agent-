@@ -59,7 +59,7 @@ class ComplianceVerifier:
     def __init__(
         self,
         client: Optional[Any] = None,
-        model: str = "claude-opus-4-7",
+        model: str = "claude-opus-4-8",
     ):
         from compliance_agent.ai.llm_client import make_client
 

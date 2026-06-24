@@ -66,12 +66,19 @@ class SlackConfigOut(BaseModel):
     webhook_url_masked: Optional[str] = None
     has_webhook: bool = False
     default_channel: Optional[str] = None
+    # function (finance/compliance/legal/hr) -> masked webhook, for display.
+    function_webhooks_masked: dict[str, str] = {}
+
+
+SLACK_FUNCTIONS = ("finance", "compliance", "legal", "hr")
 
 
 class SlackConfigUpdate(BaseModel):
     webhook_url: Optional[str] = None  # pass empty string "" to clear
     default_channel: Optional[str] = None
     enabled: Optional[bool] = None
+    # Per-team channel routing: function -> webhook URL ("" clears that one).
+    function_webhooks: Optional[dict[str, str]] = None
 
 
 @admin_router.get("/slack", response_model=SlackConfigOut)
@@ -87,6 +94,11 @@ def get_slack(
         webhook_url_masked=_mask_webhook(url),
         has_webhook=bool(url),
         default_channel=cfg.get("default_channel"),
+        function_webhooks_masked={
+            fn: _mask_webhook(u) or ""
+            for fn, u in (cfg.get("function_webhooks") or {}).items()
+            if u
+        },
     )
 
 
@@ -111,6 +123,26 @@ def update_slack(
         cfg["default_channel"] = ch
     if payload.enabled is not None:
         cfg["enabled"] = bool(payload.enabled)
+    if payload.function_webhooks is not None:
+        existing = dict(cfg.get("function_webhooks") or {})
+        for fn, raw_url in payload.function_webhooks.items():
+            key = fn.strip().lower()
+            if key not in SLACK_FUNCTIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown function '{fn}' — use one of {', '.join(SLACK_FUNCTIONS)}.",
+                )
+            u = (raw_url or "").strip()
+            if u and not u.startswith("https://hooks.slack.com/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Webhook URL must start with https://hooks.slack.com/",
+                )
+            if u:
+                existing[key] = u
+            else:
+                existing.pop(key, None)
+        cfg["function_webhooks"] = existing
 
     slack_service.set_config(db, cfg, updated_by_id=actor.id)
     log_activity(
@@ -163,6 +195,52 @@ def test_slack(
 # ---------------------------------------------------------------------------
 # Email (SMTP test only — admin can't set creds at runtime; those live in env)
 # ---------------------------------------------------------------------------
+class GoogleCalendarConfigOut(BaseModel):
+    configured: bool
+    calendar_id: Optional[str] = None
+    has_oauth: bool = False
+
+
+@admin_router.get("/google-calendar", response_model=GoogleCalendarConfigOut)
+def get_google_calendar(
+    _: User = Depends(require_admin),
+) -> GoogleCalendarConfigOut:
+    from compliance_agent import calendar_service
+    from compliance_agent.email_service import _gmail_client_creds
+    import os as _os
+
+    cid, secret = _gmail_client_creds()
+    return GoogleCalendarConfigOut(
+        configured=calendar_service.is_configured(),
+        calendar_id=calendar_service.calendar_id(),
+        has_oauth=bool(cid and secret and _os.environ.get("GMAIL_REFRESH_TOKEN")),
+    )
+
+
+@admin_router.post("/google-calendar/test", response_model=TestResult)
+def test_google_calendar(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> TestResult:
+    from compliance_agent import calendar_service
+
+    ok, detail = calendar_service.create_test_event()
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="integration.gcal.test_sent",
+        target_type="integration",
+        payload={"ok": ok},
+    )
+    db.commit()
+    if ok:
+        return TestResult(
+            ok=True,
+            detail="Test event created and removed on the shared calendar — connection works.",
+        )
+    return TestResult(ok=False, detail=detail)
+
+
 class EmailTestRequest(BaseModel):
     to: Optional[str] = Field(
         None, description="Override the recipient. Defaults to the actor's own email."
@@ -526,6 +604,12 @@ async def slack_interactivity(request: Request) -> dict:
         )
         form_name = ob.rule.form_name if ob.rule else "Compliance item"
 
+    # Status changed from Slack → keep the shared Google Calendar in step.
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        calendar_service.sync_obligation(oid)
+
     _slack_ack(response_url, f":white_check_mark: *{form_name}* → {status_s.replace('_', ' ')}")
     return {}
 
@@ -619,6 +703,24 @@ def update_my_prefs(
         user.notify_slack = bool(data["notify_slack"])
     if "slack_user_id" in data:
         s = (data["slack_user_id"] or "").strip()
+        if s:
+            # Accept the raw ID, "@U…", or a pasted profile URL — extract and
+            # validate the member ID so a display name can't be saved (Slack
+            # mentions only work with the real <@U…> id; a bad value would
+            # silently render as plain text).
+            import re as _re
+
+            m = _re.search(r"\b([UW][A-Z0-9]{5,})\b", s.upper())
+            if not m:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "That doesn't look like a Slack member ID. It starts with "
+                        "'U' (e.g. U07ABC123) — in Slack: your profile → ⋮ → "
+                        "'Copy member ID'. A display name won't work."
+                    ),
+                )
+            s = m.group(1)
         user.slack_user_id = s or None
     db.commit()
     db.refresh(user)

@@ -169,7 +169,7 @@ def _call_claude(text: str) -> DocumentExtractionSuggestion:
     }
 
     response = client.messages.create(
-        model="claude-opus-4-7",
+        model="claude-opus-4-8",
         max_tokens=1024,
         system=_SYSTEM,
         tools=[tool],

@@ -295,7 +295,7 @@ def _compose(context: dict) -> str:
     client = make_client()
     try:
         response = client.messages.create(
-            model="claude-opus-4-7",
+            model="claude-opus-4-8",
             max_tokens=600,
             system=system,
             messages=[
