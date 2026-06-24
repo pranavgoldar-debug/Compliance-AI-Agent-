@@ -513,6 +513,9 @@ def clear_all_licenses(
         except Exception:  # noqa: BLE001
             pass
     return {"deleted": count}
+
+
+@router.get("/{license_id}/download")
 def download_license_file(
     license_id: int,
     db: Session = Depends(get_session),
