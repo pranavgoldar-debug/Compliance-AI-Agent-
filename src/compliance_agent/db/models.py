@@ -48,6 +48,28 @@ class ObligationStatus(str, enum.Enum):
     not_applicable = "not_applicable"
 
 
+# Display labels for obligation work-status — the single source of truth kept
+# uniform across the web UI (frontend `statusLabel`), Slack cards/buttons and
+# reminder emails. The stored enum values never change; this is presentation
+# only.
+OBLIGATION_STATUS_LABELS = {
+    "not_started": "Not Started",
+    "in_progress": "Started",
+    "pending_review": "Under Progress",
+    "completed": "Filed",
+    "not_applicable": "Not Applicable",
+}
+
+
+def obligation_status_label(status) -> str:
+    """Human label for an obligation status — accepts the enum, its value
+    string, or None — matching the web UI and Slack."""
+    if status is None:
+        return "—"
+    value = getattr(status, "value", status)
+    return OBLIGATION_STATUS_LABELS.get(value, str(value).replace("_", " ").title())
+
+
 class Department(str, enum.Enum):
     """Owning team for an obligation. Drives the Workspace's department
     filter and (later) Slack routing + escalation chains."""

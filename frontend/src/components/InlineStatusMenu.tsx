@@ -19,11 +19,11 @@ import type { Obligation, ObligationStatus } from "@/types/api";
 
 
 const STATUSES: { value: ObligationStatus; label: string }[] = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "pending_review", label: "Pending review" },
-  { value: "completed", label: "Completed" },
-  { value: "not_applicable", label: "Not applicable" },
+  { value: "not_started", label: "Not Started" },
+  { value: "in_progress", label: "Started" },
+  { value: "pending_review", label: "Under Progress" },
+  { value: "completed", label: "Filed" },
+  { value: "not_applicable", label: "Not Applicable" },
 ];
 
 

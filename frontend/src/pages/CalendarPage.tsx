@@ -73,11 +73,11 @@ type RangeKind = "month" | "quarter" | "custom";
 type ViewMode = "heatmap" | "list";
 
 const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "pending_review", label: "Pending review" },
-  { value: "completed", label: "Completed" },
-  { value: "not_applicable", label: "N/A" },
+  { value: "not_started", label: "Not Started" },
+  { value: "in_progress", label: "Started" },
+  { value: "pending_review", label: "Under Progress" },
+  { value: "completed", label: "Filed" },
+  { value: "not_applicable", label: "Not Applicable" },
 ];
 
 const APPLICABILITIES = ["Mandatory", "Conditional", "Sector-specific"];
@@ -1093,10 +1093,10 @@ function BulkActionBar({
           <DropdownMenuContent>
             <DropdownMenuLabel>Change all to…</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setStatus("not_started")}>Not started</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatus("in_progress")}>In progress</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatus("pending_review")}>Pending review</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatus("completed")}>Completed</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setStatus("not_started")}>Not Started</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setStatus("in_progress")}>Started</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setStatus("pending_review")}>Under Progress</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setStatus("completed")}>Filed</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

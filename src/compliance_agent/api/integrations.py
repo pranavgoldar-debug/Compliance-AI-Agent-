@@ -31,6 +31,7 @@ from compliance_agent.db import (
     Role,
     User,
     get_session,
+    obligation_status_label,
     session_scope,
 )
 from compliance_agent.email_service import (
@@ -610,7 +611,7 @@ async def slack_interactivity(request: Request) -> dict:
     if calendar_service.is_configured():
         calendar_service.sync_obligation(oid)
 
-    _slack_ack(response_url, f":white_check_mark: *{form_name}* → {status_s.replace('_', ' ')}")
+    _slack_ack(response_url, f":white_check_mark: *{form_name}* → {obligation_status_label(new_status)}")
     return {}
 
 

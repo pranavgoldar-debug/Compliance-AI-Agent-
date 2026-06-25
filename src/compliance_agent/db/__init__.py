@@ -17,6 +17,7 @@ from compliance_agent.db.models import (
     NotificationKind,
     Obligation,
     ObligationStatus,
+    OBLIGATION_STATUS_LABELS,
     PasswordResetToken,
     Role,
     Rule,
@@ -26,6 +27,7 @@ from compliance_agent.db.models import (
     TaxType,
     User,
     WorkspaceSetting,
+    obligation_status_label,
 )
 
 __all__ = [
@@ -55,6 +57,8 @@ __all__ = [
     "PasswordResetToken",
     "Role",
     "ObligationStatus",
+    "OBLIGATION_STATUS_LABELS",
+    "obligation_status_label",
     "RuleStatus",
     "Applicability",
     "TaxType",

@@ -39,6 +39,7 @@ from compliance_agent.db import (
     Obligation,
     ObligationStatus,
     User,
+    obligation_status_label,
     session_scope,
 )
 from compliance_agent.email_service import send_email
@@ -91,7 +92,7 @@ def _build_email_body(db: Session, obligation: Obligation, days_remaining: int) 
     entity = obligation.entity
     assignee = obligation.assignee
     form = rule.form_name if rule else "Compliance item"
-    status = (obligation.status.value if obligation.status else "—").replace("_", " ").title()
+    status = obligation_status_label(obligation.status)
     updated = getattr(obligation, "updated_at", None)
     return deadline_alert_email(
         owner_name=(

@@ -39,7 +39,7 @@ type SortKey = "due_date" | "recently_updated" | "priority";
 const SCOPES: { key: Scope; label: string }[] = [
   { key: "assigned", label: "Assigned to me" },
   { key: "unassigned", label: "Unassigned" },
-  { key: "completed", label: "Completed" },
+  { key: "completed", label: "Filed" },
   { key: "all", label: "All" },
 ];
 
@@ -82,10 +82,10 @@ function groupByUrgency(tasks: Obligation[]): Record<string, Obligation[]> {
     "In alert window": [],
     "In progress": [],
     Upcoming: [],
-    Completed: [],
+    Filed: [],
   };
   for (const t of tasks) {
-    if (t.status === "completed") groups.Completed.push(t);
+    if (t.status === "completed") groups.Filed.push(t);
     else if (t.is_overdue) groups.Overdue.push(t);
     else if (t.is_in_alert_window) groups["In alert window"].push(t);
     else if (t.status === "in_progress" || t.status === "pending_review")
@@ -225,7 +225,7 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
       ? "overdue"
       : title === "In alert window"
         ? "alert"
-        : title === "Completed"
+        : title === "Filed"
           ? "completed"
           : title === "In progress"
             ? "progress"
@@ -494,10 +494,10 @@ export function TasksPage({
         <FilterPopover
           label="Status"
           options={[
-            { value: "not_started", label: "Not started" },
-            { value: "in_progress", label: "In progress" },
-            { value: "pending_review", label: "Pending review" },
-            { value: "completed", label: "Completed" },
+            { value: "not_started", label: "Not Started" },
+            { value: "in_progress", label: "Started" },
+            { value: "pending_review", label: "Under Progress" },
+            { value: "completed", label: "Filed" },
           ]}
           selected={filters.statuses}
           onChange={(vals) => setFilters((f) => ({ ...f, statuses: vals as ObligationStatus[] }))}
@@ -587,7 +587,7 @@ export function TasksPage({
       ) : (
         <div className="space-y-4">
           {groups &&
-            ["Overdue", "In alert window", "In progress", "Upcoming", "Completed"].map((g) => (
+            ["Overdue", "In alert window", "In progress", "Upcoming", "Filed"].map((g) => (
               <GroupSection key={g} title={g} items={groups[g]} />
             ))}
         </div>

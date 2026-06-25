@@ -29,6 +29,7 @@ from compliance_agent.db import (
     Obligation,
     User,
     WorkspaceSetting,
+    obligation_status_label,
     session_scope,
 )
 
@@ -198,13 +199,13 @@ def _view_button(obligation: Obligation, label: str = "View in Aspora") -> dict:
             },
             {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "▶ In progress"},
+                "text": {"type": "plain_text", "text": "▶ Started"},
                 "action_id": "st_in_progress",
                 "value": f"{oid}:in_progress",
             },
             {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "👀 For review"},
+                "text": {"type": "plain_text", "text": "🔄 Under Progress"},
                 "action_id": "st_pending_review",
                 "value": f"{oid}:pending_review",
             },
@@ -248,7 +249,7 @@ def deadline_blocks(
     form = rule.form_name if rule else "Compliance item"
     entity = obligation.entity.name if obligation.entity else "—"
     juris = (rule.jurisdiction_code if rule else "—").upper()
-    status = (obligation.status.value if obligation.status else "—").replace("_", " ").title()
+    status = obligation_status_label(obligation.status)
     due = obligation.due_date.strftime("%d-%b-%y")
     dot = "🔴" if days_remaining <= 7 else "🟡" if days_remaining <= 15 else "🟢"
     text = f"{dot} {form} due in {days_remaining} {_days_word(days_remaining)} — {due} ({entity})"

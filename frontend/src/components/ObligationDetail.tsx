@@ -572,19 +572,22 @@ function WorkflowBanner({ obligation }: { obligation: Obligation }) {
 
   // Work stages — driven purely by the obligation's status. The assignee moves
   // it along via the status control; there's no admin verify/sign-off gate.
-  let activeStep: 1 | 2 | 3 | 4 = 1; // 4 = all done (completed)
+  let activeStep: 1 | 2 | 3 | 4 | 5 = 1; // 5 = all done (filed)
   if (obligation.status === "completed") {
-    activeStep = 4;
-  } else if (obligation.status === "in_progress" || obligation.status === "pending_review") {
+    activeStep = 5;
+  } else if (obligation.status === "pending_review") {
+    activeStep = 3;
+  } else if (obligation.status === "in_progress") {
     activeStep = 2;
   } else {
     activeStep = 1;
   }
 
   const steps: { n: number; title: string; action: string }[] = [
-    { n: 1, title: "Not started", action: "Update the status to In progress when work begins." },
-    { n: 2, title: "In progress", action: "Filing under way — mark it Completed once filed." },
-    { n: 3, title: "Completed", action: "Filed and complete." },
+    { n: 1, title: "Not Started", action: "Update the status to Started when work begins." },
+    { n: 2, title: "Started", action: "Work under way — move to Under Progress as it advances." },
+    { n: 3, title: "Under Progress", action: "Filing nearly there — mark it Filed once filed." },
+    { n: 4, title: "Filed", action: "Filed and complete." },
   ];
 
   const active = steps.find((s) => s.n === activeStep);
@@ -711,7 +714,7 @@ function ActionBar({
             an employee can't accidentally submit by picking the wrong
             menu item. Admins additionally get "Mark not applicable" as
             an escape hatch. Nobody — not even admin — can pick
-            "Completed" from the menu; that only happens via the
+            "Filed" from the menu; that only happens via the
             workflow buttons (Approve & close). */}
         {canUseDropdown && (
         <DropdownMenu>

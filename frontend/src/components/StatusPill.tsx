@@ -30,7 +30,7 @@ export function StatusPill({
     return <Badge variant="completed">Filed</Badge>;
   }
   if (status === "not_applicable") {
-    return <Badge variant="neutral">N/A</Badge>;
+    return <Badge variant="neutral">Not Applicable</Badge>;
   }
   if (showDays && typeof daysRemaining === "number") {
     return (

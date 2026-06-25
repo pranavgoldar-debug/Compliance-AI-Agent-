@@ -242,20 +242,20 @@ On approve, the rule moves to **Approved** and the app **automatically generates
 
 ### Step 7 — It's on the Calendar
 
-Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, tax type, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
+Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
 
 ---
 
 ### Step 8 — Do the work (Filings)
 
-**Filings** (sidebar) is each person's queue. Tabs: **Assigned to me · Completed · All**. Items are grouped **Overdue → In alert window → In progress → Upcoming → Completed**, each with a coloured **status pill**: *Not started · In progress · Pending review · Completed · N/A.*
+**Filings** (sidebar) is each person's queue. Tabs: **Assigned to me · Filed · All**. Items are grouped **Overdue → In alert window → In progress → Upcoming → Filed**, each with a coloured **status pill**: *Not Started · Started · Under Progress · Filed · Not Applicable.*
 
 Open a filing and the buttons walk you through a **4-step handoff**:
 
 1. **Compliance prepares** — add the filing reference, upload proof, then **"Mark filing complete"**.
 2. **Admin verifies** — **"Approve & hand off to finance"** (if a payment is due), or close it; or **"Send back"** to fix.
 3. **Finance pays** — enter the amount + transaction reference, then **"Mark payment complete"**.
-4. **Admin signs off** — **"Approve & close"**. The filing is now **Filed** and moves to Completed.
+4. **Admin signs off** — **"Approve & close"**. The filing is now **Filed** and moves to the Filed tab.
 
 (No payment needed? The admin just closes it at step 2.)
 

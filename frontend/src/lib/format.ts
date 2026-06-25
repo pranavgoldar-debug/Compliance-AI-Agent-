@@ -181,15 +181,15 @@ export function fmtRelative(iso: string | null | undefined): string {
 export function statusLabel(status: ObligationStatus): string {
   switch (status) {
     case "not_started":
-      return "Not started";
+      return "Not Started";
     case "in_progress":
-      return "In progress";
+      return "Started";
     case "pending_review":
-      return "Pending review";
+      return "Under Progress";
     case "completed":
-      return "Completed";
+      return "Filed";
     case "not_applicable":
-      return "N/A";
+      return "Not Applicable";
   }
 }
 
