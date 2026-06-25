@@ -1551,6 +1551,9 @@ function EntityHero({ entity, isAdmin }: { entity: Entity; isAdmin: boolean }) {
                 <h1 className="text-2xl font-semibold tracking-tight break-words">{entity.name}</h1>
                 <JurisdictionBadge code={entity.jurisdiction_code} />
                 <Badge variant="default">{entity.legal_type}</Badge>
+                <Badge variant={entityStatusVariant(entity.status)}>
+                  {entityStatusLabel(entity.status)}
+                </Badge>
               </div>
               <div className="text-sm text-muted-foreground mt-1 flex items-center gap-4 flex-wrap">
                 <span>
@@ -1640,6 +1643,7 @@ function EditEntityDialog({
   const [incDate, setIncDate] = useState(entity.incorporation_date ?? "");
   const [shortCode, setShortCode] = useState(entity.short_code ?? "");
   const [nature, setNature] = useState(entity.nature_of_operation ?? "");
+  const [status, setStatus] = useState<EntityStatus>(entity.status ?? "not_started");
   const [ownership, setOwnership] = useState<OwnershipStage[]>(entity.ownership ?? []);
   const [error, setError] = useState<string | null>(null);
 
@@ -1656,6 +1660,7 @@ function EditEntityDialog({
       setIncDate(entity.incorporation_date ?? "");
       setShortCode(entity.short_code ?? "");
       setNature(entity.nature_of_operation ?? "");
+      setStatus(entity.status ?? "not_started");
       setOwnership(entity.ownership ?? []);
       setError(null);
     }
@@ -1684,6 +1689,7 @@ function EditEntityDialog({
         incorporation_date: incDate || null,
         short_code: shortCode.trim() || null,
         nature_of_operation: nature.trim() || null,
+        status,
         ownership: cleaned.length ? cleaned : null,
       });
     },
@@ -1774,6 +1780,19 @@ function EditEntityDialog({
               <label className="text-xs font-medium">Fiscal year end / ARD</label>
               <FiscalYearEndPicker value={fye} onChange={setFye} />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as EntityStatus)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="not_started">Not Started</option>
+              <option value="in_progress">In Progress</option>
+              <option value="live">Live</option>
+            </select>
           </div>
 
           <div className="space-y-2 pt-1">
