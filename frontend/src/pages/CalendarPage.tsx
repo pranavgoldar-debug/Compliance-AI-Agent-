@@ -80,14 +80,12 @@ const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
   { value: "not_applicable", label: "N/A" },
 ];
 
-const TAX_TYPES = ["Direct Tax", "Indirect Tax", "Not a Tax"];
 const APPLICABILITIES = ["Mandatory", "Conditional", "Sector-specific"];
 
 
 interface Filters {
   entityIds: number[];
   jurisdictions: string[];
-  taxTypes: string[];
   applicabilities: string[];
   authorities: string[];
   categories: string[];
@@ -100,7 +98,6 @@ function emptyFilters(): Filters {
   return {
     entityIds: [],
     jurisdictions: [],
-    taxTypes: [],
     applicabilities: [],
     authorities: [],
     categories: [],
@@ -168,7 +165,6 @@ export function CalendarPage() {
       });
       filters.entityIds.forEach((id) => params.append("entity_ids", String(id)));
       filters.jurisdictions.forEach((j) => params.append("jurisdiction_codes", j));
-      filters.taxTypes.forEach((t) => params.append("tax_types", t));
       filters.statuses.forEach((s) => params.append("statuses", s));
       filters.assigneeIds.forEach((id) => params.append("assignee_ids", String(id)));
       return api.get<CalendarObligation[]>(`/api/calendar?${params.toString()}`);
@@ -192,7 +188,6 @@ export function CalendarPage() {
   const activeFilterCount =
     filters.entityIds.length +
     filters.jurisdictions.length +
-    filters.taxTypes.length +
     filters.applicabilities.length +
     filters.authorities.length +
     filters.categories.length +
@@ -320,12 +315,6 @@ export function CalendarPage() {
             )}
             selected={filters.jurisdictions}
             onChange={(vals) => setFilters((f) => ({ ...f, jurisdictions: vals }))}
-          />
-          <MultiSelectFilter
-            label="Tax type"
-            options={TAX_TYPES.map((t) => ({ value: t, label: t }))}
-            selected={filters.taxTypes}
-            onChange={(vals) => setFilters((f) => ({ ...f, taxTypes: vals }))}
           />
           <MultiSelectFilter
             label="Applicability"
