@@ -275,8 +275,12 @@ def _add_missing_columns() -> None:
 
     table_additions: dict[str, list[tuple[str, str]]] = {
         # Entity onboarding / operational status (not_started / in_progress / live).
+        # NULLABLE + DEFAULT — the most benign ADD COLUMN form. A NOT NULL add can
+        # be rejected on some Postgres table states (which silently left the column
+        # off and broke every entity query); nullable always succeeds, and the
+        # serializer treats NULL as 'not_started'.
         "entities": [
-            ("status", f"{varchar(16)} NOT NULL DEFAULT 'not_started'"),
+            ("status", f"{varchar(16)} DEFAULT 'not_started'"),
         ],
         # Phase 5: effort bands on obligations.
         # PR-B (department split): every obligation owns by a department.

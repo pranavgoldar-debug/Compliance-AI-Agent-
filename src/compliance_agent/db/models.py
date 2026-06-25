@@ -197,9 +197,12 @@ class Entity(Base):
     nature_of_operation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Onboarding / operational status, asked at registration (not_started /
-    # in_progress / live). Stored as a short string; defaults to not_started.
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=EntityStatus.not_started.value
+    # in_progress / live). NULLABLE on purpose: an ADD COLUMN ... NOT NULL can be
+    # rejected on some existing-table states, which would leave the model needing
+    # a column the DB never got. The serializer treats NULL as 'not_started', and
+    # new ORM rows get the default below — so nullability is harmless.
+    status: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True, default=EntityStatus.not_started.value
     )
 
     # Admin-answered profile (VAT-registered? payroll? revenue band? related-
