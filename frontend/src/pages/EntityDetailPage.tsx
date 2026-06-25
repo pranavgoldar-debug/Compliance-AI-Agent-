@@ -2168,24 +2168,12 @@ function OverviewTab({
   onManageLicenses: () => void;
   isAdmin: boolean;
 }) {
-  const queryClient = useQueryClient();
   // Recent 5 obligation changes — fake "recent activity" feed sourced from
   // updated_at on this entity's obligations. Real activity feed lands in P5.
   const { data: activityFeed = [] } = useQuery({
     queryKey: ["activities", entity.id],
     queryFn: () => api.get<ActivityOut[]>(`/api/activities?entity_id=${entity.id}&limit=8`),
     refetchInterval: 60_000,
-  });
-  // Inline status edit (admin) — PATCHes the entity and refreshes the views;
-  // the change is also captured in the audit log (old → new).
-  const saveStatus = useMutation({
-    mutationFn: (status: EntityStatus) =>
-      api.patch<Entity>(`/api/entities/${entity.id}`, { status }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["entity"] });
-      queryClient.invalidateQueries({ queryKey: ["entities"] });
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
   return (
@@ -2200,25 +2188,6 @@ function OverviewTab({
             <dd className="font-medium">{entity.name}</dd>
             <dt className="text-muted-foreground">Legal type</dt>
             <dd>{entity.legal_type || "—"}</dd>
-            <dt className="text-muted-foreground">Status</dt>
-            <dd>
-              {isAdmin ? (
-                <select
-                  value={entity.status}
-                  onChange={(e) => saveStatus.mutate(e.target.value as EntityStatus)}
-                  disabled={saveStatus.isPending}
-                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
-                >
-                  <option value="not_started">Not Started</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="live">Live</option>
-                </select>
-              ) : (
-                <Badge variant={entityStatusVariant(entity.status)}>
-                  {entityStatusLabel(entity.status)}
-                </Badge>
-              )}
-            </dd>
             <dt className="text-muted-foreground">Registration number</dt>
             <dd className="font-mono text-xs">{entity.registration_number || "—"}</dd>
             <dt className="text-muted-foreground">GST / Tax No</dt>
