@@ -65,6 +65,15 @@ class RuleStatus(str, enum.Enum):
     archived = "archived"
 
 
+class EntityStatus(str, enum.Enum):
+    """Onboarding / operational status of an entity, set at registration and
+    editable later: not_started -> in_progress -> live."""
+
+    not_started = "not_started"
+    in_progress = "in_progress"
+    live = "live"
+
+
 class Applicability(str, enum.Enum):
     mandatory = "Mandatory"
     conditional = "Conditional"
@@ -186,6 +195,15 @@ class Entity(Base):
     annual_return_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     # What the entity actually does — free-text business description, admin-set.
     nature_of_operation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Onboarding / operational status, asked at registration (not_started /
+    # in_progress / live). NULLABLE on purpose: an ADD COLUMN ... NOT NULL can be
+    # rejected on some existing-table states, which would leave the model needing
+    # a column the DB never got. The serializer treats NULL as 'not_started', and
+    # new ORM rows get the default below — so nullability is harmless.
+    status: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True, default=EntityStatus.not_started.value
+    )
 
     # Admin-answered profile (VAT-registered? payroll? revenue band? related-
     # party txns? relevant activity?) used by "Find Regulations" to decide

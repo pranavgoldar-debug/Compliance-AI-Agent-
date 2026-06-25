@@ -75,6 +75,54 @@ def create_entity(
     return serialize_entity(entity, db)
 
 
+# Entity fields whose VALUES must never be written into the activity feed —
+# sensitive financial / structured data. They are still recorded as "changed",
+# just without their before/after values (no bank details / ownership / primary
+# activity answers leaking into a broadly-visible log).
+_ENTITY_SENSITIVE_FIELDS = {
+    "bank_details",
+    "ownership",
+    "finance_profile",
+    "document_folders",
+}
+
+
+def _audit_scalar(value):
+    """JSON-safe, length-bounded rendering of a scalar field value for the audit
+    payload. Returns None for complex values (dict/list) so the caller omits the
+    value and records the field as merely 'changed'."""
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    text = str(value)
+    return text if len(text) <= 80 else text[:79] + "…"
+
+
+def _entity_change_log(before: dict, entity, fields: dict) -> Optional[dict]:
+    """Diff an entity update for the activity payload. Returns
+    {"changed_fields": [...], "changes": {field: {"from","to"} | {"updated": True}}}
+    or None when nothing actually changed. Sensitive/complex fields are flagged
+    changed without exposing their values."""
+    changed_fields: list[str] = []
+    changes: dict = {}
+    for field in fields:
+        old = before.get(field)
+        new = getattr(entity, field, None)
+        if old == new:
+            continue
+        changed_fields.append(field)
+        if (
+            field in _ENTITY_SENSITIVE_FIELDS
+            or isinstance(new, (dict, list))
+            or isinstance(old, (dict, list))
+        ):
+            changes[field] = {"updated": True}
+        else:
+            changes[field] = {"from": _audit_scalar(old), "to": _audit_scalar(new)}
+    if not changed_fields:
+        return None
+    return {"changed_fields": changed_fields, "changes": changes}
+
+
 @router.patch("/{entity_id}", response_model=EntityOut)
 def update_entity(
     entity_id: int,
@@ -94,6 +142,8 @@ def update_entity(
         fields["fiscal_year_end"] = canonical_fye(fields["fiscal_year_end"]) or str(
             fields["fiscal_year_end"]
         )[:10]
+    # Snapshot pre-edit values so the activity log can record what changed.
+    _before = {f: getattr(entity, f, None) for f in fields}
     for field, value in fields.items():
         setattr(entity, field, value)
     # When the Primary Activity answers change, reconcile this entity's calendar:
@@ -117,7 +167,12 @@ def update_entity(
             else:
                 ensure_obligations_for_rule(db, rule)
     log_activity(
-        db, actor_id=user.id, action="entity.updated", target_type="entity", target_id=entity.id
+        db,
+        actor_id=user.id,
+        action="entity.updated",
+        target_type="entity",
+        target_id=entity.id,
+        payload=_entity_change_log(_before, entity, fields),
     )
     db.commit()
     db.refresh(entity)
@@ -1228,10 +1283,16 @@ _US_RECALL = (
     "(event-based); audited annual financial statements to the state regulators "
     "(via NMLS); the permissible-investments / safeguarding report; and "
     "surety-bond maintenance.\n"
-    "- State corporate filings — for EACH state of registration: the state "
-    "annual report / registered-agent filing and any state franchise tax "
-    "(e.g. Delaware LLC franchise tax; Maryland SDAT annual report + business "
-    "personal-property return); name the state for each.\n"
+    "- State corporate / property filings — for EACH state of registration, "
+    "list each as its OWN item, naming the state: the state annual report / "
+    "registered-agent filing; any state franchise tax (e.g. Delaware LLC "
+    "franchise tax); and — where the state levies one — the BUSINESS PERSONAL "
+    "PROPERTY / tangible-property tax return as a SEPARATE item, even when the "
+    "state files it on the SAME form as the annual report. Maryland is the "
+    "classic case: the SDAT Annual Report and the Business Personal Property "
+    "Return are filed together on Form 1, but the Business Personal Property "
+    "Return is a DISTINCT obligation — list it separately, do NOT fold it into "
+    "the generic annual report.\n"
     "- Corporate Transparency Act (CTA) Beneficial Ownership Information (BOI) "
     "report to FinCEN — TRACK its applicability. Under FinCEN's interim final "
     "rule (eff. 26 Mar 2025) U.S.-formed entities are currently EXEMPT and only "
@@ -1242,6 +1303,53 @@ _US_RECALL = (
     "each that applies even if unsure of the exact form or per-state deadline, "
     "marking confidence 'Pending verification - official source check' rather "
     "than omitting it.\n\n"
+)
+
+
+# Always-on, jurisdiction-agnostic REGULATORY recall — the licensing / supervisory
+# counterpart to the finance/tax gap audit. Unlike the per-country blocks it names
+# NO specific forms; instead it makes the model reason by REGULATOR and OBLIGATION
+# TYPE, so a new jurisdiction gets a strong regulatory floor with no hand-written
+# recall. The per-country blocks still stack on top for named-form precision; this
+# only guarantees a baseline for everyone (incl. jurisdictions with no block yet).
+_REGULATORY_RECALL = (
+    "REGULATORY / LICENSING RECALL (all jurisdictions) — beyond the corporate, "
+    "tax and payroll filings, work through the entity's REGULATORY obligations "
+    "by REGULATOR and by OBLIGATION TYPE. Reason from the entity's own licences "
+    "and the regulators that issued them (listed below), NOT from memory of any "
+    "one country. For EACH authority the entity answers to, CONSIDER and INCLUDE "
+    "— each as its OWN item, only where it genuinely applies to THIS entity — "
+    "every one of these obligation types:\n"
+    "- LICENSING & RENEWALS: each licence / registration the entity holds and "
+    "its periodic RENEWAL. Emit a SEPARATE renewal per licence AND per "
+    "sub-jurisdiction (state / province / emirate) named in the licences below — "
+    "never collapse multiple licences or regions into one generic 'licence "
+    "renewal'.\n"
+    "- AMENDMENTS & NOTIFICATIONS: the filing to AMEND a licence / registration "
+    "when the entity's details change (legal name, address, branches, ownership, "
+    "control persons, business model) — DISTINCT from the renewal, list both — "
+    "plus material-change and change-of-control / qualifying-holding "
+    "notifications to the regulator.\n"
+    "- SUPERVISORY / PRUDENTIAL RETURNS: for a licensed financial entity, the "
+    "periodic returns its financial supervisor requires — capital / own-funds / "
+    "prudential returns, safeguarding or client-asset returns, and conduct / "
+    "operational / fraud / incident / statistical returns. These are the easiest "
+    "to overlook and are SEPARATE from the company's financial statements.\n"
+    "- AML / CFT REPORTING: the PERIODIC AML/CFT returns to the financial "
+    "supervisor AND to the financial-intelligence unit (annual / questionnaire / "
+    "statistical), IN ADDITION to the event-based suspicious-transaction and "
+    "threshold transaction reports.\n"
+    "- CORPORATE REGISTRY: the annual return / confirmation statement and "
+    "beneficial-ownership / register updates to the companies registry "
+    "(separate from the statutory financial statements).\n"
+    "- FEES & AUDITS: periodic regulator fees / levies, and any regulator-"
+    "mandated independent audit (e.g. a safeguarding / client-asset audit) — "
+    "distinct from the statutory financial-statement audit.\n"
+    "Treat a single COMBINED form as MULTIPLE obligations where it carries them "
+    "(list each component separately). INCLUDE each obligation that genuinely "
+    "applies even if you are unsure of the exact local form name or cadence, "
+    "marking confidence 'Pending verification - official source check' rather "
+    "than omitting it. Do NOT add pure HR / employment / workforce items.\n\n"
 )
 
 
@@ -1473,6 +1581,9 @@ def discover_entity_regulations(
         "These are frequently the MOST important obligations for such a business "
         "and the easiest to overlook — include them when the entity clearly "
         "performs these activities.\n\n"
+        # Always-on regulatory floor (every jurisdiction); per-country blocks below
+        # stack on top for named-form precision.
+        + _REGULATORY_RECALL
         + (_UK_FCA_RECALL if (juris or "").strip().lower() == "uk" else "")
         + (_EMI_RECALL if _emi_signal(entity.nature_of_operation, licenses) else "")
         + (_LT_RECALL if (juris or "").strip().lower() == "lithuania" else "")
@@ -1508,10 +1619,11 @@ def discover_entity_regulations(
     already_present = len(result.rules) - len(created)
     db.flush()
     # Gap-audit second pass — jurisdiction-agnostic completeness check that
-    # replaces hand-written per-country recalls: ask the model which well-known
-    # statutory finance/tax filings are MISSING from what the first pass found,
-    # and create those too (through the SAME path). Best-effort — adds nothing on
-    # failure or when the model is unavailable.
+    # backstops the per-country recalls: ask the model which well-known statutory
+    # filings — finance/tax AND regulatory/licensing (renewals, amendments,
+    # supervisory & AML returns, registry filings, fees, audits) — are MISSING
+    # from what the first pass found, and create those too (through the SAME
+    # path). Best-effort — adds nothing on failure or when the model is unavailable.
     found = [(r.form_name or r.name) for r in _entity_rules_fresh(db, entity)]
     gap = audit_missing_filings(context, found, jurisdiction_hint=juris)
     gap_created = _create_rules_from_candidates(db, entity, gap.rules, juris, user, existing)

@@ -24,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, fmtTime, parseBackendDate, userInitials } from "@/lib/format";
+import { fieldLabel, fmtRelative, fmtTime, parseBackendDate, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ActivityOut, Entity, UserBrief } from "@/types/api";
 
@@ -366,11 +366,37 @@ function payloadValue(key: string, value: string): string {
 }
 
 function renderPayload(payload: Record<string, unknown>) {
+  // Rich entity-update diff: "Field: old → new" (sensitive fields show only
+  // "updated" — see _entity_change_log on the backend).
+  const changes = payload.changes as
+    | Record<string, { from?: unknown; to?: unknown; updated?: boolean }>
+    | undefined;
+  if (changes && typeof changes === "object" && Object.keys(changes).length > 0) {
+    return Object.entries(changes)
+      .slice(0, 6)
+      .map(([field, c]) => {
+        const hasValues = !!c && typeof c === "object" && ("from" in c || "to" in c);
+        const fmt = (v: unknown) =>
+          v == null || v === "" ? "—" : payloadValue("from", String(v));
+        return (
+          <Badge key={field} variant="neutral" className="text-[10px]">
+            {fieldLabel(field)}:{" "}
+            {hasValues ? (
+              <span className="font-mono ml-1">
+                {fmt(c.from)} → {fmt(c.to)}
+              </span>
+            ) : (
+              <span className="ml-1">updated</span>
+            )}
+          </Badge>
+        );
+      });
+  }
   const fields = (payload.changed_fields ?? payload.fields) as string[] | undefined;
   if (Array.isArray(fields) && fields.length > 0) {
     return fields.slice(0, 6).map((f) => (
       <Badge key={f} variant="neutral" className="text-[10px]">
-        {f}
+        {fieldLabel(f)}
       </Badge>
     ));
   }

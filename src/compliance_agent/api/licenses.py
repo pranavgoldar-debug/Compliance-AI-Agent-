@@ -355,23 +355,12 @@ def create_license(
     db.add(lic)
     db.flush()
 
-    # Surface the uploaded license file in the Documents section too (reuses
-    # the same stored blob) so it shows on the entity's Documents tab.
-    if lic.storage_path:
-        from compliance_agent.db import Document, DocumentCategory
-
-        db.add(
-            Document(
-                entity_id=entity_id,
-                filename=lic.filename or "license",
-                storage_path=lic.storage_path,
-                content_type=lic.content_type,
-                size_bytes=lic.size_bytes,
-                category=DocumentCategory.filings,
-                tags="license",
-                uploaded_by_id=user.id,
-            )
-        )
+    # NOTE: a license file stays with the License (and its own download
+    # endpoint) — we deliberately do NOT auto-create a Documents/Filings entry
+    # for it. Doing so put licences in the Documents tab unbidden, and because
+    # that Document reused the license's stored blob, deleting it from Documents
+    # would have wiped the license's own file. Documents/Filings is for files
+    # the user uploads there manually.
 
     # Auto-schedule on upload: put every applicable filing for this licence's
     # jurisdiction straight onto the calendar, so the admin doesn't have to
@@ -524,6 +513,9 @@ def clear_all_licenses(
         except Exception:  # noqa: BLE001
             pass
     return {"deleted": count}
+
+
+@router.get("/{license_id}/download")
 def download_license_file(
     license_id: int,
     db: Session = Depends(get_session),

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -78,6 +78,7 @@ class EntityCreate(BaseModel):
     fiscal_year_end: Optional[str] = None
     annual_return_date: Optional[str] = None
     nature_of_operation: Optional[str] = None
+    status: Literal["not_started", "in_progress", "live"] = "not_started"
     ownership: Optional[list] = None
     country_lead_id: Optional[int] = None
 
@@ -94,6 +95,7 @@ class EntityUpdate(BaseModel):
     fiscal_year_end: Optional[str] = None
     annual_return_date: Optional[str] = None
     nature_of_operation: Optional[str] = None
+    status: Optional[Literal["not_started", "in_progress", "live"]] = None
     country_lead_id: Optional[int] = None
     finance_profile: Optional[dict] = None
     ownership: Optional[list] = None
@@ -115,6 +117,7 @@ class EntityOut(_Base):
     fiscal_year_end: Optional[str] = None
     annual_return_date: Optional[str] = None
     nature_of_operation: Optional[str] = None
+    status: str = "not_started"
     finance_profile: Optional[dict] = None
     ownership: Optional[list] = None
     bank_details: Optional[dict] = None

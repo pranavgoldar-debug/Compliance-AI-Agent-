@@ -35,12 +35,18 @@ import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtRelative, userInitials, jurisdiction } from "@/lib/format";
+import {
+  entityStatusLabel,
+  entityStatusVariant,
+  fmtRelative,
+  jurisdiction,
+  userInitials,
+} from "@/lib/format";
 import { jurisdictionOptionsInUse } from "@/lib/countries";
 import { CountrySelect } from "@/components/CountrySelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import type { Entity, OwnershipStage } from "@/types/api";
+import type { Entity, EntityStatus, OwnershipStage } from "@/types/api";
 
 
 type ViewMode = "table" | "grid";
@@ -62,6 +68,7 @@ export function EntitiesPage() {
   const [q, setQ] = useState("");
   const [jurisdictions, setJurisdictions] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
   const [addOpen, setAddOpen] = useState(false);
 
@@ -91,8 +98,9 @@ export function EntitiesPage() {
     }
     if (jurisdictions.length) arr = arr.filter((e) => jurisdictions.includes(e.jurisdiction_code));
     if (types.length) arr = arr.filter((e) => types.includes(e.legal_type));
+    if (statuses.length) arr = arr.filter((e) => statuses.includes(e.status));
     return arr;
-  }, [data, q, jurisdictions, types]);
+  }, [data, q, jurisdictions, types, statuses]);
 
   return (
     <div className="space-y-6">
@@ -147,6 +155,16 @@ export function EntitiesPage() {
           selected={types}
           onChange={setTypes}
           searchable
+        />
+        <FilterPopover
+          label="Status"
+          options={[
+            { value: "not_started", label: "Not Started" },
+            { value: "in_progress", label: "In Progress" },
+            { value: "live", label: "Live" },
+          ]}
+          selected={statuses}
+          onChange={setStatuses}
         />
 
         <div className="ml-auto inline-flex rounded-lg border border-input overflow-hidden">
@@ -240,6 +258,7 @@ function AddEntityDialog({
   const [fye, setFye] = useState("");
   const [incDate, setIncDate] = useState("");
   const [nature, setNature] = useState("");
+  const [status, setStatus] = useState<EntityStatus>("not_started");
   const [ownership, setOwnership] = useState<OwnershipStage[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -255,6 +274,7 @@ function AddEntityDialog({
       setFye("");
       setIncDate("");
       setNature("");
+      setStatus("not_started");
       setOwnership([]);
       setError(null);
     }
@@ -283,6 +303,7 @@ function AddEntityDialog({
         fiscal_year_end: fye.trim() || null,
         annual_return_date: null,
         nature_of_operation: nature.trim() || null,
+        status,
         ownership: cleaned.length ? cleaned : null,
       });
     },
@@ -369,6 +390,19 @@ function AddEntityDialog({
               <label className="text-xs font-medium">Fiscal year end / ARD</label>
               <FiscalYearEndPicker value={fye} onChange={setFye} />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as EntityStatus)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="not_started">Not Started</option>
+              <option value="in_progress">In Progress</option>
+              <option value="live">Live</option>
+            </select>
           </div>
 
           <div className="space-y-2 pt-1">
@@ -571,6 +605,7 @@ function TableView({
               <SortTh label="Jurisdiction" sortKey="jurisdiction" />
               <SortTh label="Entity" sortKey="name" />
               <SortTh label="Type" sortKey="type" />
+              <th className="px-4 py-2.5 text-left font-medium">Status</th>
               <th className="px-4 py-2.5 text-left font-medium">Fiscal YE</th>
               <SortTh label="Active" sortKey="active" align="right" />
               <SortTh label="Overdue" sortKey="overdue" align="right" />
@@ -619,6 +654,11 @@ function TableView({
                   </Link>
                 </td>
                 <td className="px-4 py-2.5 text-muted-foreground">{e.legal_type}</td>
+                <td className="px-4 py-2.5">
+                  <Badge variant={entityStatusVariant(e.status)}>
+                    {entityStatusLabel(e.status)}
+                  </Badge>
+                </td>
                 <td className="px-4 py-2.5 text-muted-foreground">{e.fiscal_year_end || "—"}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums font-medium">
                   {e.active_obligations_count}
@@ -673,7 +713,10 @@ function GridView({ entities }: { entities: Entity[] }) {
                 <dd>{e.fiscal_year_end || "—"}</dd>
               </dl>
 
-              <div className="flex items-center gap-1.5 pt-1 border-t border-border">
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border">
+                <Badge variant={entityStatusVariant(e.status)}>
+                  {entityStatusLabel(e.status)}
+                </Badge>
                 <Badge variant="neutral">{e.active_obligations_count} active</Badge>
                 {e.overdue_obligations_count > 0 && (
                   <Badge variant="overdue">{e.overdue_obligations_count} overdue</Badge>

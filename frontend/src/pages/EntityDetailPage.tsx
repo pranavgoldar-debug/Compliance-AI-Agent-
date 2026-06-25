@@ -44,11 +44,11 @@ import { EmptyState } from "@/components/EmptyState";
 import { DocumentList } from "@/components/DocumentList";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { deriveFunction, fmtDate, fmtRelative, fmtShortDate, jurisdiction, userInitials } from "@/lib/format";
+import { deriveFunction, entityStatusLabel, entityStatusVariant, fieldLabel, fmtDate, fmtRelative, fmtShortDate, jurisdiction, userInitials } from "@/lib/format";
 import { CountrySelect } from "@/components/CountrySelect";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, BankDetails, DocumentOut, Entity, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
+import type { ActivityOut, BankDetails, DocumentOut, Entity, EntityStatus, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
 
 
 function StatTile({
@@ -676,10 +676,17 @@ function ApplicabilitySection({
       // Only the TICKED items move to Review & Assign. Unticked items (incl.
       // the not-applicable column) are LEFT AS-IS as discovered drafts — never
       // auto-archived. Archiving is a manual action only.
-      const itemRuleIds = new Set(items.map((i) => i.rule_id));
+      //
+      // Dedupe against BOTH the already-APPROVED rules (production) and the ones
+      // already in Review & Assign (staging + sent_to_review) — by rule id AND
+      // by signature. A picked item matching either must be skipped: re-PATCHing
+      // an approved rule to "staging" would demote it back into review.
+      const approvedIds = new Set(production.map((r) => r.id));
+      const inReviewIds = new Set(
+        staging.filter((r) => r.sent_to_review).map((r) => r.id),
+      );
       const existing = new Set<string>();
       for (const r of [...staging.filter((r) => r.sent_to_review), ...production]) {
-        if (itemRuleIds.has(r.id)) continue;
         ruleSigs(r.name, r.form_name, r.frequency).forEach((s) => existing.add(s));
       }
       let skipped = 0;
@@ -687,10 +694,14 @@ function ApplicabilitySection({
         items
           .filter((i) => i.rule_id && picked.has(i.form_name))
           .map((i) => {
-            const dup = ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s));
+            const rid = i.rule_id as number;
+            const alreadyLive = approvedIds.has(rid) || inReviewIds.has(rid);
+            const dup =
+              alreadyLive ||
+              ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s));
             if (dup) {
-              // Already in Review & Assign — skip (leave the draft as-is, don't
-              // archive it).
+              // Already approved or already in Review & Assign — skip. Never
+              // demote an approved rule; never duplicate an existing filing.
               skipped++;
               return Promise.resolve();
             }
@@ -707,7 +718,7 @@ function ApplicabilitySection({
       queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["obligations"] });
-      const note = skipped ? ` ${skipped} skipped — already in Review & Assign.` : "";
+      const note = skipped ? ` ${skipped} skipped — already approved or in Review & Assign.` : "";
       window.alert(`${picked.size - skipped} obligation(s) sent to Review & Assign.${note}`);
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
@@ -2099,6 +2110,32 @@ function humaniseAction(action: string): string {
   return map[action] || action.replace(/[._]/g, " ");
 }
 
+// Compact one-line summary of what an entity.updated event changed, for the
+// activity feed — "Fiscal year end / ARD: 31 Dec → 31 Mar · Address updated".
+// Sensitive fields (recorded without values by the backend) read "… updated".
+function summariseEntityChanges(payload: Record<string, unknown> | null): string {
+  if (!payload) return "";
+  const changes = payload.changes as
+    | Record<string, { from?: unknown; to?: unknown; updated?: boolean }>
+    | undefined;
+  if (changes && typeof changes === "object") {
+    const entries = Object.entries(changes);
+    const fmt = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+    const parts = entries.slice(0, 3).map(([field, c]) =>
+      c && typeof c === "object" && ("from" in c || "to" in c)
+        ? `${fieldLabel(field)}: ${fmt(c.from)} → ${fmt(c.to)}`
+        : `${fieldLabel(field)} updated`,
+    );
+    const extra = entries.length - parts.length;
+    return parts.join(" · ") + (extra > 0 ? ` · +${extra} more` : "");
+  }
+  const fields = payload.changed_fields as string[] | undefined;
+  if (Array.isArray(fields) && fields.length > 0) {
+    return fields.slice(0, 3).map(fieldLabel).join(" · ");
+  }
+  return "";
+}
+
 function OverviewTab({
   entity,
   obligations,
@@ -2112,12 +2149,24 @@ function OverviewTab({
   onManageLicenses: () => void;
   isAdmin: boolean;
 }) {
+  const queryClient = useQueryClient();
   // Recent 5 obligation changes — fake "recent activity" feed sourced from
   // updated_at on this entity's obligations. Real activity feed lands in P5.
   const { data: activityFeed = [] } = useQuery({
     queryKey: ["activities", entity.id],
     queryFn: () => api.get<ActivityOut[]>(`/api/activities?entity_id=${entity.id}&limit=8`),
     refetchInterval: 60_000,
+  });
+  // Inline status edit (admin) — PATCHes the entity and refreshes the views;
+  // the change is also captured in the audit log (old → new).
+  const saveStatus = useMutation({
+    mutationFn: (status: EntityStatus) =>
+      api.patch<Entity>(`/api/entities/${entity.id}`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entity"] });
+      queryClient.invalidateQueries({ queryKey: ["entities"] });
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
   return (
@@ -2132,6 +2181,25 @@ function OverviewTab({
             <dd className="font-medium">{entity.name}</dd>
             <dt className="text-muted-foreground">Legal type</dt>
             <dd>{entity.legal_type || "—"}</dd>
+            <dt className="text-muted-foreground">Status</dt>
+            <dd>
+              {isAdmin ? (
+                <select
+                  value={entity.status}
+                  onChange={(e) => saveStatus.mutate(e.target.value as EntityStatus)}
+                  disabled={saveStatus.isPending}
+                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                >
+                  <option value="not_started">Not Started</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="live">Live</option>
+                </select>
+              ) : (
+                <Badge variant={entityStatusVariant(entity.status)}>
+                  {entityStatusLabel(entity.status)}
+                </Badge>
+              )}
+            </dd>
             <dt className="text-muted-foreground">Registration number</dt>
             <dd className="font-mono text-xs">{entity.registration_number || "—"}</dd>
             <dt className="text-muted-foreground">GST / Tax No</dt>
@@ -2263,6 +2331,12 @@ function OverviewTab({
                         <span className="font-medium">{a.target_label}</span>
                       </>
                     )}
+                    {a.action === "entity.updated" &&
+                      summariseEntityChanges(a.payload) && (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {summariseEntityChanges(a.payload)}
+                        </div>
+                      )}
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {fmtRelative(a.created_at)}

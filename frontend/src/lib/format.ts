@@ -233,6 +233,63 @@ export function userInitials(name: string | null | undefined, fallback = "?"): s
   );
 }
 
+// Friendly labels for entity (and other) field names that show up in the audit
+// log / activity feed. Mirrors the Business Information labels on the entity
+// overview so "fiscal_year_end" reads "Fiscal year end / ARD". Falls back to a
+// title-cased version of the raw field name for anything not mapped.
+const FIELD_LABELS: Record<string, string> = {
+  name: "Legal name",
+  legal_type: "Legal type",
+  jurisdiction_code: "Jurisdiction",
+  short_code: "Short code",
+  registration_number: "Registration number",
+  tax_id: "GST / Tax No",
+  address: "Address",
+  incorporation_date: "Incorporation date",
+  fiscal_year_end: "Fiscal year end / ARD",
+  annual_return_date: "Annual return date",
+  nature_of_operation: "Nature of operation",
+  qualification: "Qualification",
+  bank_details: "Bank details",
+  ownership: "Ownership",
+  finance_profile: "Primary activity",
+  document_folders: "Document folders",
+  status: "Status",
+};
+
+// Entity onboarding/operational status → display label + badge variant.
+// not_started → slate · in_progress → blue · live → green.
+export function entityStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "in_progress":
+      return "In Progress";
+    case "live":
+      return "Live";
+    default:
+      return "Not Started";
+  }
+}
+
+export function entityStatusVariant(
+  status: string | null | undefined,
+): "neutral" | "progress" | "completed" {
+  switch (status) {
+    case "in_progress":
+      return "progress";
+    case "live":
+      return "completed";
+    default:
+      return "neutral";
+  }
+}
+
+export function fieldLabel(field: string): string {
+  return (
+    FIELD_LABELS[field] ??
+    field.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
 // Effort band → display + lead-time math. Mirrors compliance_agent/db/models.py.
 export const EFFORT_BAND_DAYS: Record<EffortBand, number> = {
   "1w": 7,

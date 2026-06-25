@@ -441,19 +441,33 @@ def extract_rules_from_text(
 # ---------------------------------------------------------------------------
 GAP_AUDIT_INSTRUCTIONS = (
     "COMPLETENESS REVIEW — an initial discovery pass has already run for the "
-    "entity below. Your job is NARROW: name the WELL-KNOWN STATUTORY FINANCE / "
-    "TAX filings for THIS jurisdiction and legal type that are MISSING from the "
-    "ALREADY-FOUND list.\n"
+    "entity below. Your job is NARROW: name the WELL-KNOWN STATUTORY filings for "
+    "THIS jurisdiction and legal type that are MISSING from the ALREADY-FOUND "
+    "list.\n"
     "- Return ONLY genuinely missing items. Do NOT repeat anything already in "
     "the ALREADY-FOUND list — match by form code or filing identity, ignoring "
     "wording, cadence and punctuation.\n"
-    "- Scope is FINANCE / TAX only: corporate / income tax returns + their "
-    "balance payment + instalments; indirect tax (VAT / GST / sales-tax) "
-    "returns at EACH distinct cadence (list each return separately, never merge "
-    "them); withholding / payroll tax returns; statutory financial statements / "
-    "audit / accounts filings; transfer-pricing filings; and foreign-investment "
-    "/ FX reporting of a financial character. Do NOT add pure HR, governance or "
-    "legal items.\n"
+    "- SCOPE covers TWO buckets — audit BOTH:\n"
+    "  (A) FINANCE / TAX: corporate / income tax returns + their balance "
+    "payment + instalments; indirect tax (VAT / GST / sales-tax) returns at EACH "
+    "distinct cadence (list each return separately, never merge them); "
+    "withholding / payroll tax returns; statutory financial statements / audit / "
+    "accounts filings; transfer-pricing filings; and foreign-investment / FX "
+    "reporting of a financial character.\n"
+    "  (B) REGULATORY / LICENSING (for a licensed or regulated entity): licence "
+    "RENEWALS — a SEPARATE renewal per licence AND per state / province / region "
+    "the entity is licensed in, never one generic renewal; licence AMENDMENTS "
+    "and material-change / change-of-control notifications (DISTINCT from "
+    "renewals); supervisory / prudential / capital / safeguarding / conduct "
+    "returns to the financial supervisor; PERIODIC AML / CFT returns to the "
+    "supervisor and the financial-intelligence unit (in addition to event-based "
+    "reports); corporate-registry annual return / confirmation statement and "
+    "beneficial-ownership updates; regulator fees / levies; and "
+    "regulator-mandated audits (e.g. a safeguarding audit) distinct from the "
+    "financial-statement audit.\n"
+    "- Treat a single COMBINED form as MULTIPLE obligations where it carries "
+    "them (list each component separately). Do NOT add pure HR / employment / "
+    "workforce items.\n"
     "- Name the OFFICIAL form / return and the authority for the jurisdiction. "
     "If unsure of the exact code, include it anyway with confidence 'Pending "
     "verification - official source check' rather than omitting it.\n"
@@ -471,11 +485,13 @@ def audit_missing_filings(
 ) -> RuleExtractionResult:
     """Second-pass completeness check. Given the entity context and the filings
     the first pass already found, return candidate rows (same schema as
-    extract_rules_from_text) for the well-known statutory finance/tax filings
-    that are MISSING — so the caller creates them through the identical path.
-    Jurisdiction-agnostic, so a new country needs no hand-written recall. Safe
-    best-effort: returns an empty result (never raises) when the model is
-    unavailable or the call fails."""
+    extract_rules_from_text) for the well-known statutory filings that are
+    MISSING — covering BOTH finance/tax AND regulatory/licensing obligations
+    (licence renewals/amendments, supervisory returns, periodic AML/CFT returns,
+    registry filings, fees, audits) — so the caller creates them through the
+    identical path. Jurisdiction-agnostic, so a new country needs no hand-written
+    recall. Safe best-effort: returns an empty result (never raises) when the
+    model is unavailable or the call fails."""
     if not is_live():
         return RuleExtractionResult(rules=[])
 
