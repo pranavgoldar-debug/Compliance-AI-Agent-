@@ -30,6 +30,7 @@ if not _app_logger.handlers:
     _app_logger.propagate = False
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -113,6 +114,24 @@ def create_app() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
     app.add_middleware(SlidingSessionMiddleware)
+
+    # CORS — only for a split deploy where the frontend lives on a different
+    # origin (e.g. app.aspora.com calling api.aspora.com). Off by default, so
+    # the single-origin bundled deploy is unaffected. Origins must be listed
+    # explicitly (no "*") because the session cookie requires credentials.
+    cors_origins = [
+        o.strip()
+        for o in os.environ.get("COMPLIANCE_CORS_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # Aspora Compliance OS routers (auth-gated).
     app.include_router(auth_router)

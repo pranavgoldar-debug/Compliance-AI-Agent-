@@ -72,6 +72,47 @@ expire on schedule.
 Set `APP_SECRET` in prod — otherwise the app generates one in `.app_secret`
 (which would invalidate everyone's sessions on restart). Use 32+ random chars.
 
+## Split deploy: frontend on Vercel
+
+The frontend and API normally ship as one Render service (the build copies
+`frontend/dist` into the backend). To host the SPA on Vercel instead, run the
+two on a **shared parent domain** so the session cookie stays first-party:
+
+| Piece        | Host   | URL (example)            |
+|--------------|--------|--------------------------|
+| Frontend SPA | Vercel | `https://app.aspora.com` |
+| FastAPI API  | Render | `https://api.aspora.com` |
+
+**Vercel project** — set Root Directory to `frontend` (a `vercel.json` there
+provides the Vite preset + SPA rewrite). One build env var:
+
+```
+VITE_API_BASE_URL=https://api.aspora.com
+```
+
+**Render (API) env** — point the backend at the frontend and allow its origin:
+
+```
+COMPLIANCE_CORS_ORIGINS=https://app.aspora.com   # comma-separated; exact origins, never "*"
+COMPLIANCE_FRONTEND_URL=https://app.aspora.com   # post-login redirect + emailed reset links
+COMPLIANCE_BASE_URL=https://api.aspora.com       # the API's own URL (Google OAuth callback lives here)
+COMPLIANCE_COOKIE_SECURE=1                        # mark the session cookie Secure (HTTPS only)
+# Same parent domain ⇒ same-site ⇒ the default SameSite=Lax cookie works as-is.
+# COMPLIANCE_COOKIE_DOMAIN=.aspora.com            # optional: share the cookie across subdomains
+```
+
+Without a custom domain (`*.vercel.app` + `*.onrender.com`) the two are
+*cross-site*, so you must also set `COMPLIANCE_COOKIE_SAMESITE=none` (which
+forces Secure on). Safari blocks and Chrome is phasing out such third-party
+cookies — fine for a quick test, not for production.
+
+**Google sign-in:** the OAuth redirect URI stays on the API host
+(`{COMPLIANCE_BASE_URL}/api/auth/google/callback`) — keep that registered in the
+Google Cloud console. After sign-in the user is sent to `COMPLIANCE_FRONTEND_URL`.
+
+Leaving all of the above unset preserves the original single-origin behavior, so
+local dev and the bundled Render deploy are unchanged.
+
 ## Rate limits
 
 In-memory, per-user (or per-IP for anonymous). Defaults:

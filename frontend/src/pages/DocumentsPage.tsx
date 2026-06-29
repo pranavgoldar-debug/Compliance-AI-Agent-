@@ -19,7 +19,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { parseBackendDate } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -635,7 +635,7 @@ function AllDocsView({
                 )}
                 <td className="px-3 py-2.5">
                   <a
-                    href={`/api/documents/${d.id}/download`}
+                    href={apiUrl(`/api/documents/${d.id}/download`)}
                     className="font-medium hover:text-aspora-700"
                   >
                     {d.filename}
@@ -665,7 +665,7 @@ function AllDocsView({
       {documents.map((d) => (
         <a
           key={d.id}
-          href={`/api/documents/${d.id}/download`}
+          href={apiUrl(`/api/documents/${d.id}/download`)}
           className="rounded-xl border border-border bg-card p-3 hover:shadow-md transition-shadow"
         >
           <div className="aspect-[4/3] bg-secondary/40 rounded-md grid place-items-center mb-2 text-muted-foreground text-xs uppercase tracking-wider">

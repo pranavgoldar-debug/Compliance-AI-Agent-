@@ -47,6 +47,16 @@ def base_url() -> str:
     return os.environ.get("COMPLIANCE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
+def frontend_url() -> str:
+    """Public URL of the user-facing frontend.
+
+    In a single-origin deploy this equals base_url(). In a split deploy
+    (frontend on Vercel, API on Render) set COMPLIANCE_FRONTEND_URL to the
+    frontend origin (e.g. https://app.aspora.com) so emailed links and
+    post-login redirects point at the SPA, not the API host."""
+    return os.environ.get("COMPLIANCE_FRONTEND_URL", base_url()).rstrip("/")
+
+
 def _gmail_client_creds() -> tuple[Optional[str], Optional[str]]:
     """OAuth client id/secret for the Gmail send path. Falls back to the
     Google-login client (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) since reusing

@@ -39,7 +39,7 @@ import { DateField } from "@/components/DateField";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDate, JURISDICTION_OPTIONS, cleanFilingName, deriveFunction } from "@/lib/format";
 import {
@@ -64,7 +64,7 @@ import type {
 // surfaces any error as a message rather than navigating away.
 async function downloadLicenseFile(id: number, filename: string | null) {
   try {
-    const res = await fetch(`/api/licenses/${id}/download`, {
+    const res = await fetch(apiUrl(`/api/licenses/${id}/download`), {
       credentials: "include",
     });
     if (!res.ok) {
@@ -368,7 +368,7 @@ export function LicensesPage() {
                   <td className="px-3 py-2 text-right">
                     {lic.has_file && (
                       <a
-                        href={`/api/licenses/${lic.id}/download`}
+                        href={apiUrl(`/api/licenses/${lic.id}/download`)}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1693,7 +1693,7 @@ export function LicenseDetailBody({
                     label="File"
                     value={
                       <a
-                        href={`/api/licenses/${license.id}/download`}
+                        href={apiUrl(`/api/licenses/${license.id}/download`)}
                         onClick={(e) => {
                           e.preventDefault();
                           downloadLicenseFile(license.id, license.filename);

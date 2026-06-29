@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/EmptyState";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, apiUrl } from "@/lib/api";
 import { fmtRelative, userInitials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { DocumentCategory, DocumentOut } from "@/types/api";
@@ -547,7 +547,7 @@ function GridList({
             className="rounded-xl border border-border bg-card overflow-hidden flex flex-col"
           >
             <a
-              href={`/api/documents/${d.id}/download`}
+              href={apiUrl(`/api/documents/${d.id}/download`)}
               className="aspect-[4/3] bg-secondary/40 grid place-items-center"
               title={d.filename}
             >
@@ -644,7 +644,7 @@ function DocumentRowMenu({ doc, queryKey }: { doc: DocumentOut; queryKey: unknow
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem asChild>
-          <a href={`/api/documents/${doc.id}/download`} download>
+          <a href={apiUrl(`/api/documents/${doc.id}/download`)} download>
             <Download className="h-3.5 w-3.5 mr-2" />
             Download
           </a>

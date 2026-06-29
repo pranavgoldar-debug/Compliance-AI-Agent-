@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, apiUrl } from "@/lib/api";
 import type { Entity } from "@/types/api";
 
 interface ParsedRow {
@@ -144,7 +144,7 @@ export function ImportRulesDialog({ open, onOpenChange }: Props) {
 
   function downloadTemplate(format: "csv" | "xlsx") {
     // Stream the template directly from the server — preserves cookies.
-    window.location.href = `/api/rules/import/template?format=${format}`;
+    window.location.href = apiUrl(`/api/rules/import/template?format=${format}`);
   }
 
   const isPreviewing = previewMutation.isPending;

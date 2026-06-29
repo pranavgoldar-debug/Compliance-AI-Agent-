@@ -4,7 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, api, apiUrl } from "@/lib/api";
 
 interface LocationState {
   from?: { pathname: string };
@@ -150,7 +150,7 @@ export function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
-                  window.location.href = "/api/auth/google/start";
+                  window.location.href = apiUrl("/api/auth/google/start");
                 }}
                 className="w-full inline-flex items-center justify-center gap-2.5 rounded-md border border-input bg-background px-4 py-2.5 text-sm font-medium hover:bg-secondary transition-colors"
               >

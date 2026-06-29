@@ -1,5 +1,21 @@
 // Thin fetch wrapper that always sends credentials (the session cookie).
 
+// Base URL for the API. Empty by default → same-origin relative requests
+// (local dev and the bundled single-origin deploy). For a split deploy
+// (frontend on Vercel, API on its own host) set VITE_API_BASE_URL to the API
+// origin, e.g. https://api.aspora.com.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
+
+/**
+ * Resolve an app-relative "/api/..." path against the configured API base.
+ * Absolute URLs pass through unchanged. Use this for any direct fetch, link
+ * (`href`), or redirect (`window.location`) that bypasses the `api` client.
+ */
+export function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public detail?: unknown) {
     super(message);
@@ -11,7 +27,7 @@ async function request<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     credentials: "include",
     ...init,
     headers: {
@@ -57,7 +73,7 @@ export const api = {
    * set the proper multipart boundary itself.
    */
   upload: async <T,>(path: string, form: FormData): Promise<T> => {
-    const res = await fetch(path, {
+    const res = await fetch(apiUrl(path), {
       credentials: "include",
       method: "POST",
       body: form,

@@ -15,11 +15,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from compliance_agent.auth.deps import get_current_user
-from compliance_agent.auth.jwt import COOKIE_NAME, cookie_max_age_seconds, create_token
+from compliance_agent.auth.jwt import (
+    COOKIE_NAME,
+    cookie_max_age_seconds,
+    cookie_security_kwargs,
+    create_token,
+)
 from compliance_agent.auth.passwords import hash_password, verify_password
 from compliance_agent.db import PasswordResetToken, Role, User, get_session
 from compliance_agent.email_service import (
     base_url as app_base_url,
+    frontend_url,
     password_reset_email,
     send_email,
     smtp_configured,
@@ -72,10 +78,7 @@ def login(
         value=token,
         max_age=cookie_max_age_seconds(),
         httponly=True,
-        samesite="lax",
-        # secure=True in production behind HTTPS; FastAPI handles this when
-        # the proxy forwards X-Forwarded-Proto. For local dev, keep False.
-        secure=False,
+        **cookie_security_kwargs(),
     )
     user.last_login_at = datetime.now(tz=timezone.utc)
     db.commit()
@@ -84,7 +87,7 @@ def login(
 
 @router.post("/logout")
 def logout(response: Response) -> dict:
-    response.delete_cookie(COOKIE_NAME)
+    response.delete_cookie(COOKIE_NAME, **cookie_security_kwargs())
     return {"ok": True}
 
 
@@ -158,8 +161,7 @@ def _issue_session_cookie(response: Response, user: User) -> None:
         value=token,
         max_age=cookie_max_age_seconds(),
         httponly=True,
-        samesite="lax",
-        secure=False,
+        **cookie_security_kwargs(),
     )
 
 
@@ -174,7 +176,7 @@ def google_start() -> RedirectResponse:
     """Kick off the Google OAuth flow: stash a CSRF state cookie, redirect to
     Google's consent screen."""
     if not google_configured():
-        return RedirectResponse(url="/login?error=google_unconfigured")
+        return RedirectResponse(url=f"{frontend_url()}/login?error=google_unconfigured")
     cid, _ = _google_client()
     state = secrets.token_urlsafe(24)
     params = {
@@ -193,8 +195,7 @@ def google_start() -> RedirectResponse:
         value=state,
         max_age=600,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        **cookie_security_kwargs(),
     )
     return resp
 
@@ -210,10 +211,10 @@ def google_callback(
     """Handle Google's redirect: verify state, exchange the code, read the
     verified email, and sign in the matching active user."""
     if error or not code:
-        return RedirectResponse(url="/login?error=google_failed")
+        return RedirectResponse(url=f"{frontend_url()}/login?error=google_failed")
     expected = request.cookies.get(_OAUTH_STATE_COOKIE)
     if not expected or not state or not secrets.compare_digest(state, expected):
-        return RedirectResponse(url="/login?error=google_state")
+        return RedirectResponse(url=f"{frontend_url()}/login?error=google_state")
 
     cid, csec = _google_client()
     try:
@@ -231,7 +232,7 @@ def google_callback(
             tok.raise_for_status()
             access_token = tok.json().get("access_token")
             if not access_token:
-                return RedirectResponse(url="/login?error=google_failed")
+                return RedirectResponse(url=f"{frontend_url()}/login?error=google_failed")
             # The access token came straight from Google's token endpoint over
             # TLS, so hitting userinfo with it yields a trustworthy email — no
             # separate ID-token signature verification needed.
@@ -242,25 +243,25 @@ def google_callback(
             ui.raise_for_status()
             info = ui.json()
     except Exception:  # noqa: BLE001 — any failure → generic login error
-        return RedirectResponse(url="/login?error=google_failed")
+        return RedirectResponse(url=f"{frontend_url()}/login?error=google_failed")
 
     email = (info.get("email") or "").strip().lower()
     if not email or not info.get("email_verified"):
-        return RedirectResponse(url="/login?error=google_unverified")
+        return RedirectResponse(url=f"{frontend_url()}/login?error=google_unverified")
 
     # Domain allowlist — restrict Google sign-in to approved org domains.
     allowed = _allowed_email_domains()
     if allowed and email.rsplit("@", 1)[-1] not in allowed:
-        return RedirectResponse(url="/login?error=google_domain")
+        return RedirectResponse(url=f"{frontend_url()}/login?error=google_domain")
 
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if user is None or not user.is_active:
         # No provisioned account — we never auto-create from Google.
-        return RedirectResponse(url="/login?error=google_no_account")
+        return RedirectResponse(url=f"{frontend_url()}/login?error=google_no_account")
 
-    redirect = RedirectResponse(url="/")
+    redirect = RedirectResponse(url=f"{frontend_url()}/")
     _issue_session_cookie(redirect, user)
-    redirect.delete_cookie(_OAUTH_STATE_COOKIE)
+    redirect.delete_cookie(_OAUTH_STATE_COOKIE, **cookie_security_kwargs())
     user.last_login_at = datetime.now(tz=timezone.utc)
     db.commit()
     return redirect
@@ -313,7 +314,7 @@ def forgot_password(
     db.add(token_row)
     db.commit()
 
-    reset_url = f"{app_base_url()}/reset-password?token={raw_token}"
+    reset_url = f"{frontend_url()}/reset-password?token={raw_token}"
     subject, text_body, html_body = password_reset_email(
         full_name=user.full_name, reset_url=reset_url, ttl_hours=RESET_TTL_HOURS
     )

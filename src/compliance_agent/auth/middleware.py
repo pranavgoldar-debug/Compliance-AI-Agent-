@@ -14,6 +14,7 @@ from starlette.responses import Response
 from compliance_agent.auth.jwt import (
     COOKIE_NAME,
     cookie_max_age_seconds,
+    cookie_security_kwargs,
     create_token,
     decode_token,
     needs_refresh,
@@ -41,7 +42,6 @@ class SlidingSessionMiddleware(BaseHTTPMiddleware):
                 value=new_token,
                 max_age=cookie_max_age_seconds(),
                 httponly=True,
-                samesite="lax",
-                secure=False,
+                **cookie_security_kwargs(),
             )
         return response

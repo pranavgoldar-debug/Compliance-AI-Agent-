@@ -63,6 +63,39 @@ def cookie_max_age_seconds() -> int:
     return _TOKEN_TTL_DAYS * 24 * 60 * 60
 
 
+def cookie_security_kwargs() -> dict[str, Any]:
+    """SameSite / Secure / Domain attributes for the session cookie.
+
+    Defaults reproduce the original same-origin behavior (Lax, not Secure), so
+    local dev and the bundled single-origin Render deploy are unchanged. For a
+    split deploy (frontend on a different host, e.g. Vercel) set via env:
+      COMPLIANCE_COOKIE_SAMESITE  lax | none | strict   (default lax)
+      COMPLIANCE_COOKIE_SECURE    1/true to mark Secure  (default off)
+      COMPLIANCE_COOKIE_DOMAIN    e.g. .aspora.com       (optional)
+
+    With a shared parent domain (app.aspora.com + api.aspora.com) the two
+    origins are same-site, so the Lax default keeps working — only Secure is
+    worth turning on in production. SameSite=None is rejected by browsers
+    unless Secure is also set, so we force Secure on in that case.
+    """
+    samesite = os.environ.get("COMPLIANCE_COOKIE_SAMESITE", "lax").strip().lower()
+    if samesite not in {"lax", "none", "strict"}:
+        samesite = "lax"
+    secure = os.environ.get("COMPLIANCE_COOKIE_SECURE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if samesite == "none":
+        secure = True
+    kwargs: dict[str, Any] = {"samesite": samesite, "secure": secure}
+    domain = os.environ.get("COMPLIANCE_COOKIE_DOMAIN", "").strip()
+    if domain:
+        kwargs["domain"] = domain
+    return kwargs
+
+
 # ---------------------------------------------------------------------------
 # Sliding-refresh helpers
 #

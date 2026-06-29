@@ -12,7 +12,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,7 +135,7 @@ export function AuditLogPage() {
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" asChild>
-              <a href="/api/activities/export" download>
+              <a href={apiUrl("/api/activities/export")} download>
                 <Download className="h-4 w-4" />
                 Export CSV
               </a>
