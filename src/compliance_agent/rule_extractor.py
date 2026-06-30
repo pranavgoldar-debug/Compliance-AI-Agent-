@@ -48,7 +48,7 @@ Rules:
 - Keep `name` short and human-readable (under 100 chars). The full form name goes in `form_name`.
 - Choose `category` from this list when possible: Regulatory, AML / CFT, Corporate Tax, Information Returns, VAT, GST/HST, Sales/Use Tax, Excise Tax, Forex / Cross-Border, Corporate & Statutory, Payroll, Pensions, Social Security, Workers Compensation, Data Protection & Privacy, Cybersecurity, Consumer Protection, CIS, Statistics, EU Reporting, Accounting Control, Unclaimed Property.
 - `area` is a short sub-area within the category (e.g. "Suspicious transaction reporting" within "AML / CFT").
-- COVER ALL OBLIGATION TYPES for each regime, not just periodic returns. Where the regime imposes them, explicitly include: periodic returns & reports; renewal obligations; regulatory & supervision fees; attestations & confirmations; change-in-control approvals AND notifications; material business-change notifications; beneficial-ownership UPDATE filings (not just the initial register); controller & significant-shareholder filings; breach & incident reporting; outsourcing & operational notifications; and any other regulator-specific event-driven obligation. These non-periodic, event-driven duties are the ones most often missed — list each as its own Rule (frequency "Event-based" where appropriate).
+- COVER ALL OBLIGATION TYPES for each regime, not just periodic returns. Where the regime imposes them, explicitly include: periodic returns & reports; renewal obligations; regulatory & supervision fees; attestations & confirmations; change-in-control approvals AND notifications; material business-change notifications; beneficial-ownership UPDATE filings (not just the initial register); controller & significant-shareholder filings; fit-and-proper / criminal-record / background checks of directors, senior officers and significant owners (including periodic re-checks); breach & incident reporting; outsourcing & operational notifications; and any other regulator-specific event-driven obligation. These non-periodic, event-driven duties are the ones most often missed — list each as its own Rule (frequency "Event-based" where appropriate).
 
 REGIME COMPLETENESS — expand, do not summarize. When the source establishes a regulator, a licence/registration type, or an authorised activity, treat it as a POINTER to the COMPLETE known obligation universe that regulator imposes on that licence type — the document is a FLOOR, not a ceiling. Use the licence text and authorised activities to EXPAND the list, never merely to restate what the document spells out. Once a regime is identified, keep enumerating its obligations until that regime's universe is complete; do NOT stop after the most prominent periodic filings. The goal is higher RECALL of genuinely relevant obligations WITHIN already-identified regimes — not speculative obligations for regulators or activities the source has not established.
 
@@ -71,6 +71,8 @@ RULE 5 — Fallback by triggering activity: licensed_financial_activity / holds_
 TIE-BREAKERS: (A) Audited financial statements filed to a company REGISTRY -> Finance (about the numbers), NOT Legal. (B) A client-money/safeguarding audit, or any auditor's report submitted TO A REGULATOR about regulated conduct -> Compliance, NOT Finance. (C) Data protection -> Legal. Decide by recipient + subject, not the word "audit".
 Worked checks your output must match: "DFSA Annual AML Return"->Compliance; "TDS on salary (24Q)"->Finance; "Form 16 to employees"->HR; "Audited Financial Statements to the Registrar"->Finance; "Client Money Auditor's Report to DFSA"->Compliance; "BEN-2 beneficial owners to the registry"->Legal; "Change-in-control approval to the DFSA"->Compliance; "Data protection notification"->Legal.
 If still genuinely ambiguous, pick the earliest matching rule (Compliance > Finance > HR > Legal) and flag it in `applicability`. Never invent a team outside the four.
+
+RECENCY — a current date is provided in the entity context. Treat every obligation in force AS OF that date as current, INCLUDING ones introduced or amended in the last couple of years; never dismiss a recent obligation as merely "new" or "upcoming" and drop it. Where you are AWARE of a recently introduced or imminent obligation but cannot fully confirm its details, INCLUDE it with confidence "Pending verification – official source check" and note the recency in `applicability` — do NOT fabricate one to look current, but do NOT silently omit a real recent change either.
 
 If the document is too short, ambiguous, or doesn't describe filing obligations at all, return an empty list and explain in `notes`."""
 
@@ -465,6 +467,14 @@ GAP_AUDIT_INSTRUCTIONS = (
     "beneficial-ownership updates; regulator fees / levies; and "
     "regulator-mandated audits (e.g. a safeguarding audit) distinct from the "
     "financial-statement audit.\n"
+    "- Do NOT stop at well-known periodic returns — also surface the "
+    "most-overlooked NON-PERIODIC duties: licence / registration AMENDMENT and "
+    "material-change notifications; breach & incident notifications to the "
+    "regulator; and fit-and-proper / criminal-record / background checks of "
+    "directors, senior officers and significant owners.\n"
+    "- Include any RECENTLY introduced or amended obligation in force as of the "
+    "current date given in the context; flag it 'Pending verification - official "
+    "source check' where you cannot fully confirm it, rather than omitting it.\n"
     "- Treat a single COMBINED form as MULTIPLE obligations where it carries "
     "them (list each component separately). Do NOT add pure HR / employment / "
     "workforce items.\n"

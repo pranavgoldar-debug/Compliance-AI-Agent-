@@ -1460,6 +1460,7 @@ def discover_entity_regulations(
     HARD GATE: requires BOTH at least one uploaded license AND a stated nature
     of operations. Without them there's nothing entity-specific to ground on,
     so we refuse rather than emit generic guesses."""
+    from datetime import date
     from compliance_agent.db import License, Rule, RuleStatus
     from compliance_agent.classification import derive_function, owner_team_engine
     from compliance_agent.rule_extractor import (
@@ -1589,6 +1590,9 @@ def discover_entity_regulations(
         + (_LT_RECALL if (juris or "").strip().lower() == "lithuania" else "")
         + (_IN_RECALL if (juris or "").strip().lower() == "india" else "")
         + (_US_RECALL if (juris or "").strip().lower() == "us" else "")
+        + f"Today's date is {date.today().isoformat()} — treat every obligation "
+        f"in force as of this date as current, recently introduced or amended "
+        f"ones included.\n"
         + f"ENTITY: {entity.name}\n"
         f"Jurisdiction: {juris}\n"
         f"Legal type: {entity.legal_type or '(unknown)'}\n"
