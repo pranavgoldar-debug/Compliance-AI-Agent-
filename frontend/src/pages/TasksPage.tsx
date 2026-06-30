@@ -299,8 +299,13 @@ export function TasksPage({
   const initialFilters: Filters = (() => {
     const base = emptyFilters();
     if (typeof window === "undefined") return base;
-    const raw = new URLSearchParams(window.location.search).get("status");
-    if (!raw) return base;
+    const params = new URLSearchParams(window.location.search);
+    // ?due_within=N pre-seeds the "due within N days" filter — the dashboard's
+    // "Due this week" tile links here with due_within=7 so it lands on every
+    // item due in the next week, not just the viewer's own assignments.
+    const dwNum = params.get("due_within") != null ? Number(params.get("due_within")) : NaN;
+    const dueWithinDays = Number.isFinite(dwNum) && dwNum > 0 ? Math.floor(dwNum) : null;
+    const raw = params.get("status");
     const valid: ObligationStatus[] = [
       "not_started",
       "in_progress",
@@ -309,11 +314,13 @@ export function TasksPage({
       "not_applicable",
     ];
     const seeded = raw
-      .split(",")
-      .filter((s): s is ObligationStatus =>
-        valid.includes(s as ObligationStatus),
-      );
-    return { ...base, statuses: seeded };
+      ? raw
+          .split(",")
+          .filter((s): s is ObligationStatus =>
+            valid.includes(s as ObligationStatus),
+          )
+      : [];
+    return { ...base, statuses: seeded, dueWithinDays };
   })();
   // ?scope=<tab> deep-links straight to that tab — the dashboard's Unassigned
   // tile uses ?scope=unassigned, the "needs attention" banner uses ?scope=all.
@@ -327,7 +334,11 @@ export function TasksPage({
         : null;
     if (s === "assigned" || s === "unassigned" || s === "completed" || s === "all")
       return s;
-    return initialFilters.statuses.length > 0 || initialAwaitingPayment ? "all" : "assigned";
+    return initialFilters.statuses.length > 0 ||
+      initialAwaitingPayment ||
+      initialFilters.dueWithinDays != null
+      ? "all"
+      : "assigned";
   })();
   const [scope, setScope] = useState<Scope>(initialScope);
   const [filters, setFilters] = useState<Filters>(initialFilters);

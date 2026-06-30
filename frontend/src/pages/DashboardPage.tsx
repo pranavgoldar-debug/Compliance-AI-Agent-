@@ -407,7 +407,7 @@ export function DashboardPage() {
               label="Due this week"
               tone={data.due_this_week > 0 ? "alert" : "muted"}
               icon={CalendarClock}
-              href="/tasks"
+              href="/tasks?scope=all&due_within=7"
             />
             <MetricCard
               value={data.awaiting_review}
