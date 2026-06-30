@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import serialize_obligation
@@ -53,9 +53,11 @@ def list_my_tasks(
             Obligation.status.notin_([ObligationStatus.completed, ObligationStatus.not_applicable])
         )
     elif scope == "completed":
-        stmt = base.where(Obligation.status == ObligationStatus.completed).where(
-            or_(Obligation.assignee_id == user.id, Obligation.completed_by_id == user.id)
-        )
+        # Org-wide, like the "all" / "unassigned" tabs — the "Filed" tab COUNT is
+        # derived org-wide (every completed obligation), so the list must match or
+        # an admin sees "Filed (1)" with an empty list for a filing someone else
+        # completed. "Assigned to me" stays the personal scope.
+        stmt = base.where(Obligation.status == ObligationStatus.completed)
     elif scope == "watching":
         commented_ids = db.execute(
             select(Comment.obligation_id).where(Comment.author_id == user.id).distinct()
