@@ -62,6 +62,11 @@ function Seg<T extends string>({
 const FieldLabel = ({ children }: { children: React.ReactNode }) => (
   <div className="text-xs font-medium text-muted-foreground mb-1">{children}</div>
 );
+// Plain-language one-liner under a field label — the builder's terms (basis,
+// offset, snap) confuse non-specialists without them.
+const FieldHint = ({ children }: { children: React.ReactNode }) => (
+  <div className="text-[11px] text-muted-foreground mb-1.5">{children}</div>
+);
 const selectCls =
   "rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-aspora-200";
 
@@ -113,6 +118,7 @@ export function DueDateRuleBuilder({
     <div className="space-y-4">
       <div>
         <FieldLabel>Filing frequency</FieldLabel>
+        <FieldHint>How often this must be filed.</FieldHint>
         <Seg options={FREQUENCIES} value={spec.frequency} onChange={setFrequency} disabled={disabled} />
       </div>
 
@@ -129,6 +135,11 @@ export function DueDateRuleBuilder({
         <>
           <div>
             <FieldLabel>Due date basis</FieldLabel>
+            <FieldHint>
+              {isAnnual
+                ? "Fixed date = the same calendar date every year · After financial year end = counted from the entity's year-end (e.g. “9 months after year-end”)."
+                : "Fixed day = the same day each period · After period end = counted from the end of each period (e.g. “1 month after quarter-end”)."}
+            </FieldHint>
             <Seg
               options={basisOptions}
               value={spec.basis}
@@ -198,6 +209,10 @@ export function DueDateRuleBuilder({
                   After {isAnnual ? "financial year end" : "each period end"}
                 </div>
               </div>
+              <FieldHint>
+                How long after the period ends it falls due — 0 means due on the
+                period-end day itself.
+              </FieldHint>
               {spec.unit !== "days" && (
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -207,7 +222,12 @@ export function DueDateRuleBuilder({
                     checked={!!spec.snap_last}
                     onChange={(e) => patch({ snap_last: e.target.checked })}
                   />
-                  Snap to last day of the resulting month
+                  <span>
+                    Snap to last day of the resulting month{" "}
+                    <span className="text-xs text-muted-foreground">
+                      — e.g. 30 Sep + 1 month → 31 Oct, not 30 Oct
+                    </span>
+                  </span>
                 </label>
               )}
             </div>

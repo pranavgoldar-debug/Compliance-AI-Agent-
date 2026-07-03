@@ -3,7 +3,7 @@
 // review cards with confidence indicators).
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ChevronDown,
   ChevronRight,
@@ -1132,14 +1132,23 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
                   </a>
                 )}
               </div>
-              <ExtractedField label="Form name" value={draft.form_name} editing={editing} onChange={(v) => set("form_name", v)} />
-              <ExtractedField label="Authority" value={draft.authority} editing={editing} onChange={(v) => set("authority", v)} />
-              <ExtractedField label="Category" value={draft.category} editing={editing} onChange={(v) => set("category", v)} />
-              <ExtractedField label="Area / Sub-area" value={draft.area} editing={editing} onChange={(v) => set("area", v)} />
+              <ExtractedField label="Form name" value={draft.form_name} editing={editing} onChange={(v) => set("form_name", v)} hint="The official form / report code — e.g. GSTR-3B, Form 22." />
+              <ExtractedField label="Authority" value={draft.authority} editing={editing} onChange={(v) => set("authority", v)} hint="Who receives this filing — the regulator, registry or recipient." />
+              <ExtractedField label="Category" value={draft.category} editing={editing} onChange={(v) => set("category", v)} hint="High-level bucket used for grouping and filtering." />
+              <ExtractedField label="Area / Sub-area" value={draft.area} editing={editing} onChange={(v) => set("area", v)} hint="A short sub-topic within the category." />
               {editing ? (
                 <div className="rounded-lg border border-border p-3">
-                  <div className="text-xs font-medium text-muted-foreground mb-2">
-                    Due date
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Due date — when this filing falls due; the preview below
+                      shows the schedule it produces
+                    </span>
+                    <Link
+                      to="/settings?tab=playbook"
+                      className="text-[11px] text-aspora-700 hover:underline whitespace-nowrap"
+                    >
+                      Full guide →
+                    </Link>
                   </div>
                   <DueDateRuleBuilder value={draft.due_date_spec} onChange={setSpec} />
                 </div>
@@ -1151,10 +1160,10 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
                   onChange={() => {}}
                 />
               )}
-              <ExtractedField label="Payment rule" value={draft.payment_rule} multiline editing={editing} onChange={(v) => set("payment_rule", v)} />
-              <ExtractedField label="Applicability" value={draft.applicability} options={APPLICABILITY_OPTIONS} editing={editing} onChange={(v) => set("applicability", v)} />
-              <ExtractedField label="Applicability note" value={draft.applicability_note} multiline editing={editing} onChange={(v) => set("applicability_note", v)} />
-              <ExtractedField label="Tax type" value={draft.tax_type} options={TAX_TYPE_OPTIONS} editing={editing} onChange={(v) => set("tax_type", v)} />
+              <ExtractedField label="Payment rule" value={draft.payment_rule} multiline editing={editing} onChange={(v) => set("payment_rule", v)} hint="Any fee or tax paid with this filing — amount, %, late fees. Leave blank if nothing is paid." />
+              <ExtractedField label="Applicability" value={draft.applicability} options={APPLICABILITY_OPTIONS} editing={editing} onChange={(v) => set("applicability", v)} hint="Mandatory = always applies · Conditional = only when a trigger is met · Sector-specific = only for certain licence types." />
+              <ExtractedField label="Applicability note" value={draft.applicability_note} multiline editing={editing} onChange={(v) => set("applicability_note", v)} hint="If Conditional / Sector-specific — what triggers it." />
+              <ExtractedField label="Tax type" value={draft.tax_type} options={TAX_TYPE_OPTIONS} editing={editing} onChange={(v) => set("tax_type", v)} hint="Direct = tax on income / profits · Indirect = VAT/GST-style tax collected on the authority's behalf · Not a Tax = everything else." />
             </div>
 
             {/* Assignment — Owner / Reviewer / Approver */}
@@ -1432,6 +1441,7 @@ function ExtractedField({
   editing = false,
   onChange,
   options,
+  hint,
 }: {
   label: string;
   value: string | null;
@@ -1439,6 +1449,8 @@ function ExtractedField({
   editing?: boolean;
   onChange?: (v: string) => void;
   options?: string[];
+  /** Plain-language one-liner shown under the label while editing. */
+  hint?: string;
 }) {
   const editable = editing && !!onChange;
   const base = editable
@@ -1449,6 +1461,9 @@ function ExtractedField({
       <div className="flex items-center justify-between mb-1">
         <label className="text-[11px] font-medium text-muted-foreground">{label}</label>
       </div>
+      {editable && hint && (
+        <div className="text-[11px] text-muted-foreground mb-1">{hint}</div>
+      )}
       {options ? (
         <select
           value={value ?? ""}
