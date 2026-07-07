@@ -285,6 +285,11 @@ class ObligationOut(_Base):
     entity_name: str
     entity_jurisdiction_code: str
     due_date: date
+    # Pending due-date change request (employee-proposed, admin-approved).
+    requested_due_date: Optional[date] = None
+    due_date_request_reason: Optional[str] = None
+    due_date_request_by: Optional[UserBrief] = None
+    due_date_request_at: Optional[datetime] = None
     period_label: Optional[str] = None
     status: ObligationStatus
     department: str = "compliance"

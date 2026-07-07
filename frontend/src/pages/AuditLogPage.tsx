@@ -330,6 +330,12 @@ function humaniseAction(action: string): string {
   switch (action) {
     case "obligation.updated":
       return "updated";
+    case "obligation.due_date_changed":
+      return "changed the due date of";
+    case "obligation.due_date_change_requested":
+      return "requested a due-date change on";
+    case "obligation.due_date_request_declined":
+      return "declined a due-date request on";
     case "comment.added":
       return "commented on";
     case "document.uploaded":

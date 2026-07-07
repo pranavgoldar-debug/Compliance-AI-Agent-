@@ -23,6 +23,8 @@ import {
   Tag,
   FileText,
   Trash2,
+  Pencil,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +39,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DateField } from "@/components/DateField";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EffortBandBadge } from "@/components/EffortBandBadge";
@@ -332,6 +336,55 @@ function Header({
 }) {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
+  const isAdmin = currentUser?.role === "admin";
+
+  // Due-date editing. The date is admin-controlled: admins change it directly;
+  // employees file a change request that an admin approves from the banner.
+  const [dueDateOpen, setDueDateOpen] = useState(false);
+  const [newDueDate, setNewDueDate] = useState("");
+  const [requestReason, setRequestReason] = useState("");
+
+  const invalidateAfterDueDate = () => {
+    queryClient.invalidateQueries({ queryKey: ["obligation"] });
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
+  };
+
+  const changeDueDate = useMutation({
+    mutationFn: (due: string) =>
+      api.patch<Obligation>(`/api/obligations/${obligation.id}`, { due_date: due }),
+    onSuccess: () => {
+      setDueDateOpen(false);
+      invalidateAfterDueDate();
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  const requestDueDate = useMutation({
+    mutationFn: () =>
+      api.post<Obligation>(`/api/obligations/${obligation.id}/due-date-request`, {
+        proposed_date: newDueDate,
+        reason: requestReason,
+      }),
+    onSuccess: () => {
+      setDueDateOpen(false);
+      setRequestReason("");
+      invalidateAfterDueDate();
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  const decideDueDateRequest = useMutation({
+    mutationFn: (decision: "approve" | "decline") =>
+      api.post<Obligation>(
+        `/api/obligations/${obligation.id}/due-date-request/${decision}`,
+        {},
+      ),
+    onSuccess: invalidateAfterDueDate,
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
   // On-demand: verify this filing's deadline against the live regulator source
   // (Claude web search). Read-only — shows the confirmed deadline + citation;
@@ -407,6 +460,72 @@ function Header({
               isAwaitingPayment={obligation.is_awaiting_payment}
             />
             <Badge variant="neutral">Due {fmtDate(obligation.due_date)}</Badge>
+            {!obligation.requested_due_date && (
+              <Popover
+                open={dueDateOpen}
+                onOpenChange={(o) => {
+                  setDueDateOpen(o);
+                  if (o) setNewDueDate(obligation.due_date);
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    title={
+                      isAdmin
+                        ? "Change the due date"
+                        : "The due date is locked — propose a change for admin approval"
+                    }
+                  >
+                    {isAdmin ? <Pencil className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+                    {isAdmin ? "Change due date" : "Request due-date change"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-3 space-y-2" align="start">
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    New due date
+                  </div>
+                  <DateField value={newDueDate} onChange={setNewDueDate} />
+                  {!isAdmin && (
+                    <>
+                      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Reason
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={requestReason}
+                        onChange={(e) => setRequestReason(e.target.value)}
+                        placeholder="Why should it move? The approving admin sees this."
+                        className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        The date only changes once an admin approves.
+                      </p>
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={
+                      (isAdmin ? changeDueDate.isPending : requestDueDate.isPending) ||
+                      !newDueDate ||
+                      newDueDate === obligation.due_date ||
+                      (!isAdmin && !requestReason.trim())
+                    }
+                    onClick={() =>
+                      isAdmin ? changeDueDate.mutate(newDueDate) : requestDueDate.mutate()
+                    }
+                  >
+                    {(isAdmin ? changeDueDate.isPending : requestDueDate.isPending) && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    )}
+                    {isAdmin ? "Save new date" : "Send request"}
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            )}
             {obligation.period_label && <Badge variant="neutral">{obligation.period_label}</Badge>}
             {currentUser?.role === "admin" && (
               <Button
@@ -426,6 +545,51 @@ function Header({
               </Button>
             )}
           </div>
+          {obligation.requested_due_date && (
+            <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs space-y-1.5">
+              <div className="flex items-center gap-1.5 font-medium text-amber-800">
+                <CalendarIcon className="h-3.5 w-3.5" />
+                Due-date change requested: {fmtDate(obligation.due_date)} →{" "}
+                {fmtDate(obligation.requested_due_date)}
+              </div>
+              {(obligation.due_date_request_by || obligation.due_date_request_reason) && (
+                <div className="text-amber-800/90">
+                  {obligation.due_date_request_by
+                    ? `${
+                        obligation.due_date_request_by.full_name ||
+                        obligation.due_date_request_by.email
+                      }: `
+                    : ""}
+                  {obligation.due_date_request_reason}
+                </div>
+              )}
+              {isAdmin ? (
+                <div className="flex items-center gap-2 pt-0.5">
+                  <Button
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    disabled={decideDueDateRequest.isPending}
+                    onClick={() => decideDueDateRequest.mutate("approve")}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    disabled={decideDueDateRequest.isPending}
+                    onClick={() => decideDueDateRequest.mutate("decline")}
+                  >
+                    Decline
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-amber-700/80">
+                  Awaiting admin approval — the current date stays until then.
+                </div>
+              )}
+            </div>
+          )}
           {verifyDueDate.data && (
             <div className="mt-2 rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs space-y-1">
               {!verifyDueDate.data.available ? (

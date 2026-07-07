@@ -5,7 +5,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
@@ -181,10 +183,22 @@ def update_obligation(
                     detail="You can only change the status of items assigned to you.",
                 )
 
+    # Due-date lock: the deadline is admin-controlled. Employees don't edit it
+    # directly — they file a change request (POST /{id}/due-date-request) that
+    # an admin approves. UI hides the editor; this enforces it server-side.
+    if "due_date" in data and user.role != Role.admin:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Only admins can change the due date directly. Use 'Request "
+                "due-date change' — an admin will review and approve it."
+            ),
+        )
+
     # Field-level team lock: compliance team can edit filing-side fields,
     # finance team can edit payment-side fields. Admin can edit anything.
     # Skipped if the user isn't touching any team-specific field — the
-    # generic "notes" + status + due_date pass through for both teams.
+    # generic "notes" + status pass through for both teams.
     if user.role != Role.admin:
         from compliance_agent.db import Department as _Dept
 
@@ -223,6 +237,7 @@ def update_obligation(
     # Capture old values so we can compare-and-emit notifications.
     prev_assignee_id = obligation.assignee_id
     prev_status = obligation.status
+    prev_due_date = obligation.due_date
 
     for field, value in data.items():
         setattr(obligation, field, value)
@@ -276,13 +291,51 @@ def update_obligation(
 
         clickup_service.close_task(db, obligation.clickup_task_id)
 
+    # Due date moved (admin direct edit) — supersede any pending change
+    # request and tell the assignee their deadline shifted.
+    due_date_changed = "due_date" in data and obligation.due_date != prev_due_date
+    if due_date_changed:
+        obligation.requested_due_date = None
+        obligation.due_date_request_reason = None
+        obligation.due_date_request_by_id = None
+        obligation.due_date_request_at = None
+        if obligation.assignee_id and obligation.assignee_id != user.id:
+            db.add(
+                Notification(
+                    user_id=obligation.assignee_id,
+                    kind=NotificationKind.status_change,
+                    title="Due date changed",
+                    body=(
+                        f"{obligation.rule.form_name} — {obligation.entity.name}: "
+                        f"{prev_due_date} → {obligation.due_date}"
+                        if obligation.rule and obligation.entity
+                        else f"{prev_due_date} → {obligation.due_date}"
+                    ),
+                    link_url=f"/obligations/{obligation.id}",
+                    obligation_id=obligation.id,
+                    actor_id=user.id,
+                )
+            )
+
     log_activity(
         db,
         actor_id=user.id,
-        action="obligation.updated",
+        action="obligation.due_date_changed" if due_date_changed else "obligation.updated",
         target_type="obligation",
         target_id=obligation.id,
-        payload={"changed_fields": list(data.keys())},
+        payload=(
+            {
+                "changes": {
+                    "due_date": {
+                        "from": str(prev_due_date),
+                        "to": str(obligation.due_date),
+                    }
+                },
+                "changed_fields": list(data.keys()),
+            }
+            if due_date_changed
+            else {"changed_fields": list(data.keys())}
+        ),
     )
     db.commit()
     # Google Calendar sync — post-commit so the background thread reads the
@@ -346,6 +399,217 @@ def delete_obligation(
     db.delete(obligation)
     db.commit()
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Due-date change requests — the due date is admin-controlled. An employee
+# proposes a new date with a reason; every admin is notified and one of them
+# approves (applies the date) or declines. Both outcomes clear the request.
+# One pending request per obligation.
+# ---------------------------------------------------------------------------
+class DueDateChangeRequestIn(BaseModel):
+    proposed_date: date
+    reason: str
+
+
+class DueDateRequestDeclineIn(BaseModel):
+    note: Optional[str] = None
+
+
+def _reload_obligation(db: Session, obligation_id: int) -> Obligation:
+    return db.execute(
+        _base_query().where(Obligation.id == obligation_id)
+    ).scalars().unique().one()
+
+
+def _obligation_label(obligation: Obligation) -> str:
+    return (
+        f"{obligation.rule.form_name} — {obligation.entity.name}"
+        if obligation.rule and obligation.entity
+        else f"Obligation #{obligation.id}"
+    )
+
+
+@router.post("/{obligation_id}/due-date-request", response_model=ObligationOut)
+def request_due_date_change(
+    obligation_id: int,
+    payload: DueDateChangeRequestIn,
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> ObligationOut:
+    """Employee-side: propose a new due date for admin approval."""
+    obligation = db.get(Obligation, obligation_id)
+    if obligation is None:
+        raise HTTPException(status_code=404, detail="Obligation not found.")
+    if user.role == Role.admin:
+        raise HTTPException(
+            status_code=400,
+            detail="Admins change the due date directly — no request needed.",
+        )
+    if payload.proposed_date == obligation.due_date:
+        raise HTTPException(status_code=400, detail="That is already the due date.")
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=400,
+            detail="Add a short reason — the approving admin sees it.",
+        )
+
+    obligation.requested_due_date = payload.proposed_date
+    obligation.due_date_request_reason = reason
+    obligation.due_date_request_by_id = user.id
+    obligation.due_date_request_at = datetime.now(tz=timezone.utc)
+
+    # Ping every active admin — approval is theirs. Reuses the status_change
+    # notification kind so no DB enum migration is needed.
+    label = _obligation_label(obligation)
+    admins = db.execute(
+        select(User).where(User.role == Role.admin, User.is_active.is_(True))
+    ).scalars().all()
+    for admin in admins:
+        db.add(
+            Notification(
+                user_id=admin.id,
+                kind=NotificationKind.status_change,
+                title=f"{user.full_name or user.email} requested a due-date change",
+                body=f"{label}: {obligation.due_date} → {payload.proposed_date} · {reason}",
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=user.id,
+            )
+        )
+    log_activity(
+        db,
+        actor_id=user.id,
+        action="obligation.due_date_change_requested",
+        target_type="obligation",
+        target_id=obligation.id,
+        payload={
+            "from": str(obligation.due_date),
+            "proposed": str(payload.proposed_date),
+            "reason": reason,
+        },
+    )
+    db.commit()
+    return serialize_obligation(_reload_obligation(db, obligation_id))
+
+
+@router.post("/{obligation_id}/due-date-request/approve", response_model=ObligationOut)
+def approve_due_date_request(
+    obligation_id: int,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ObligationOut:
+    """Admin-side: apply the requested date and clear the request."""
+    obligation = db.get(Obligation, obligation_id)
+    if obligation is None:
+        raise HTTPException(status_code=404, detail="Obligation not found.")
+    if obligation.requested_due_date is None:
+        raise HTTPException(status_code=400, detail="No pending due-date request.")
+
+    prev_due = obligation.due_date
+    new_due = obligation.requested_due_date
+    requester_id = obligation.due_date_request_by_id
+    obligation.due_date = new_due
+    obligation.requested_due_date = None
+    obligation.due_date_request_reason = None
+    obligation.due_date_request_by_id = None
+    obligation.due_date_request_at = None
+
+    label = _obligation_label(obligation)
+    for uid in {requester_id, obligation.assignee_id} - {None, actor.id}:
+        db.add(
+            Notification(
+                user_id=uid,
+                kind=NotificationKind.status_change,
+                title="Due-date change approved",
+                body=f"{label}: {prev_due} → {new_due}",
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=actor.id,
+            )
+        )
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="obligation.due_date_changed",
+        target_type="obligation",
+        target_id=obligation.id,
+        payload={
+            "changes": {"due_date": {"from": str(prev_due), "to": str(new_due)}},
+            "via": "approved_request",
+        },
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        # (rule, entity, due_date, department) is unique — the target date may
+        # collide with a sibling occurrence of the same filing.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Another occurrence of this filing already sits on that date.",
+        )
+    # Google Calendar sync — post-commit, same as the PATCH path.
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        calendar_service.sync_obligation(obligation_id)
+    return serialize_obligation(_reload_obligation(db, obligation_id))
+
+
+@router.post("/{obligation_id}/due-date-request/decline", response_model=ObligationOut)
+def decline_due_date_request(
+    obligation_id: int,
+    payload: DueDateRequestDeclineIn,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> ObligationOut:
+    """Admin-side: reject the request; the due date stays as it is."""
+    obligation = db.get(Obligation, obligation_id)
+    if obligation is None:
+        raise HTTPException(status_code=404, detail="Obligation not found.")
+    if obligation.requested_due_date is None:
+        raise HTTPException(status_code=400, detail="No pending due-date request.")
+
+    proposed = obligation.requested_due_date
+    requester_id = obligation.due_date_request_by_id
+    reason = obligation.due_date_request_reason
+    note = (payload.note or "").strip() or None
+    obligation.requested_due_date = None
+    obligation.due_date_request_reason = None
+    obligation.due_date_request_by_id = None
+    obligation.due_date_request_at = None
+
+    if requester_id and requester_id != actor.id:
+        label = _obligation_label(obligation)
+        db.add(
+            Notification(
+                user_id=requester_id,
+                kind=NotificationKind.status_change,
+                title="Due-date change declined",
+                body=f"{label}: requested {proposed}, kept {obligation.due_date}"
+                + (f" · {note}" if note else ""),
+                link_url=f"/obligations/{obligation.id}",
+                obligation_id=obligation.id,
+                actor_id=actor.id,
+            )
+        )
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="obligation.due_date_request_declined",
+        target_type="obligation",
+        target_id=obligation.id,
+        payload={
+            "proposed": str(proposed),
+            "kept": str(obligation.due_date),
+            "reason": reason,
+            "note": note,
+        },
+    )
+    db.commit()
+    return serialize_obligation(_reload_obligation(db, obligation_id))
 
 
 # ---------------------------------------------------------------------------

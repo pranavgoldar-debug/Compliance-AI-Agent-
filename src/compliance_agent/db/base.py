@@ -294,6 +294,11 @@ def _add_missing_columns() -> None:
             ("beneficiary_details", text_type),
             # Provenance: which licence auto-scheduled this obligation.
             ("license_id", "INTEGER"),
+            # Due-date change request (employee proposes, admin approves).
+            ("requested_due_date", "DATE"),
+            ("due_date_request_reason", text_type),
+            ("due_date_request_by_id", "INTEGER"),
+            ("due_date_request_at", datetime_type),
         ],
         # Phase 7: source provenance on rules
         "rules": [

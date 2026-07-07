@@ -434,6 +434,19 @@ class Obligation(Base):
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Due-date change request — the due date is admin-controlled; an employee
+    # proposes a new date here and an admin approves (applies it) or declines
+    # (clears it). One pending request per obligation.
+    requested_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    due_date_request_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    due_date_request_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    due_date_request_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    due_date_request_by: Mapped[Optional[User]] = relationship(
+        "User", foreign_keys=[due_date_request_by_id]
+    )
+
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     completed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

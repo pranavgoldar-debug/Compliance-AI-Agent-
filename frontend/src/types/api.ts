@@ -171,6 +171,11 @@ export interface Obligation {
   entity_name: string;
   entity_jurisdiction_code: string;
   due_date: string;
+  /** Pending due-date change request (employee-proposed, admin-approved). */
+  requested_due_date: string | null;
+  due_date_request_reason: string | null;
+  due_date_request_by: UserBrief | null;
+  due_date_request_at: string | null;
   period_label: string | null;
   status: ObligationStatus;
   department: "compliance" | "finance" | "legal" | "risk" | "operations";
