@@ -344,12 +344,26 @@ function Header({
   const [newDueDate, setNewDueDate] = useState("");
   const [requestReason, setRequestReason] = useState("");
 
+  // Refresh every surface that renders a due date, so a change here shows up
+  // everywhere without a manual reload — calendar, filings/tasks, dashboard,
+  // entity tab, Review & Assign (rules), licence detail, and the audit feed.
   const invalidateAfterDueDate = () => {
-    queryClient.invalidateQueries({ queryKey: ["obligation"] });
-    queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    queryClient.invalidateQueries({ queryKey: ["calendar"] });
-    queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
+    for (const key of [
+      ["obligation"],
+      ["tasks"],
+      ["dashboard"],
+      ["calendar"],
+      ["rules"],
+      ["entity-obligations"],
+      ["entities"],
+      ["sidebar-task-count"],
+      ["licenses"],
+      ["license-rules"],
+      ["audit-log"],
+      ["activities"],
+    ]) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
   };
 
   const changeDueDate = useMutation({
@@ -412,13 +426,7 @@ function Header({
         due_date_rule: verifyDueDate.data?.due_date_rule,
         source_url: verifyDueDate.data?.source_url ?? null,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["obligation"] });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
-      queryClient.invalidateQueries({ queryKey: ["entity-obligations"] });
-    },
+    onSuccess: invalidateAfterDueDate,
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 

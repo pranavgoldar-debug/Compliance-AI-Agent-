@@ -159,6 +159,39 @@ def create_payment_task(
         return None
 
 
+def update_task_due_date(db: Session, task_id: str, due) -> bool:
+    """Move the ClickUp task's due date to match the obligation. Called from
+    every path that changes an obligation's due date, so the mirrored task
+    never shows a stale deadline. Best-effort, never raises."""
+    cfg = get_config(db)
+    token = cfg.get("api_token")
+    if not token or not task_id:
+        return False
+    due_ms = int(
+        datetime(due.year, due.month, due.day, tzinfo=timezone.utc).timestamp() * 1000
+    )
+    try:
+        import httpx
+
+        r = httpx.put(
+            f"{API_BASE}/task/{task_id}",
+            headers=_headers(token),
+            json={"due_date": due_ms},
+            timeout=_TIMEOUT,
+        )
+        ok = r.status_code == 200
+        if not ok:
+            logger.warning(
+                "ClickUp due-date update failed: status=%s body=%r",
+                r.status_code,
+                r.text[:300],
+            )
+        return ok
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ClickUp due-date update crashed: %s", e)
+        return False
+
+
 def close_task(db: Session, task_id: str) -> bool:
     """Set the ClickUp task to the configured done status. Best-effort."""
     cfg = get_config(db)

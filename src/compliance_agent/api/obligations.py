@@ -55,6 +55,31 @@ from compliance_agent import slack_service
 router = APIRouter(prefix="/api/obligations", tags=["obligations"])
 
 
+def _propagate_obligation_external(
+    db: Session, obligation_id: int, *, due_date_changed: bool = True
+) -> None:
+    """After an obligation write is committed, push the current state to the
+    mirrored external systems so no surface shows a stale deadline:
+      - Google Calendar event (assignment / status / due-date changes)
+      - ClickUp task due date (only when the due date moved)
+    Best-effort — never raises, so a flaky integration can't fail the write."""
+    from compliance_agent import calendar_service
+
+    if calendar_service.is_configured():
+        calendar_service.sync_obligation(obligation_id)
+    if due_date_changed:
+        ob = db.get(Obligation, obligation_id)
+        if ob is not None and ob.clickup_task_id:
+            try:
+                from compliance_agent import clickup_service
+
+                clickup_service.update_task_due_date(
+                    db, ob.clickup_task_id, ob.due_date
+                )
+            except Exception:  # noqa: BLE001 — never block on a mirror sync
+                pass
+
+
 def _base_query():
     return select(Obligation).options(
         joinedload(Obligation.rule),
@@ -338,12 +363,10 @@ def update_obligation(
         ),
     )
     db.commit()
-    # Google Calendar sync — post-commit so the background thread reads the
-    # new state. Assignment / status / due-date changes update the shared event.
-    from compliance_agent import calendar_service
-
-    if calendar_service.is_configured():
-        calendar_service.sync_obligation(obligation.id)
+    # Propagate to the mirrored external systems post-commit (Google Calendar
+    # event + ClickUp task) so the deadline is consistent on every surface,
+    # whichever path changed it.
+    _propagate_obligation_external(db, obligation.id, due_date_changed=due_date_changed)
     obligation = db.execute(
         _base_query().where(Obligation.id == obligation.id)
     ).scalars().unique().one()
@@ -550,11 +573,9 @@ def approve_due_date_request(
             status_code=409,
             detail="Another occurrence of this filing already sits on that date.",
         )
-    # Google Calendar sync — post-commit, same as the PATCH path.
-    from compliance_agent import calendar_service
-
-    if calendar_service.is_configured():
-        calendar_service.sync_obligation(obligation_id)
+    # Propagate the applied deadline to Calendar + ClickUp, same as every
+    # other due-date path.
+    _propagate_obligation_external(db, obligation_id, due_date_changed=True)
     return serialize_obligation(_reload_obligation(db, obligation_id))
 
 

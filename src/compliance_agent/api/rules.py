@@ -1048,6 +1048,7 @@ def apply_rule_due_date(
     today = date.today()
     updated = 0
     next_due = None
+    moved_ids: list[int] = []
     for ent in rule.entities:
         new_due = _next_due_for_rule(rule, today, _parse_fy_end(ent.fiscal_year_end), _parse_fy_end(ent.annual_return_date))
         next_due = new_due
@@ -1065,7 +1066,9 @@ def apply_rule_due_date(
             .all()
         )
         for ob in obs:
-            ob.due_date = new_due
+            if ob.due_date != new_due:
+                ob.due_date = new_due
+                moved_ids.append(ob.id)
             updated += 1
 
     log_activity(
@@ -1077,6 +1080,15 @@ def apply_rule_due_date(
         payload={"due_date_rule": new_text, "obligations_updated": updated},
     )
     db.commit()
+    # Propagate every moved deadline to the mirrored external systems (Google
+    # Calendar event + ClickUp task) so this path stays consistent with the
+    # obligation-level ones.
+    if moved_ids:
+        from compliance_agent import calendar_service
+        from compliance_agent.api.obligations import _propagate_obligation_external
+
+        for oid in moved_ids:
+            _propagate_obligation_external(db, oid, due_date_changed=True)
     return {
         "due_date_rule": rule.due_date_rule,
         "source_url": rule.source_url,
