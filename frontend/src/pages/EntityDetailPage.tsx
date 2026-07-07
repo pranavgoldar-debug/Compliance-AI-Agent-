@@ -681,6 +681,9 @@ function ApplicabilitySection({
       // already in Review & Assign (staging + sent_to_review) — by rule id AND
       // by signature. A picked item matching either must be skipped: re-PATCHing
       // an approved rule to "staging" would demote it back into review.
+      // All scoped to THIS entity (the staging/production queries filter by
+      // entity_id), so nothing here is skipped because ANOTHER entity has the
+      // filing — only because THIS entity already tracks it.
       const approvedIds = new Set(production.map((r) => r.id));
       const inReviewIds = new Set(
         staging.filter((r) => r.sent_to_review).map((r) => r.id),
@@ -689,37 +692,51 @@ function ApplicabilitySection({
       for (const r of [...staging.filter((r) => r.sent_to_review), ...production]) {
         ruleSigs(r.name, r.form_name, r.frequency).forEach((s) => existing.add(s));
       }
-      let skipped = 0;
+      const chosen = items.filter((i) => i.rule_id && picked.has(i.form_name));
+      // Break the skips down by REASON so the result message can explain where
+      // each already-tracked item lives, instead of a bare "N skipped".
+      let approvedSkip = 0;
+      let reviewSkip = 0;
+      let dupSkip = 0;
+      const toSend = chosen.filter((i) => {
+        const rid = i.rule_id as number;
+        if (approvedIds.has(rid)) return (approvedSkip++, false);
+        if (inReviewIds.has(rid)) return (reviewSkip++, false);
+        if (ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s)))
+          return (dupSkip++, false);
+        return true;
+      });
       await Promise.all(
-        items
-          .filter((i) => i.rule_id && picked.has(i.form_name))
-          .map((i) => {
-            const rid = i.rule_id as number;
-            const alreadyLive = approvedIds.has(rid) || inReviewIds.has(rid);
-            const dup =
-              alreadyLive ||
-              ruleSigs(i.name, i.form_name, i.frequency).some((s) => existing.has(s));
-            if (dup) {
-              // Already approved or already in Review & Assign — skip. Never
-              // demote an approved rule; never duplicate an existing filing.
-              skipped++;
-              return Promise.resolve();
-            }
-            return api.patch(`/api/rules/${i.rule_id}`, {
-              status: "staging",
-              sent_to_review: true,
-              applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
-            });
+        toSend.map((i) =>
+          api.patch(`/api/rules/${i.rule_id}`, {
+            status: "staging",
+            sent_to_review: true,
+            applicability: i.verdict === "mandatory" ? "Mandatory" : "Conditional",
           }),
+        ),
       );
-      return skipped;
+      return { sent: toSend.length, approvedSkip, reviewSkip, dupSkip };
     },
-    onSuccess: (skipped) => {
+    onSuccess: ({ sent, approvedSkip, reviewSkip, dupSkip }) => {
       queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["obligations"] });
-      const note = skipped ? ` ${skipped} skipped — already approved or in Review & Assign.` : "";
-      window.alert(`${picked.size - skipped} obligation(s) sent to Review & Assign.${note}`);
+      const skipped = approvedSkip + reviewSkip + dupSkip;
+      const parts: string[] = [];
+      if (approvedSkip) parts.push(`${approvedSkip} already approved`);
+      if (reviewSkip) parts.push(`${reviewSkip} already in Review & Assign`);
+      if (dupSkip) parts.push(`${dupSkip} duplicate of an existing filing`);
+      if (sent === 0 && skipped > 0) {
+        // Not a failure — everything picked is already tracked for THIS entity.
+        window.alert(
+          `Nothing new to add — all ${skipped} are already tracked for this entity ` +
+            `(${parts.join(", ")}). Approved items live in the Approved tab; ` +
+            `items still under review are in For Action.`,
+        );
+      } else {
+        const note = skipped ? ` ${skipped} skipped (${parts.join(", ")}).` : "";
+        window.alert(`${sent} obligation(s) sent to Review & Assign.${note}`);
+      }
     },
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
