@@ -597,6 +597,36 @@ function ChangesPanel({ rules }: { rules: Rule[] }) {
 // ---------------------------------------------------------------------------
 // Production table
 // ---------------------------------------------------------------------------
+// Maps entity id → name. Two entities in the same jurisdiction filing the same
+// form are otherwise indistinguishable in the table (both rows just show e.g.
+// "United Kingdom"), which reads like one was skipped — so each row names the
+// entity/entities it belongs to under the jurisdiction badge.
+function useEntityNameMap(): Map<number, string> {
+  const { data: entities = [] } = useQuery({
+    queryKey: ["entities"],
+    queryFn: () => api.get<Entity[]>("/api/entities"),
+    staleTime: 300_000,
+  });
+  return useMemo(() => {
+    const m = new Map<number, string>();
+    for (const e of entities) m.set(e.id, e.name);
+    return m;
+  }, [entities]);
+}
+
+function EntityNamesLine({ ids, byId }: { ids: number[]; byId: Map<number, string> }) {
+  const names = (ids ?? [])
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .join(", ");
+  if (!names) return null;
+  return (
+    <div className="mt-0.5 text-xs text-muted-foreground truncate max-w-[180px]" title={names}>
+      {names}
+    </div>
+  );
+}
+
 function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
   const openFiling = useOpenFiling();
   const [checking, setChecking] = useState<Rule | null>(null);
@@ -608,6 +638,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const entityById = useEntityNameMap();
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
     queryFn: () => api.get<UserBrief[]>("/api/users"),
@@ -824,6 +855,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                 )}
                 <td className="px-3 py-2.5">
                   <JurisdictionBadge code={r.jurisdiction_code} />
+                  <EntityNamesLine ids={r.entity_ids} byId={entityById} />
                 </td>
                 <td className="px-3 py-2.5">
                   <button
@@ -1288,6 +1320,7 @@ function StagingTable({ rules }: { rules: Rule[] }) {
     const u = users.find((x) => x.id === id);
     return u ? u.full_name || u.email : "—";
   };
+  const entityById = useEntityNameMap();
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["rules-count"] });
@@ -1328,6 +1361,7 @@ function StagingTable({ rules }: { rules: Rule[] }) {
               <tr className="hover:bg-secondary/30">
                 <td className="px-3 py-2.5">
                   <JurisdictionBadge code={r.jurisdiction_code} />
+                  <EntityNamesLine ids={r.entity_ids} byId={entityById} />
                 </td>
                 <td className="px-3 py-2.5 font-medium">
                   <button
