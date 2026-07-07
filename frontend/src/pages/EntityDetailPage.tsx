@@ -681,15 +681,21 @@ function ApplicabilitySection({
       // already in Review & Assign (staging + sent_to_review) — by rule id AND
       // by signature. A picked item matching either must be skipped: re-PATCHing
       // an approved rule to "staging" would demote it back into review.
-      // All scoped to THIS entity (the staging/production queries filter by
-      // entity_id), so nothing here is skipped because ANOTHER entity has the
-      // filing — only because THIS entity already tracks it.
-      const approvedIds = new Set(production.map((r) => r.id));
+      // Scope the dedup to THIS entity. /api/rules?entity_id= does NOT filter
+      // server-side (entity_id only annotates), so `production` / `staging`
+      // carry EVERY entity's rules — without this filter an obligation is
+      // wrongly skipped because a DIFFERENT entity already has the same filing.
+      // An entity has a single jurisdiction, so entity-scoping also enforces
+      // "same jurisdiction" for the duplicate match.
+      const mine = (r: Rule) => r.entity_ids.includes(entity.id);
+      const myProduction = production.filter(mine);
+      const myStaging = staging.filter(mine);
+      const approvedIds = new Set(myProduction.map((r) => r.id));
       const inReviewIds = new Set(
-        staging.filter((r) => r.sent_to_review).map((r) => r.id),
+        myStaging.filter((r) => r.sent_to_review).map((r) => r.id),
       );
       const existing = new Set<string>();
-      for (const r of [...staging.filter((r) => r.sent_to_review), ...production]) {
+      for (const r of [...myStaging.filter((r) => r.sent_to_review), ...myProduction]) {
         ruleSigs(r.name, r.form_name, r.frequency).forEach((s) => existing.add(s));
       }
       const chosen = items.filter((i) => i.rule_id && picked.has(i.form_name));
