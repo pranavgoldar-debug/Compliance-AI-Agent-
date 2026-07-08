@@ -411,7 +411,7 @@ export function DashboardPage() {
             />
             <MetricCard
               value={data.awaiting_review}
-              label="Pending verification"
+              label="Under progress"
               tone={data.awaiting_review > 0 ? "alert" : "muted"}
               icon={CheckCircle2}
               href="/tasks?status=pending_review"
