@@ -223,16 +223,24 @@ def emit_assignment(
             )
         )
     # Slack ping fires for self-assignments too (like the email) — the channel
-    # is the team's shared record. Routed to the owner team's channel when a
-    # per-function webhook is configured.
+    # is the team's shared record. Routed to the ASSIGNEE's own team channel:
+    # if a Compliance-function filing is assigned to someone in Finance, the
+    # Finance channel should hear about it — not the rule's function channel.
     if assignee.notify_slack and slack_service.is_configured(db):
         msg = slack_service.assignment_blocks(
             obligation=obligation, assignee=assignee, actor=actor
         )
+        # Prefer the assignee's team; fall back to the rule's function, then the
+        # default channel (slack_service.post handles the webhook fallbacks).
+        route_function = (
+            assignee.department.value
+            if assignee.department
+            else (obligation.rule.responsible_function if obligation.rule else None)
+        )
         slack_service.post(
             msg["text"],
             blocks=msg["blocks"],
-            function=(obligation.rule.responsible_function if obligation.rule else None),
+            function=route_function,
         )
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
