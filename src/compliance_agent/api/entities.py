@@ -1633,6 +1633,11 @@ def discover_entity_regulations(
     gap_created = _create_rules_from_candidates(db, entity, gap.rules, juris, user, existing)
     created = created + gap_created
     db.flush()
+    # Snapshot the just-created rows (id + name) BEFORE the collapse passes
+    # below — those passes can DELETE a freshly-created draft, after which the
+    # ORM object is gone; we must not report a deleted row as "added".
+    gap_ids = {r.id for r in gap_created}
+    created_snapshot = [(r.id, r.name) for r in created]
     # Collapse VAT/GST returns to a single entry stamped with the answered
     # cadence (a return is filed at one cadence, so Monthly + Quarterly variants
     # are a duplicate). Runs after the add so it catches newly-created variants.
@@ -1644,6 +1649,13 @@ def discover_entity_regulations(
     # stops the additive refresh from accumulating naming variants across runs.
     deduped += _ai_collapse_duplicates(db, entity)
     db.flush()
+    # Keep only the rows that SURVIVED the collapse passes. A re-discovered
+    # filing the AI merges into an existing equivalent (e.g. a deleted-then-
+    # rediscovered "Confirmation Statement") is deleted just above — reporting
+    # it as "added" would show the user a filing that isn't in the list.
+    surviving_ids = {r.id for r in _entity_rules_fresh(db, entity)}
+    added = [(rid, name) for rid, name in created_snapshot if rid in surviving_ids]
+    added_from_gap = sum(1 for rid, _ in added if rid in gap_ids)
     # Refresh is ADDITIVE: a candidate that already exists is skipped (counted in
     # already_present), net-new ones are added, and genuine duplicate ROWS are
     # collapsed above. We deliberately do NOT drop previously-discovered drafts
@@ -1660,26 +1672,26 @@ def discover_entity_regulations(
     if cov:
         entity.qualification = {**(entity.qualification or {}), "coverage_notes": cov}
     logger.info(
-        "DISCOVERY entity=%s (%s): model returned %d candidate(s) -> created %d "
-        "(of which %d from gap-audit), already_present %d, duplicates_removed %d. "
-        "notes=%r",
-        entity_id, entity.name, len(result.rules), len(created),
-        len(gap_created), already_present, deduped, result.notes,
+        "DISCOVERY entity=%s (%s): model returned %d candidate(s) -> added %d "
+        "(of which %d from gap-audit) after collapse, already_present %d, "
+        "duplicates_removed %d. notes=%r",
+        entity_id, entity.name, len(result.rules), len(added),
+        added_from_gap, already_present, deduped, result.notes,
     )
     log_activity(
         db, actor_id=user.id, action="entity.discovered_regulations",
         target_type="entity", target_id=entity_id,
-        payload={"created": len(created), "duplicates_removed": deduped},
+        payload={"created": len(added), "duplicates_removed": deduped},
     )
     db.commit()
     return {
         "available": True,
-        "created": len(created),
-        # Names of the filings that were NOT already present and have now been
-        # added — so the admin sees exactly what's new vs what was already
-        # tracked. A second run (or a different function's owner) only ever
-        # adds what's missing; everything else is counted in already_present.
-        "added": [r.name for r in created],
+        "created": len(added),
+        # Names of the filings that were NOT already present AND survived the
+        # collapse passes — so the admin sees exactly what's genuinely new and
+        # now in the list, never a row that was added then immediately merged
+        # away. Everything else is in already_present / duplicates_removed.
+        "added": [name for _, name in added],
         "already_present": already_present,
         "duplicates_removed": deduped,
         "notes": result.notes,
