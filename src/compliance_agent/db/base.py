@@ -218,13 +218,12 @@ def _add_missing_columns() -> None:
             ("source_text", text_type),
             ("source_changed_at", datetime_type),
         ],
-        # Phase 9: per-user notification prefs + Slack member id
+        # Phase 9: per-user notification prefs + Slack member id +
+        # functional department (drives finance / compliance routing).
         "users": [
             ("notify_email", bool_default_true),
             ("notify_slack", bool_default_true),
             ("slack_user_id", varchar(64)),
-            # Team membership — compliance / finance / legal / risk / operations.
-            # Nullable; admins + legacy users can be untagged.
             ("department", varchar(16)),
         ],
         # Tracker sync: short codes for each entity (VINC, RTUK, ...)

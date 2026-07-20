@@ -38,6 +38,7 @@ class UserOut(_Base):
     role: Role
     department: Optional[str] = None
     is_active: bool
+    department: Optional[str] = None
     created_at: datetime
     last_login_at: Optional[datetime] = None
 
@@ -55,6 +56,7 @@ class UserUpdate(BaseModel):
     role: Optional[Role] = None
     department: Optional[str] = None  # set to "" or omit to clear
     is_active: Optional[bool] = None
+    department: Optional[str] = None
     password: Optional[str] = None  # admin password reset
 
 

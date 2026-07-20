@@ -1489,9 +1489,23 @@ function FilingFields({
             onCommit={(v) => onPatch({ notes: v })}
             multiline
           />
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+
+        {/* Explicit compliance → finance hand-off. Shown when the rule has a
+            payment leg AND payment isn't logged yet. Clicking pings the
+            finance team + admins so the hand-off is actively visible. */}
+        {obligation.is_awaiting_payment && (
+          <RequestPaymentRow obligation={obligation} />
+        )}
+        <DebouncedTextField
+          label="Internal notes"
+          placeholder="Anything the next reviewer should know…"
+          value={obligation.notes}
+          onCommit={(v) => onPatch({ notes: v })}
+          multiline
+        />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1838,4 +1852,121 @@ function PayloadPills({ payload }: { payload: Record<string, unknown> }) {
     return <Badge variant="neutral">{payload.filename}</Badge>;
   }
   return null;
+}
+
+
+// ---------------------------------------------------------------------------
+// Compliance → finance hand-off button. Renders inside the Filing record card
+// when is_awaiting_payment is true. Compliance person fills in the expected
+// payment amount + optional notes; the backend posts an auto-comment and
+// fanouts notifications to all finance-dept users + admins.
+// ---------------------------------------------------------------------------
+function RequestPaymentRow({ obligation }: { obligation: Obligation }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(obligation.payment_amount ?? "");
+  const [notes, setNotes] = useState("");
+
+  const requestMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/obligations/${obligation.id}/request-payment`, {
+        amount: amount.trim(),
+        notes: notes.trim() || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["obligation", obligation.id] });
+      queryClient.invalidateQueries({
+        queryKey: ["obligation-comments", obligation.id],
+      });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      setOpen(false);
+      setNotes("");
+    },
+  });
+
+  if (!open) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 flex items-start gap-3">
+        <div className="text-amber-700 mt-0.5">
+          <UserCheck className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-amber-900">
+            Payment owed — hand off to finance
+          </div>
+          <div className="text-xs text-amber-800/80 mt-0.5">
+            Filing's done. Click below to request payment from the finance
+            team. They'll get a notification + an auto-comment is posted here.
+          </div>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setOpen(true)}
+          className="bg-amber-600 hover:bg-amber-700 text-white"
+        >
+          Request payment
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+      <div className="text-sm font-medium text-amber-900">
+        Request payment from finance
+      </div>
+      <div>
+        <label className="text-xs font-medium block mb-1">Amount</label>
+        <input
+          type="text"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="e.g. ₹ 1,25,000 or USD 4,800"
+          className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          autoFocus
+        />
+      </div>
+      <div>
+        <label className="text-xs font-medium block mb-1">
+          Notes for finance (optional)
+        </label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="Wire details, bank account, special instructions…"
+          className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+        />
+      </div>
+      {requestMutation.error && (
+        <div className="text-xs text-destructive">
+          {(requestMutation.error as Error).message}
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setOpen(false);
+            setNotes("");
+          }}
+          disabled={requestMutation.isPending}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => requestMutation.mutate()}
+          disabled={!amount.trim() || requestMutation.isPending}
+        >
+          {requestMutation.isPending && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          )}
+          Send to finance
+        </Button>
+      </div>
+    </div>
+  );
 }

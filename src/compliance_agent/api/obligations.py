@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
@@ -346,111 +346,111 @@ def add_comment(
 from pydantic import BaseModel as _BaseModel
 
 
-class HandoffPayload(_BaseModel):
-    finance_user_id: int
+# ---------------------------------------------------------------------------
+# Request payment — explicit compliance → finance hand-off
+# ---------------------------------------------------------------------------
+class RequestPaymentRequest(_BaseModel):
+    amount: str
     notes: Optional[str] = None
 
 
-class HandoffResponse(_BaseModel):
-    obligation_id: int
-    new_assignee_id: int
-    new_status: ObligationStatus
-
-
-@router.post(
-    "/{obligation_id}/handoff-to-finance",
-    response_model=HandoffResponse,
-)
-def handoff_to_finance(
+@router.post("/{obligation_id}/request-payment", response_model=ObligationOut)
+def request_payment(
     obligation_id: int,
-    payload: HandoffPayload,
+    payload: RequestPaymentRequest,
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
-) -> HandoffResponse:
-    """Admin marks the filing leg approved and reassigns the obligation to
-    a finance team member, who'll now log the payment + UTR. Status flips
-    from pending_review back to in_progress (work continues, just by a
-    different team).
-    """
-    if user.role != Role.admin:
-        raise HTTPException(status_code=403, detail="Only admins can hand off filings.")
+) -> ObligationOut:
+    """Compliance side hits this when they're done with the filing and the
+    finance team needs to process the payment.
 
+    Effects:
+      1. Saves the expected payment amount on the obligation.
+      2. Posts an auto-comment so the conversation has a clear "payment
+         requested" marker.
+      3. Sends a notification to every active user whose department is
+         'finance', plus all admins (so the hand-off is always visible
+         to someone who can act on it).
+    """
     obligation = db.execute(
         _base_query().where(Obligation.id == obligation_id)
     ).scalars().unique().one_or_none()
     if obligation is None:
         raise HTTPException(status_code=404, detail="Obligation not found.")
+    amount = (payload.amount or "").strip()
+    if not amount:
+        raise HTTPException(status_code=400, detail="Payment amount is required.")
 
-    if obligation.status != ObligationStatus.pending_review:
+    rule = obligation.rule
+    if rule is None or not (rule.payment_rule or "").strip():
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Hand-off only applies when the filing is awaiting your review. "
-                "Current status: " + obligation.status.value + "."
-            ),
+            detail="This filing doesn't have a payment leg — no payment to request.",
         )
 
-    finance_user = db.get(User, payload.finance_user_id)
-    if finance_user is None or not finance_user.is_active:
-        raise HTTPException(status_code=400, detail="Finance team member not found.")
+    # 1. Save the amount so the Awaiting payment surface picks it up + the
+    # finance team knows how much to wire.
+    obligation.payment_amount = amount
 
-    prev_assignee_id = obligation.assignee_id
-    obligation.assignee_id = finance_user.id
-    obligation.status = ObligationStatus.in_progress
-    obligation.department = Department.finance
-    if payload.notes:
-        # Append to existing notes rather than overwriting compliance's notes.
-        prefix = (obligation.notes + "\n\n") if obligation.notes else ""
-        obligation.notes = (
-            prefix
-            + f"[Admin → Finance handoff by {user.full_name or user.email}]: "
-            + payload.notes
-        )
-
-    # Notification + Slack ping so finance knows they own this now.
-    rule = obligation.rule
-    entity = obligation.entity
+    # 2. Auto-comment — the conversation thread on the obligation now has
+    # a clear "payment requested" entry.
     form = rule.form_name if rule else "Compliance item"
-    entity_name = entity.name if entity else "—"
-    db.add(
-        Notification(
-            user_id=finance_user.id,
-            kind=NotificationKind.payment_request,
-            title=f"Filing approved — log payment for {form}",
-            body=(
-                f"{entity_name} · {user.full_name or user.email} verified the "
-                f"filing. Enter the payment amount + UTR, then submit for "
-                f"final review."
-            ),
-            link_url=f"/obligations/{obligation.id}",
-            obligation_id=obligation.id,
-            actor_id=user.id,
-        )
+    entity_name = obligation.entity.name if obligation.entity else "—"
+    extra = f"\n\nNotes: {payload.notes}" if (payload.notes or "").strip() else ""
+    body = (
+        f"Payment requested from finance for **{form}** ({entity_name}).\n"
+        f"Amount: {amount}.\n"
+        f"Payment rule: {rule.payment_rule}.{extra}"
     )
-    if slack_service.is_configured(db):
-        slack_service.post(
-            f":money_with_wings: *Payment requested* — *{form}* ({entity_name}). "
-            f"Filing approved by {user.full_name or user.email}. "
-            f"Assigned to {finance_user.full_name or finance_user.email} to pay."
+    comment = Comment(obligation_id=obligation_id, author_id=user.id, body=body)
+    db.add(comment)
+    db.flush()
+
+    # 3. Fanout notifications. Finance dept + admins, minus the requester.
+    from compliance_agent.db import Role as _Role  # local import to avoid cycle
+
+    recipients = (
+        db.execute(
+            select(User).where(
+                User.is_active.is_(True),
+                or_(
+                    User.department == Department.finance,
+                    User.role == _Role.admin,
+                ),
+            )
         )
+        .scalars()
+        .all()
+    )
+
+    sent = 0
+    for r in recipients:
+        if r.id == user.id:
+            continue
+        db.add(
+            Notification(
+                user_id=r.id,
+                kind=NotificationKind.assigned,
+                title=f"Payment requested: {form} ({entity_name})",
+                body=f"{user.full_name or user.email} is asking finance to process {amount}.",
+                link_url=f"/obligations/{obligation_id}",
+                obligation_id=obligation_id,
+                actor_id=user.id,
+            )
+        )
+        sent += 1
 
     log_activity(
         db,
         actor_id=user.id,
-        action="obligation.handoff_to_finance",
+        action="obligation.payment_requested",
         target_type="obligation",
-        target_id=obligation.id,
-        payload={
-            "prev_assignee_id": prev_assignee_id,
-            "finance_user_id": finance_user.id,
-        },
+        target_id=obligation_id,
+        payload={"amount": amount, "fanout": sent},
     )
     db.commit()
-    return HandoffResponse(
-        obligation_id=obligation.id,
-        new_assignee_id=finance_user.id,
-        new_status=obligation.status,
-    )
+    db.refresh(obligation)
+    return serialize_obligation(obligation)
 
 
 class BulkUpdateRequest(_BaseModel):
