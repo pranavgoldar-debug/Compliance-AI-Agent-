@@ -59,6 +59,7 @@ import {
   effortBandLabel,
   leadTimeDays,
   cleanFilingName,
+  statusLabel,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
@@ -854,22 +855,23 @@ function ActionBar({
 }) {
   const isAdmin = currentUser?.role === "admin";
   const isAssignee = currentUser?.id === obligation.assignee?.id;
-  const isFinanceLeg = obligation.department === "finance";
 
-  // Stage-aware status options. Each role only sees the transitions that
-  // apply to THEIR leg of the pipeline:
-  //   - Employee (assignee): can toggle within their own leg's working
-  //     states. Pushing it to "done" (pending_review) still requires the
-  //     primary workflow button below so they don't accidentally submit.
-  //   - Admin: sees the employee options PLUS the closing transitions
-  //     (Mark N/A is the only one that bypasses the pipeline).
+  // Status options use the same canonical labels as the stepper above and
+  // every other surface (statusLabel in lib/format):
+  //   Not Started → Started → Under Progress → Filed.
+  //   - Employee (assignee): can move between the working stages. "Filed"
+  //     still requires the primary workflow button below so they don't
+  //     accidentally close the item.
+  //   - Admin: sees the employee options PLUS "Not Applicable" as the
+  //     only escape hatch that bypasses the pipeline.
   const statusOptionsForEmployee: { value: ObligationStatus; label: string }[] = [
-    { value: "not_started", label: isFinanceLeg ? "Haven't started payment" : "Haven't started filing" },
-    { value: "in_progress", label: isFinanceLeg ? "Working on payment" : "Working on filing" },
+    { value: "not_started", label: statusLabel("not_started") },
+    { value: "in_progress", label: statusLabel("in_progress") },
+    { value: "pending_review", label: statusLabel("pending_review") },
   ];
   const statusOptionsForAdmin: { value: ObligationStatus; label: string }[] = [
     ...statusOptionsForEmployee,
-    { value: "not_applicable", label: "Mark not applicable" },
+    { value: "not_applicable", label: statusLabel("not_applicable") },
   ];
   const statusOptions = isAdmin ? statusOptionsForAdmin : statusOptionsForEmployee;
   const canUseDropdown =
@@ -879,15 +881,13 @@ function ActionBar({
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
       <div className="flex items-center gap-2 px-5 py-2.5 flex-wrap">
-        {/* Update status dropdown — stage-aware. Employees only see
-            transitions for their OWN leg (haven't started / working on
-            it). The final "done" transition is the primary green button
-            below ("Mark filing complete" / "Mark payment complete") so
-            an employee can't accidentally submit by picking the wrong
-            menu item. Admins additionally get "Mark not applicable" as
-            an escape hatch. Nobody — not even admin — can pick
-            "Filed" from the menu; that only happens via the
-            workflow buttons (Approve & close). */}
+        {/* Update status dropdown — offers the working stages of the flow
+            shown in the stepper (Not Started / Started / Under Progress).
+            "Filed" is deliberately absent: closing the item happens via
+            the workflow buttons below ("Mark filing complete" →
+            Approve & close) so nobody submits by picking the wrong menu
+            item. Admins additionally get "Not Applicable" as an escape
+            hatch. */}
         {canUseDropdown && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -896,9 +896,7 @@ function ActionBar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuLabel>
-              {isFinanceLeg ? "Payment leg" : "Filing leg"} — pick where you are
-            </DropdownMenuLabel>
+            <DropdownMenuLabel>Change status to…</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {statusOptions.map((o) => (
               <DropdownMenuItem
