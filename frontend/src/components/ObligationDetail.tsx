@@ -1011,38 +1011,20 @@ function ActionBar({
             ) : null;
           }
 
-          // Pending admin review — split into:
-          //   A) "Final sign-off" (finance just submitted → admin closes → Done)
-          //   B) "Filing review" (compliance just finished; admin verifies, then
-          //       EITHER hands off to finance (if payment is needed) OR closes
-          //       it directly (no payment leg). Both buttons are always shown
-          //       so the admin picks per-obligation.
-          //
-          // We pick A vs B from obligation.department (the leg that just
-          // submitted), NOT payment_reference. Finance might submit
-          // without a UTR (refund, internal transfer) and still expect
-          // final sign-off, not a return to filing-verify.
+          // Under Progress — the admin closes the item by picking "Filed"
+          // in the Update status menu; here they only get "Send back" to
+          // return it to the assignee.
           if (status === "pending_review") {
             return isAdmin ? (
-              <>
-                <Button
-                  size="sm"
-                  onClick={() => onPatch({ status: "completed" })}
-                  disabled={saving}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Approve & close
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onPatch({ status: "in_progress" })}
-                  disabled={saving}
-                  title="Send back to the assignee"
-                >
-                  Send back
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPatch({ status: "in_progress" })}
+                disabled={saving}
+                title="Send back to the assignee"
+              >
+                Send back
+              </Button>
             ) : (
               <span className="text-xs text-muted-foreground italic">
                 Awaiting admin review.
