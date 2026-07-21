@@ -59,6 +59,7 @@ import {
   effortBandLabel,
   leadTimeDays,
   cleanFilingName,
+  statusLabel,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
@@ -854,22 +855,23 @@ function ActionBar({
 }) {
   const isAdmin = currentUser?.role === "admin";
   const isAssignee = currentUser?.id === obligation.assignee?.id;
-  const isFinanceLeg = obligation.department === "finance";
 
-  // Stage-aware status options. Each role only sees the transitions that
-  // apply to THEIR leg of the pipeline:
-  //   - Employee (assignee): can toggle within their own leg's working
-  //     states. Pushing it to "done" (pending_review) still requires the
-  //     primary workflow button below so they don't accidentally submit.
-  //   - Admin: sees the employee options PLUS the closing transitions
-  //     (Mark N/A is the only one that bypasses the pipeline).
+  // Status options use the same canonical labels as the stepper above and
+  // every other surface (statusLabel in lib/format):
+  //   Not Started → Started → Under Progress → Filed.
+  //   - Employee (assignee): can move between the working stages. "Filed"
+  //     still requires the primary workflow button below so they don't
+  //     accidentally close the item.
+  //   - Admin: sees the employee options PLUS "Filed", mirroring the
+  //     Approve & close button.
   const statusOptionsForEmployee: { value: ObligationStatus; label: string }[] = [
-    { value: "not_started", label: isFinanceLeg ? "Haven't started payment" : "Haven't started filing" },
-    { value: "in_progress", label: isFinanceLeg ? "Working on payment" : "Working on filing" },
+    { value: "not_started", label: statusLabel("not_started") },
+    { value: "in_progress", label: statusLabel("in_progress") },
+    { value: "pending_review", label: statusLabel("pending_review") },
   ];
   const statusOptionsForAdmin: { value: ObligationStatus; label: string }[] = [
     ...statusOptionsForEmployee,
-    { value: "not_applicable", label: "Mark not applicable" },
+    { value: "completed", label: statusLabel("completed") },
   ];
   const statusOptions = isAdmin ? statusOptionsForAdmin : statusOptionsForEmployee;
   const canUseDropdown =
@@ -879,15 +881,11 @@ function ActionBar({
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
       <div className="flex items-center gap-2 px-5 py-2.5 flex-wrap">
-        {/* Update status dropdown — stage-aware. Employees only see
-            transitions for their OWN leg (haven't started / working on
-            it). The final "done" transition is the primary green button
-            below ("Mark filing complete" / "Mark payment complete") so
-            an employee can't accidentally submit by picking the wrong
-            menu item. Admins additionally get "Mark not applicable" as
-            an escape hatch. Nobody — not even admin — can pick
-            "Filed" from the menu; that only happens via the
-            workflow buttons (Approve & close). */}
+        {/* Update status dropdown — offers the stages of the flow shown
+            in the stepper (Not Started / Started / Under Progress /
+            Filed). "Filed" is admin-only, same as the Approve & close
+            button, so an employee can't close the item by picking the
+            wrong menu item. */}
         {canUseDropdown && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -896,9 +894,7 @@ function ActionBar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuLabel>
-              {isFinanceLeg ? "Payment leg" : "Filing leg"} — pick where you are
-            </DropdownMenuLabel>
+            <DropdownMenuLabel>Change status to…</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {statusOptions.map((o) => (
               <DropdownMenuItem
@@ -1015,38 +1011,20 @@ function ActionBar({
             ) : null;
           }
 
-          // Pending admin review — split into:
-          //   A) "Final sign-off" (finance just submitted → admin closes → Done)
-          //   B) "Filing review" (compliance just finished; admin verifies, then
-          //       EITHER hands off to finance (if payment is needed) OR closes
-          //       it directly (no payment leg). Both buttons are always shown
-          //       so the admin picks per-obligation.
-          //
-          // We pick A vs B from obligation.department (the leg that just
-          // submitted), NOT payment_reference. Finance might submit
-          // without a UTR (refund, internal transfer) and still expect
-          // final sign-off, not a return to filing-verify.
+          // Under Progress — the admin closes the item by picking "Filed"
+          // in the Update status menu; here they only get "Send back" to
+          // return it to the assignee.
           if (status === "pending_review") {
             return isAdmin ? (
-              <>
-                <Button
-                  size="sm"
-                  onClick={() => onPatch({ status: "completed" })}
-                  disabled={saving}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Approve & close
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onPatch({ status: "in_progress" })}
-                  disabled={saving}
-                  title="Send back to the assignee"
-                >
-                  Send back
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPatch({ status: "in_progress" })}
+                disabled={saving}
+                title="Send back to the assignee"
+              >
+                Send back
+              </Button>
             ) : (
               <span className="text-xs text-muted-foreground italic">
                 Awaiting admin review.
