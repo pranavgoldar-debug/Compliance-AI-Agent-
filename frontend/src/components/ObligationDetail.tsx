@@ -862,8 +862,8 @@ function ActionBar({
   //   - Employee (assignee): can move between the working stages. "Filed"
   //     still requires the primary workflow button below so they don't
   //     accidentally close the item.
-  //   - Admin: sees the employee options PLUS "Not Applicable" as the
-  //     only escape hatch that bypasses the pipeline.
+  //   - Admin: sees the employee options PLUS "Filed", mirroring the
+  //     Approve & close button.
   const statusOptionsForEmployee: { value: ObligationStatus; label: string }[] = [
     { value: "not_started", label: statusLabel("not_started") },
     { value: "in_progress", label: statusLabel("in_progress") },
@@ -871,7 +871,7 @@ function ActionBar({
   ];
   const statusOptionsForAdmin: { value: ObligationStatus; label: string }[] = [
     ...statusOptionsForEmployee,
-    { value: "not_applicable", label: statusLabel("not_applicable") },
+    { value: "completed", label: statusLabel("completed") },
   ];
   const statusOptions = isAdmin ? statusOptionsForAdmin : statusOptionsForEmployee;
   const canUseDropdown =
@@ -881,13 +881,11 @@ function ActionBar({
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
       <div className="flex items-center gap-2 px-5 py-2.5 flex-wrap">
-        {/* Update status dropdown — offers the working stages of the flow
-            shown in the stepper (Not Started / Started / Under Progress).
-            "Filed" is deliberately absent: closing the item happens via
-            the workflow buttons below ("Mark filing complete" →
-            Approve & close) so nobody submits by picking the wrong menu
-            item. Admins additionally get "Not Applicable" as an escape
-            hatch. */}
+        {/* Update status dropdown — offers the stages of the flow shown
+            in the stepper (Not Started / Started / Under Progress /
+            Filed). "Filed" is admin-only, same as the Approve & close
+            button, so an employee can't close the item by picking the
+            wrong menu item. */}
         {canUseDropdown && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
