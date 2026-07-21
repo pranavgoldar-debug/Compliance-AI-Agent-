@@ -132,6 +132,13 @@ def _auto_seed_if_empty() -> None:
     Can be disabled by setting COMPLIANCE_AUTO_SEED=0 in the environment —
     useful if you're about to import production data and don't want demo
     rows in the way.
+
+    Env vars:
+      COMPLIANCE_AUTO_SEED=0          → skip entirely
+      COMPLIANCE_AUTO_SEED_NO_ASSIGN=1 → seed users/entities/rules but leave
+                                        obligations unassigned
+      COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS=1 → seed users/entities/rules only;
+                                        skip obligation generation
     """
     global _AUTO_SEED_RUNNING
     if _AUTO_SEED_RUNNING:
@@ -156,7 +163,12 @@ def _auto_seed_if_empty() -> None:
         # Lazy import — the seed-only modules aren't needed in steady state.
         from compliance_agent.db.seed import run_seed
 
-        run_seed()
+        no_obligations = os.environ.get("COMPLIANCE_AUTO_SEED_NO_OBLIGATIONS") == "1"
+        no_assign = os.environ.get("COMPLIANCE_AUTO_SEED_NO_ASSIGN") == "1"
+        run_seed(
+            auto_assign=not (no_assign or no_obligations),
+            create_obligations=not no_obligations,
+        )
     except Exception as e:  # noqa: BLE001
         # Never block boot on seed failure. Surface in logs so an admin
         # can re-run seed manually if they need to.
@@ -196,10 +208,13 @@ def _add_missing_columns() -> None:
             ("effort_band", f"{varchar(8)} NOT NULL DEFAULT 'w4'"),
             ("effort_band_reason", text_type),
             ("department", f"{varchar(16)} NOT NULL DEFAULT 'compliance'"),
+            # Finance-side beneficiary / bank account free text.
+            ("beneficiary_details", text_type),
         ],
         # Phase 7: source provenance on rules
         "rules": [
             ("source_url", varchar(1024)),
+            ("submission_url", varchar(1024)),
             ("source_text", text_type),
             ("source_changed_at", datetime_type),
         ],
@@ -236,6 +251,14 @@ def _add_missing_columns() -> None:
         # (the enum VALUE), but SAEnum reads the NAME. Migrate legacy rows
         # so SAEnum stops choking with `'4w' is not among the defined enum
         # values`. Idempotent — re-runs are no-ops.
+        #
+        # Postgres-specific gotcha: when effort_band is a real ENUM type,
+        # Postgres rejects the literal '1w' in the WHERE clause because
+        # '1w' isn't a valid enum value (the enum only contains the names
+        # w1/w2/.../w12). SQLite is loose and just compares strings.
+        # CAST(... AS TEXT) sidesteps the enum validation on both engines.
+        # The migration is essentially a no-op on Postgres (which never
+        # had the bad data) but the cast keeps Postgres from erroring out.
         if "obligations" in tables:
             band_value_to_name = {
                 "1w": "w1",
@@ -248,10 +271,32 @@ def _add_missing_columns() -> None:
                 conn.execute(
                     text(
                         "UPDATE obligations SET effort_band = :good "
-                        "WHERE effort_band = :bad"
+                        "WHERE CAST(effort_band AS TEXT) = :bad"
                     ),
                     {"good": good, "bad": bad},
                 )
+
+        # Expand jurisdiction_code from VARCHAR(8) to VARCHAR(16). The
+        # seed has codes like "singapore" / "lithuania" (9 chars) which
+        # fit in the model (now String(16)) but the live Postgres
+        # database may have been created with the old VARCHAR(8) so
+        # INSERTs blow up with "value too long for type character
+        # varying(8)". Postgres-only — SQLite ignores VARCHAR length.
+        # Idempotent — ALTER TYPE on the same width is a no-op.
+        if is_pg:
+            for table in ("entities", "rules", "licenses"):
+                if table not in tables:
+                    continue
+                try:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {table} "
+                            "ALTER COLUMN jurisdiction_code TYPE VARCHAR(16)"
+                        )
+                    )
+                except Exception:  # noqa: BLE001
+                    # Already widened or column missing — fine.
+                    pass
 
 
 def get_session() -> Iterator[Session]:

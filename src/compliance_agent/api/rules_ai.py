@@ -64,7 +64,7 @@ def extract_rules(
             rules=[],
             notes=(
                 "AI rule extraction is off. Set COMPLIANCE_AGENT_LIVE=1 and "
-                "ANTHROPIC_API_KEY in your server environment, then retry."
+                "ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) in your server environment, then retry."
             ),
         )
 

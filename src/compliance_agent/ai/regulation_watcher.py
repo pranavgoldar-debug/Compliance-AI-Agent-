@@ -219,9 +219,9 @@ def _summarise_change(form_name: str, diff_text: str) -> str:
     if not diff_text.strip():
         return ""
 
-    import anthropic
+    from compliance_agent.ai.llm_client import make_client
 
-    client = anthropic.Anthropic()
+    client = make_client()
     response = client.messages.create(
         model="claude-opus-4-7",
         max_tokens=400,

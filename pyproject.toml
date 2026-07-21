@@ -9,6 +9,11 @@ description = "AI agent that extracts structured compliance requirements from po
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "anthropic>=0.92.0",
+    # OpenAI SDK is used for the OpenRouter fallback path in
+    # compliance_agent.ai.llm_client — pointed at openrouter.ai/api/v1 when
+    # OPENROUTER_API_KEY is set. Standard Anthropic SDK still wins when a
+    # direct ANTHROPIC_API_KEY is present.
+    "openai>=1.50",
     "pydantic>=2.6",
     "pydantic[email]>=2.6",
     "pypdf>=4.0",

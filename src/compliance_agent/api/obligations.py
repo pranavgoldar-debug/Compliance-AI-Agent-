@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
     ALERT_WINDOW_DAYS,
+    is_awaiting_payment,
     log_activity,
     serialize_calendar_obligation,
     serialize_obligation,
@@ -19,6 +20,7 @@ from compliance_agent.api._helpers import (
 from compliance_agent.api.notifications import (
     emit_assignment,
     emit_mentions,
+    emit_payment_request,
     emit_status_change,
     extract_mentions,
 )
@@ -37,9 +39,11 @@ from compliance_agent.db import (
     NotificationKind,
     Obligation,
     ObligationStatus,
+    Role,
     User,
     get_session,
 )
+from compliance_agent import slack_service
 
 
 router = APIRouter(prefix="/api/obligations", tags=["obligations"])
@@ -117,6 +121,81 @@ def update_obligation(
         raise HTTPException(status_code=404, detail="Obligation not found.")
 
     data = payload.model_dump(exclude_unset=True)
+
+    # Reassigning work is an admin-only action. Employees can self-update
+    # status / filing fields on items they own, but they can't push work to
+    # other people.
+    if "assignee_id" in data and user.role != Role.admin:
+        new_assignee = data.get("assignee_id")
+        if new_assignee != obligation.assignee_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can change assignees.",
+            )
+
+    # Workflow gate: each role can only drive their own stage. Without
+    # this, an employee could curl the API and push their item straight
+    # to "completed", bypassing admin verification and the finance
+    # hand-off. UI hides the buttons; this enforces it server-side.
+    if "status" in data and data["status"] is not None:
+        new_status = data["status"]
+        old_status = obligation.status
+        if new_status != old_status and user.role != Role.admin:
+            # Employees may only move their own item to:
+            #   - in_progress  (start working)
+            #   - pending_review  (their leg is done → admin review)
+            #   - not_started  (revert before submitting)
+            # Anything else (completed / not_applicable) is admin-only.
+            allowed_employee_targets = {
+                ObligationStatus.not_started,
+                ObligationStatus.in_progress,
+                ObligationStatus.pending_review,
+            }
+            if new_status not in allowed_employee_targets:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Only admins can mark an obligation Completed or Not "
+                        "Applicable. Use 'Mark filing complete' / 'Mark "
+                        "payment complete' to submit your leg for admin review."
+                    ),
+                )
+            # Also block touching items they aren't assigned to.
+            if obligation.assignee_id != user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only change the status of items assigned to you.",
+                )
+
+    # Field-level team lock: compliance team can edit filing-side fields,
+    # finance team can edit payment-side fields. Admin can edit anything.
+    # Skipped if the user isn't touching any team-specific field — the
+    # generic "notes" + status + due_date pass through for both teams.
+    if user.role != Role.admin:
+        from compliance_agent.db import Department as _Dept
+
+        user_team = user.department.value if user.department else None
+        compliance_fields = {"filing_reference"}
+        finance_fields = {"payment_amount", "payment_reference", "beneficiary_details"}
+        touched_compliance = compliance_fields & set(data.keys())
+        touched_finance = finance_fields & set(data.keys())
+        if touched_compliance and user_team == "finance":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Finance team can't edit the compliance filing reference. "
+                    "Ask the compliance assignee to update it, or escalate to admin."
+                ),
+            )
+        if touched_finance and user_team == "compliance":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Compliance team can't edit payment amount / UTR / "
+                    "beneficiary details. Hand the obligation to finance first."
+                ),
+            )
+
     completed_now = (
         data.get("status") == ObligationStatus.completed
         and obligation.status != ObligationStatus.completed
@@ -159,6 +238,11 @@ def update_obligation(
             new_status=obligation.status,
             actor=user,
         )
+        # Filing was just approved AND the rule has a payment leg → fire an
+        # explicit "payment requested" notification so finance doesn't have
+        # to come check the Awaiting payment chip.
+        if completed_now and is_awaiting_payment(obligation):
+            emit_payment_request(db, obligation=obligation, actor=user)
 
     log_activity(
         db,
@@ -394,6 +478,12 @@ def bulk_update(
         raise HTTPException(
             status_code=400, detail="Provide at least one of status, assignee_id, clear_assignee."
         )
+    # Admin-only: bulk reassignment moves work between people.
+    if (payload.assignee_id is not None or payload.clear_assignee) and user.role != Role.admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can change assignees.",
+        )
 
     obligations = db.execute(
         _base_query().where(Obligation.id.in_(payload.obligation_ids))
@@ -443,6 +533,12 @@ def bulk_update(
             emit_status_change(
                 db, assignee=assignee, obligation=o, new_status=o.status, actor=user
             )
+            if (
+                o.status == ObligationStatus.completed
+                and prev_status != ObligationStatus.completed
+                and is_awaiting_payment(o)
+            ):
+                emit_payment_request(db, obligation=o, actor=user)
 
         log_activity(
             db,

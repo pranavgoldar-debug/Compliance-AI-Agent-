@@ -209,11 +209,29 @@ def serve(host: str, port: int, live: bool, reload: bool, no_browser: bool) -> N
 
     import uvicorn
 
+    # --live forces the env var on; without the flag we respect whatever
+    # the surrounding shell already set. The flag is now a convenience for
+    # one-off CLI invocations; production deploys set COMPLIANCE_AGENT_LIVE
+    # in Render/dotenv/PowerShell directly.
     if live:
         os.environ["COMPLIANCE_AGENT_LIVE"] = "1"
-        click.echo("Live mode — requests will call Anthropic API.", err=True)
+
+    env_live = os.environ.get("COMPLIANCE_AGENT_LIVE") == "1"
+    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_openrouter = bool(os.environ.get("OPENROUTER_API_KEY"))
+    if env_live and (has_anthropic or has_openrouter):
+        backend = "OpenRouter" if has_openrouter and not has_anthropic else "Anthropic"
+        click.echo(
+            f"Live mode — AI features will call {backend}.",
+            err=True,
+        )
+    elif env_live:
+        click.echo(
+            "COMPLIANCE_AGENT_LIVE=1 is set but no API key was found. "
+            "Set ANTHROPIC_API_KEY or OPENROUTER_API_KEY. Falling back to mock mode.",
+            err=True,
+        )
     else:
-        os.environ.pop("COMPLIANCE_AGENT_LIVE", None)
         click.echo("Mock mode — no API key required.", err=True)
 
     # Pre-flight: detect "port already in use" before uvicorn spews a traceback.
@@ -304,7 +322,17 @@ def _find_free_port(host: str, start: int, end: int):
         "admins explicitly assign work."
     ),
 )
-def seed(no_assign: bool) -> None:
+@click.option(
+    "--no-obligations",
+    is_flag=True,
+    default=False,
+    help=(
+        "Seed only users / entities / rules — skip obligation generation "
+        "entirely. Use this for a clean production-like state where admins "
+        "create obligations off the back of licenses they upload."
+    ),
+)
+def seed(no_assign: bool, no_obligations: bool) -> None:
     """Seed the database with Aspora entities, rules, users, and obligations.
 
     Idempotent — safe to re-run. Login accounts:
@@ -315,27 +343,73 @@ def seed(no_assign: bool) -> None:
 
     By default obligations are randomly distributed across the employee
     accounts to give the demo some activity. Pass --no-assign to leave
-    everything unassigned (closer to what fresh production looks like).
+    everything unassigned (closer to what fresh production looks like), or
+    --no-obligations to skip them entirely.
     """
     import os
 
     from compliance_agent.db.seed import run_seed
 
-    # Disable init_db's auto-seed so the CLI flag actually controls assignment.
+    # Disable init_db's auto-seed so the CLI flags actually control behaviour.
     # Without this, the auto-seed inside init_db would run first with defaults
     # (auto_assign=True), and the explicit seed call below would be a no-op
     # because everything's already in the DB.
     os.environ["COMPLIANCE_AUTO_SEED"] = "0"
 
     click.echo("Seeding database…", err=True)
-    counts = run_seed(auto_assign=not no_assign)
+    counts = run_seed(
+        auto_assign=not no_assign,
+        create_obligations=not no_obligations,
+    )
     click.echo(f"  users:                {counts['users']}", err=True)
     click.echo(f"  entities:             {counts['entities']}", err=True)
     click.echo(f"  rules:                {counts['rules']}", err=True)
     click.echo(f"  obligations created:  {counts['obligations_created']}", err=True)
-    if no_assign:
+    if no_obligations:
+        click.echo(
+            "  (no obligations — admins will create them per-license)", err=True
+        )
+    elif no_assign:
         click.echo("  (everything unassigned — admins must assign work explicitly)", err=True)
     click.echo("Done.", err=True)
+
+
+@main.command(name="purge-obligations")
+@click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt.")
+def purge_obligations_cmd(yes: bool) -> None:
+    """Delete every obligation in the database (and dependent comments,
+    notifications, activity rows). Keeps users / entities / rules /
+    licenses intact.
+
+    Use this when the auto-seed has dumped hundreds of obligations into your
+    DB and you want to start from a clean slate — admin creates obligations
+    explicitly off the back of each uploaded license.
+    """
+    import os
+
+    if not yes:
+        click.confirm(
+            "This deletes EVERY obligation and the comments / notifications "
+            "attached to them. Rules, entities, licenses, and users stay. "
+            "Continue?",
+            abort=True,
+        )
+    # Prevent the next init_db on serve from quietly re-seeding obligations.
+    os.environ["COMPLIANCE_AUTO_SEED"] = "0"
+
+    from compliance_agent.db.seed import purge_obligations
+
+    counts = purge_obligations()
+    click.echo("Purged.", err=True)
+    click.echo(f"  obligations:    {counts['obligations']}", err=True)
+    click.echo(f"  comments:       {counts['comments']}", err=True)
+    click.echo(f"  notifications:  {counts['notifications']}", err=True)
+    click.echo(f"  activities:     {counts['activities']}", err=True)
+    click.echo(
+        "\nNext: log in as admin, open a license, and use 'Extract with AI' "
+        "to create rules + obligations only for what actually applies.",
+        err=True,
+    )
 
 
 @main.command(name="setup-email")
@@ -620,6 +694,75 @@ def create_user(email: str, password: str, full_name: str, role: str) -> None:
             )
         )
     click.echo(f"Created user {email} ({role}).", err=True)
+
+
+@main.command(name="populate-source-urls")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help=(
+        "Replace EVERY rule's source_url with the lookup result, even if "
+        "an admin already set one manually. Use sparingly."
+    ),
+)
+def populate_source_urls_cmd(overwrite: bool) -> None:
+    """Backfill Rule.source_url on existing rules.
+
+    Walks every rule, matches its `authority` against the
+    compliance_agent.data.authority_urls table, and fills the URL.
+    Admin-set URLs are kept by default (pass --overwrite to replace).
+
+    Use this once after pulling new code so existing rules get their
+    "Submit on regulator's portal →" links populated. Idempotent.
+    """
+    from compliance_agent.db.seed import populate_source_urls
+
+    counts = populate_source_urls(overwrite=overwrite)
+    click.echo("Source URL backfill:", err=True)
+    for k, v in counts.items():
+        click.echo(f"  {k}: {v}", err=True)
+
+
+@main.command(name="send-digest")
+@click.option(
+    "--kind",
+    type=click.Choice(["employee_daily", "admin_weekly"]),
+    default="employee_daily",
+    show_default=True,
+    help="Which digest to send. 'employee_daily' = morning brief to every active user. 'admin_weekly' = team recap to every admin.",
+)
+@click.option(
+    "--user",
+    "only_email",
+    default=None,
+    help="Send only to this email (otherwise everyone eligible).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Compose the messages but don't post / email. Prints output to stderr.",
+)
+def send_digest_cmd(kind: str, only_email: Optional[str], dry_run: bool) -> None:
+    """AI-composed Slack + email digest. Wire this to a daily / weekly cron.
+
+    Defaults:
+      employee_daily — runs every morning, brief per assignee
+      admin_weekly   — runs Mondays, team-wide recap to all admins
+
+    Idempotent: the same user can't get the same kind twice in one day.
+    """
+    from compliance_agent.ai.digest import send_admin_recap, send_employee_digests
+
+    if kind == "admin_weekly":
+        counts = send_admin_recap(dry_run=dry_run, only_email=only_email)
+    else:
+        counts = send_employee_digests(dry_run=dry_run, only_email=only_email)
+
+    click.echo(f"Digest ({kind}, dry_run={dry_run}):", err=True)
+    for k, v in counts.items():
+        click.echo(f"  {k}: {v}", err=True)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 // Tasks — personal work inbox. Urgency-grouped, sub-tabbed scope, filter bar,
 // sort dropdown, hover quick actions.
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Coffee, ChevronDown, MoreHorizontal, CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,6 +27,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
 import { PageHeader } from "@/components/PageHeader";
 import { useObligationDrawer } from "@/contexts/ObligationDrawerContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { fmtShortDate, JURISDICTIONS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Entity, Obligation, ObligationStatus, UserBrief } from "@/types/api";
@@ -134,9 +135,12 @@ function TaskRow({ ob }: { ob: Obligation }) {
 
 function RowQuickActions({ ob }: { ob: Obligation }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
     queryFn: () => api.get<UserBrief[]>("/api/users"),
+    enabled: isAdmin,
   });
 
   const mutation = useMutation({
@@ -184,20 +188,24 @@ function RowQuickActions({ ob }: { ob: Obligation }) {
           >
             Mark in progress
           </DropdownMenuItem>
-          <DropdownMenuLabel className="mt-1 text-[10px] uppercase tracking-wider">
-            Reassign to
-          </DropdownMenuLabel>
-          {users.slice(0, 6).map((u) => (
-            <DropdownMenuItem
-              key={u.id}
-              onClick={() =>
-                mutation.mutate({ assignee_id: u.id } as unknown as Partial<Obligation>)
-              }
-              disabled={ob.assignee?.id === u.id}
-            >
-              {u.full_name || u.email}
-            </DropdownMenuItem>
-          ))}
+          {isAdmin && (
+            <>
+              <DropdownMenuLabel className="mt-1 text-[10px] uppercase tracking-wider">
+                Reassign to
+              </DropdownMenuLabel>
+              {users.slice(0, 6).map((u) => (
+                <DropdownMenuItem
+                  key={u.id}
+                  onClick={() =>
+                    mutation.mutate({ assignee_id: u.id } as unknown as Partial<Obligation>)
+                  }
+                  disabled={ob.assignee?.id === u.id}
+                >
+                  {u.full_name || u.email}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -259,7 +267,8 @@ export function TasksPage({
   defaultDepartment,
   defaultAwaitingPayment,
 }: TasksPageProps = {}) {
-  const [scope, setScope] = useState<Scope>("assigned");
+  const { user: me } = useAuth();
+  const userId = me?.id ?? null;
   const [department, setDepartment] = useState<DepartmentFilter>(
     defaultDepartment ?? "all",
   );
@@ -272,10 +281,36 @@ export function TasksPage({
   const [awaitingPayment, setAwaitingPayment] = useState<boolean>(
     Boolean(initialAwaitingPayment),
   );
-  const [filters, setFilters] = useState<Filters>(emptyFilters());
+  // ?status=pending_review (etc) pre-seeds the status filter so dashboard
+  // tile links land users in the right slice.
+  const initialFilters: Filters = (() => {
+    const base = emptyFilters();
+    if (typeof window === "undefined") return base;
+    const raw = new URLSearchParams(window.location.search).get("status");
+    if (!raw) return base;
+    const valid: ObligationStatus[] = [
+      "not_started",
+      "in_progress",
+      "pending_review",
+      "completed",
+      "not_applicable",
+    ];
+    const seeded = raw
+      .split(",")
+      .filter((s): s is ObligationStatus =>
+        valid.includes(s as ObligationStatus),
+      );
+    return { ...base, statuses: seeded };
+  })();
+  // When the user arrives with a URL pre-filter, default scope to "all" so
+  // they see every match (not just their own assignments).
+  const [scope, setScope] = useState<Scope>(
+    initialFilters.statuses.length > 0 ? "all" : "assigned",
+  );
+  const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sortKey, setSortKey] = useState<SortKey>("due_date");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ["tasks", scope, department, awaitingPayment],
     queryFn: () => {
       const qs = new URLSearchParams({ scope });
@@ -287,11 +322,69 @@ export function TasksPage({
     // review, in-progress) without manually refreshing.
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+    // Keep the previously-loaded list visible while the new query runs.
+    // Switching tabs (Assigned to me → Completed) no longer blanks the
+    // page to a skeleton — the old list stays put with a subtle "fetching"
+    // indicator instead.
+    placeholderData: keepPreviousData,
   });
   const { data: entities = [] } = useQuery({
     queryKey: ["entities"],
     queryFn: () => api.get<Entity[]>("/api/entities"),
   });
+
+  // Always-on counts for the 4 scope tabs (Assigned / Watching / Completed
+  // / All). Single fetch of scope=all + a derive — way cheaper than 4
+  // parallel queries and the numbers stay consistent. Falls back to the
+  // currently-loaded data while the all-fetch is in flight.
+  const allTasksQuery = useQuery({
+    queryKey: ["tasks", "all", "counts"],
+    queryFn: () => api.get<Obligation[]>("/api/tasks?scope=all"),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 15_000,
+  });
+  const scopeCounts: Record<Scope, number | null> = useMemo(() => {
+    const all = allTasksQuery.data;
+    if (!all) {
+      // Pre-fill the active scope from `data` so the user sees at least
+      // one number immediately on first load.
+      return {
+        assigned: scope === "assigned" ? data?.length ?? null : null,
+        watching: scope === "watching" ? data?.length ?? null : null,
+        completed: scope === "completed" ? data?.length ?? null : null,
+        all: scope === "all" ? data?.length ?? null : null,
+      };
+    }
+    const meId = userId;
+    return {
+      assigned: all.filter(
+        (o) =>
+          o.assignee?.id === meId &&
+          o.status !== "completed" &&
+          o.status !== "not_applicable",
+      ).length,
+      // Watching needs the comment-author list — we don't have that on
+      // the client. Best approximation: items where I'm the assignee OR
+      // I'm tagged in payment_reference (rare). Leave as the active fetch.
+      watching: scope === "watching" ? data?.length ?? null : null,
+      completed: all.filter((o) => o.status === "completed").length,
+      all: all.length,
+    };
+  }, [allTasksQuery.data, data, scope, userId]);
+
+  // Department + awaiting-payment chip counts, sliced by the CURRENT scope
+  // so they tell the user "if I click this chip, how many will I see?".
+  // Falls back to the active query's data while the all-fetch is pending.
+  const chipCounts = useMemo(() => {
+    const src = data ?? [];
+    return {
+      all: src.length,
+      compliance: src.filter((o) => o.department === "compliance").length,
+      finance: src.filter((o) => o.department === "finance").length,
+      awaitingPayment: src.filter((o) => o.is_awaiting_payment).length,
+    };
+  }, [data]);
 
   // Apply filters + sort.
   const visible = useMemo(() => {
@@ -345,16 +438,19 @@ export function TasksPage({
 
       <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>
         <TabsList>
-          {SCOPES.map((s) => (
-            <TabsTrigger key={s.key} value={s.key}>
-              {s.label}
-              {data && scope === s.key && (
-                <Badge variant="neutral" className="ml-1">
-                  {data.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          ))}
+          {SCOPES.map((s) => {
+            const n = scopeCounts[s.key];
+            return (
+              <TabsTrigger key={s.key} value={s.key}>
+                {s.label}
+                {n != null && (
+                  <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">
+                    ({n})
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
       </Tabs>
 
@@ -373,27 +469,39 @@ export function TasksPage({
           }
           title="Filings that have been completed but the payment reference hasn't been logged yet"
         >
-          Awaiting payment
+          Awaiting payment{" "}
+          <span className="tabular-nums opacity-80">
+            ({chipCounts.awaitingPayment})
+          </span>
         </button>
 
         {/* Department chips — secondary filter for teams that want to slice
             by who owns the work. Mostly stays on "All departments" in
             day-to-day use. */}
         <div className="text-xs text-muted-foreground mx-1">·</div>
-        {(Object.keys(DEPT_LABEL) as DepartmentFilter[]).map((d) => (
-          <button
-            key={d}
-            type="button"
-            onClick={() => setDepartment(d)}
-            className={
-              department === d
-                ? "rounded-full border border-aspora-500 bg-aspora-50 px-3 py-1 text-xs text-aspora-700 font-medium"
-                : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
-            }
-          >
-            {DEPT_LABEL[d]}
-          </button>
-        ))}
+        {(Object.keys(DEPT_LABEL) as DepartmentFilter[]).map((d) => {
+          const n =
+            d === "all"
+              ? chipCounts.all
+              : d === "compliance"
+                ? chipCounts.compliance
+                : chipCounts.finance;
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDepartment(d)}
+              className={
+                department === d
+                  ? "rounded-full border border-aspora-500 bg-aspora-50 px-3 py-1 text-xs text-aspora-700 font-medium"
+                  : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
+              }
+            >
+              {DEPT_LABEL[d]}{" "}
+              <span className="tabular-nums opacity-80">({n})</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filter + sort bar */}

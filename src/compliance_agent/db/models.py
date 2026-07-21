@@ -100,6 +100,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     role: Mapped[Role] = mapped_column(SAEnum(Role), nullable=False, default=Role.employee)
+    # Which team this user belongs to. Drives the assign-to-team flow:
+    # admin assigns compliance work to compliance-tagged users; once the
+    # filing is approved, admin hands off the payment leg to finance-tagged
+    # users. Nullable — legacy users + admins can be untagged.
+    department: Mapped[Optional[Department]] = mapped_column(
+        SAEnum(Department), nullable=True, index=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -139,7 +146,7 @@ class Entity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     legal_type: Mapped[str] = mapped_column(String(120), nullable=False, default="")  # e.g. Private Limited
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)  # india / uk / us / uae / sg / lt / ca / eu
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # india / uk / us / uae / sg / lt / ca / eu
     # Short internal code from the tracker (VINC, RTUK, NESS, ...) — used
     # for cross-referencing rows in the Aspora Global Compliance Tracker.
     short_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
@@ -180,7 +187,7 @@ class Rule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     area: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     form_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -197,7 +204,14 @@ class Rule(Base):
     )
 
     # Source provenance — used by the regulation change watcher (Phase 7).
+    # source_url   = informational page (regulation text + form template).
+    #                Visible to everyone in the team.
+    # submission_url = portal where the filing is actually submitted.
+    #                  Admin-only. Often the same host as source_url but a
+    #                  different path (e.g. an e-filing portal vs. the
+    #                  rule's circular page).
     source_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    submission_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -267,6 +281,11 @@ class Obligation(Base):
     filing_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     payment_amount: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     payment_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Bank account / beneficiary info finance uses to actually move the
+    # money — kept as free text so we don't have to model every payment
+    # rail's quirks. Visible only on the finance side of the obligation
+    # detail.
+    beneficiary_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -323,8 +342,13 @@ class Activity(Base):
 # Documents — uploaded files attached to entities and/or obligations
 # ---------------------------------------------------------------------------
 class DocumentCategory(str, enum.Enum):
-    formation = "Formation"
+    # Active categories — surfaced in the UI as upload targets.
     filings = "Filings"
+    templates = "Templates"
+    # Legacy values kept so existing rows in the DB don't fail to load.
+    # They no longer appear as upload-target cards; users can still see
+    # any rows in those categories via the entity's full document list.
+    formation = "Formation"
     contracts = "Contracts"
     expert_notes = "Expert notes"
     other = "Other"
@@ -336,6 +360,7 @@ class NotificationKind(str, enum.Enum):
     overdue = "overdue"           # derived on read; not persisted
     alert_window = "alert_window" # derived on read; not persisted
     status_change = "status_change"
+    payment_request = "payment_request"  # filing approved → finance asked to pay
 
 
 class Document(Base):
@@ -519,7 +544,7 @@ class License(Base):
     # "CBUAE SVF licence", "Lithuania EMI". Used for matching + display.
     license_type: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     authority: Mapped[str] = mapped_column(String(255), nullable=False)
-    jurisdiction_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    jurisdiction_code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     license_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

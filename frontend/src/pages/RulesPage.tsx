@@ -1,8 +1,8 @@
 // Compliance Rules — admin manages the rule templates that generate per-entity
 // obligations. Two tabs: Production (flat table) and Staging (side-by-side
 // review cards with confidence indicators).
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronDown,
@@ -26,6 +26,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Loader2 } from "lucide-react";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -220,6 +228,7 @@ export function RulesPage() {
 // ---------------------------------------------------------------------------
 function ProductionTable({ rules }: { rules: Rule[] }) {
   const [checking, setChecking] = useState<Rule | null>(null);
+  const [editingUrlRule, setEditingUrlRule] = useState<Rule | null>(null);
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -263,15 +272,22 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                   {fmtRelative(r.updated_at)}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
-                  {r.source_changed_at ? (
-                    <Badge variant="alert" title={`Source changed ${fmtRelative(r.source_changed_at)}`}>
-                      Changed
-                    </Badge>
-                  ) : r.source_url ? (
-                    <span className="text-muted-foreground">tracked</span>
-                  ) : (
-                    <span className="text-muted-foreground italic">no URL</span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingUrlRule(r)}
+                    className="text-left hover:underline"
+                    title="Click to set or edit the regulator portal URL"
+                  >
+                    {r.source_changed_at ? (
+                      <Badge variant="alert" title={`Source changed ${fmtRelative(r.source_changed_at)}`}>
+                        Changed
+                      </Badge>
+                    ) : r.source_url ? (
+                      <span className="text-aspora-700">tracked ✎</span>
+                    ) : (
+                      <span className="text-amber-700 italic">+ add URL</span>
+                    )}
+                  </button>
                 </td>
                 <td className="px-3 py-2.5 text-right">
                   <Button
@@ -279,6 +295,7 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
                     size="sm"
                     onClick={() => setChecking(r)}
                     title="Check the regulator page for changes"
+                    disabled={!r.source_url}
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
@@ -298,6 +315,13 @@ function ProductionTable({ rules }: { rules: Rule[] }) {
           rule={checking}
           open={!!checking}
           onOpenChange={(v) => !v && setChecking(null)}
+        />
+      )}
+      {editingUrlRule && (
+        <EditRuleUrlDialog
+          rule={editingUrlRule}
+          open={!!editingUrlRule}
+          onOpenChange={(v) => !v && setEditingUrlRule(null)}
         />
       )}
     </Card>
@@ -472,5 +496,103 @@ function ExtractedField({
         />
       )}
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// EditRuleUrlDialog — small inline editor for the source_url on a Rule.
+// Lets admins capture the regulator's portal / template page so the
+// "Submit on regulator's portal →" button on every obligation deep-
+// links somewhere useful.
+// ---------------------------------------------------------------------------
+function EditRuleUrlDialog({
+  rule,
+  open,
+  onOpenChange,
+}: {
+  rule: Rule;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [url, setUrl] = useState(rule.source_url ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setUrl(rule.source_url ?? "");
+      setError(null);
+    }
+  }, [open, rule]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.patch<Rule>(`/api/rules/${rule.id}`, {
+        source_url: url.trim() || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  const valid = !url.trim() || /^https?:\/\//i.test(url.trim());
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>Regulator portal URL</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-3">
+          <div className="text-sm text-muted-foreground">
+            Where the team actually files <strong>{rule.form_name}</strong>{" "}
+            with <strong>{rule.authority}</strong>. The team will see this
+            as a "Submit on regulator's portal →" button on every
+            obligation generated from this rule. The filing template
+            usually lives there too.
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">URL</label>
+            <Input
+              autoFocus
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.incometax.gov.in/iec/foportal/"
+              className="font-mono text-xs"
+            />
+            {!valid && (
+              <div className="text-[11px] text-red-700">
+                URL must start with http:// or https://
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Leave empty to clear it. Once set, the refresh icon on the
+              right of this rule checks whether the regulator changed
+              the page.
+            </p>
+          </div>
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !valid}
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save URL
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -42,15 +42,22 @@ class UserOut(BaseModel):
 
 
 @router.post("/login", response_model=UserOut)
-@limiter.limit("10/minute")
+# 30/min keeps brute-force protection while letting normal humans switch
+# accounts a few times during testing without getting locked out.
+@limiter.limit("30/minute")
 def login(
     request: Request,
     payload: LoginRequest,
     response: Response,
     db: Session = Depends(get_session),
 ) -> User:
-    user = db.execute(select(User).where(User.email == payload.email)).scalar_one_or_none()
-    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+    # DB stores emails lowercased; normalize input before lookup so users
+    # don't fail to log in because of a stray capital or leading/trailing
+    # whitespace (very common when copy-pasting creds from chat / docs).
+    email = (payload.email or "").strip().lower()
+    password = payload.password or ""
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if user is None or not user.is_active or not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",

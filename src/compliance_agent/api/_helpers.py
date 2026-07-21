@@ -123,7 +123,10 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         rule_category=o.rule.category,
         rule_frequency=o.rule.frequency,
         rule_due_date_rule=o.rule.due_date_rule,
-        rule_source_url=None,  # populated later when we capture source URLs
+        rule_source_url=o.rule.source_url,
+        rule_submission_url=o.rule.submission_url,
+        rule_source_changed_at=o.rule.source_changed_at,
+        rule_payment_rule=o.rule.payment_rule,
         entity_name=o.entity.name,
         entity_jurisdiction_code=o.entity.jurisdiction_code,
         due_date=o.due_date,
@@ -136,6 +139,7 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         filing_reference=o.filing_reference,
         payment_amount=o.payment_amount,
         payment_reference=o.payment_reference,
+        beneficiary_details=o.beneficiary_details,
         is_awaiting_payment=is_awaiting_payment(o),
         notes=o.notes,
         days_remaining=days_remaining(o.due_date),
@@ -160,6 +164,9 @@ def serialize_calendar_obligation(o: Obligation) -> CalendarObligation:
         rule_form_name=o.rule.form_name,
         rule_authority=o.rule.authority,
         rule_category=o.rule.category,
+        rule_applicability=(
+            o.rule.applicability.value if o.rule.applicability else "Mandatory"
+        ),
         effort_band=band,
         assignee=serialize_user(o.assignee),
         is_overdue=is_overdue(o.due_date, o.status),

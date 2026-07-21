@@ -24,7 +24,11 @@ import { LicensesPage } from "@/pages/LicensesPage";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      // Longer staleTime → cached lists render instantly on tab switch
+      // (no spinner) while a background refetch updates them. Pages that
+      // need fresher data override this per-query.
+      staleTime: 2 * 60_000,
+      gcTime: 10 * 60_000,
       retry: 1,
       refetchOnWindowFocus: false,
     },
