@@ -1107,9 +1107,16 @@ function ComplianceRulesTab({
     queryKey: ["rules", "production", entity.id],
     queryFn: () => api.get<Rule[]>(`/api/rules?status=production&entity_id=${entity.id}`),
   });
+  // Archived rules stay listed here — archiving is NOT a delete; the rule
+  // just stops generating filings until it's restored.
+  const { data: archived = [] } = useQuery({
+    queryKey: ["rules", "archived", entity.id],
+    queryFn: () => api.get<Rule[]>(`/api/rules?status=archived&entity_id=${entity.id}`),
+  });
 
   const review = staging.filter((r) => r.entity_ids.includes(entity.id));
   const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
+  const archivedRows = archived.filter((r) => r.entity_ids.includes(entity.id));
 
   // Regulatory-body filter for the discovered list. Options derive from the
   // discovered rules' authorities — which are this entity's jurisdiction's
@@ -1152,6 +1159,18 @@ function ComplianceRulesTab({
 
   const reject = useMutation({
     mutationFn: (id: number) => api.delete(`/api/rules/${id}`),
+    onSuccess: refresh,
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
+  // Un-archive: back to Confirmed if it was approved before, otherwise back
+  // to the draft list. Restoring an approved rule also brings its pending
+  // filings back onto the calendar.
+  const restore = useMutation({
+    mutationFn: (r: Rule) =>
+      api.patch<Rule>(`/api/rules/${r.id}`, {
+        status: r.approved_at ? "production" : "staging",
+      }),
     onSuccess: refresh,
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
@@ -1429,6 +1448,57 @@ function ComplianceRulesTab({
           )}
         </CardContent>
       </Card>
+
+      {/* Archived — rules taken out of rotation but never deleted. They stop
+          generating filings; Restore puts them back where they came from. */}
+      {archivedRows.length > 0 && (
+        <Card>
+          <CardContent className="p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-sm">Archived</h3>
+              <Badge variant="neutral">{archivedRows.length}</Badge>
+              <span className="text-xs text-muted-foreground">
+                · not deleted — restore anytime
+              </span>
+            </div>
+            <div className="space-y-2">
+              {archivedRows.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5 opacity-70"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{r.name}</span>
+                      <Badge variant="neutral">Archived</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {r.authority} · {r.category} · {r.frequency}
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={restore.isPending}
+                      onClick={() => restore.mutate(r)}
+                      title={
+                        r.approved_at
+                          ? "Restore to Confirmed — its filings come back onto the calendar"
+                          : "Restore to the draft list"
+                      }
+                    >
+                      {restore.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Restore
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <AddRegulationDialog
         entity={entity}

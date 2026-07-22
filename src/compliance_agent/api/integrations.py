@@ -24,6 +24,7 @@ from compliance_agent import clickup_service, slack_service
 from compliance_agent.api._helpers import log_activity
 from compliance_agent.auth import get_current_user, require_admin
 from compliance_agent.db import (
+    Comment,
     Notification,
     NotificationKind,
     Obligation,
@@ -544,6 +545,29 @@ def _slack_ack(response_url: Optional[str], text: str) -> None:
         pass
 
 
+def _slack_respond(response_url: Optional[str], payload: dict) -> None:
+    """Like _slack_ack but for full Block Kit payloads (e.g. the
+    not-applicable reason prompt)."""
+    if not response_url:
+        return
+    try:
+        import httpx
+
+        httpx.post(response_url, json=payload, timeout=8.0)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _slack_actor(db: Session, slack_user: Optional[str]) -> Optional[User]:
+    if not slack_user:
+        return None
+    return (
+        db.execute(select(User).where(User.slack_user_id == slack_user))
+        .scalars()
+        .first()
+    )
+
+
 @webhook_router.post("/slack/interactivity")
 async def slack_interactivity(request: Request) -> dict:
     import os
@@ -565,7 +589,61 @@ async def slack_interactivity(request: Request) -> dict:
     actions = data.get("actions") or []
     if not actions:
         return {}
-    value = actions[0].get("value", "")
+    action = actions[0]
+    slack_user = (data.get("user") or {}).get("id")
+    response_url = data.get("response_url")
+
+    # Leg 2 of the not-applicable flow: the reason typed into the input
+    # block sent below. The block_id carries the obligation id ("na_<id>").
+    if action.get("action_id") == "na_reason":
+        try:
+            oid = int(str(action.get("block_id", "")).split("_", 1)[1])
+        except (IndexError, ValueError):
+            return {}
+        reason = (action.get("value") or "").strip()
+        if not reason:
+            _slack_ack(response_url, ":warning: A reason is required to mark this not applicable.")
+            return {}
+        with session_scope() as db:
+            ob = db.get(Obligation, oid)
+            if ob is None:
+                _slack_ack(response_url, ":warning: That item no longer exists.")
+                return {}
+            actor = _slack_actor(db, slack_user)
+            ob.status = ObligationStatus.not_applicable
+            ob.completed_at = None
+            if actor:
+                db.add(
+                    Comment(
+                        obligation_id=ob.id,
+                        author_id=actor.id,
+                        body=f"Marked Not Applicable — reason: {reason}",
+                    )
+                )
+            log_activity(
+                db,
+                actor_id=actor.id if actor else None,
+                action="obligation.not_applicable_via_slack",
+                target_type="obligation",
+                target_id=ob.id,
+                payload={"reason": reason, "slack_user": slack_user},
+            )
+            form_name = ob.rule.form_name if ob.rule else "Compliance item"
+
+        from compliance_agent import calendar_service
+
+        if calendar_service.is_configured():
+            calendar_service.sync_obligation(oid)
+
+        where = (
+            "posted as a comment"
+            if actor
+            else "recorded in the audit log (add your Slack member ID in Aspora → Users to post it as a comment)"
+        )
+        _slack_ack(response_url, f":no_entry_sign: *{form_name}* → Not Applicable. Reason {where}.")
+        return {}
+
+    value = action.get("value", "")
     try:
         oid_s, status_s = value.split(":", 1)
         oid = int(oid_s)
@@ -573,21 +651,54 @@ async def slack_interactivity(request: Request) -> dict:
     except (ValueError, KeyError):
         return {}
 
-    slack_user = (data.get("user") or {}).get("id")
-    response_url = data.get("response_url")
+    # Leg 1 of the not-applicable flow: don't flip the status yet — reply
+    # with an input block asking for the mandatory reason. Submitting it
+    # (Enter) fires the na_reason branch above, which applies the change.
+    if new_status == ObligationStatus.not_applicable:
+        with session_scope() as db:
+            ob = db.get(Obligation, oid)
+            if ob is None:
+                _slack_ack(response_url, ":warning: That item no longer exists.")
+                return {}
+            form_name = ob.rule.form_name if ob.rule else "Compliance item"
+        _slack_respond(
+            response_url,
+            {
+                "response_type": "ephemeral",
+                "replace_original": False,
+                "text": f"A reason is required to mark {form_name} not applicable.",
+                "blocks": [
+                    {
+                        "type": "input",
+                        "dispatch_action": True,
+                        "block_id": f"na_{oid}",
+                        "label": {
+                            "type": "plain_text",
+                            "text": f"Why is “{form_name}” not applicable? Press Enter to submit.",
+                        },
+                        "element": {
+                            "type": "plain_text_input",
+                            "action_id": "na_reason",
+                            "placeholder": {
+                                "type": "plain_text",
+                                "text": "e.g. entity had no activity this period",
+                            },
+                            "dispatch_action_config": {
+                                "trigger_actions_on": ["on_enter_pressed"]
+                            },
+                        },
+                    }
+                ],
+            },
+        )
+        return {}
 
     with session_scope() as db:
         ob = db.get(Obligation, oid)
         if ob is None:
             _slack_ack(response_url, ":warning: That item no longer exists.")
             return {}
-        actor = None
-        if slack_user:
-            actor = (
-                db.execute(select(User).where(User.slack_user_id == slack_user))
-                .scalars()
-                .first()
-            )
+        actor = _slack_actor(db, slack_user)
         ob.status = new_status
         if new_status == ObligationStatus.completed and ob.completed_at is None:
             ob.completed_at = datetime.now(tz=timezone.utc)

@@ -666,6 +666,24 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
+  // Restore an archived rule — back to Approved if it had been approved
+  // before, otherwise back to For Action. Restoring to Approved also
+  // brings its pending filings back onto the calendar.
+  const restoreMutation = useMutation({
+    mutationFn: (r: Rule) =>
+      api.patch<Rule>(`/api/rules/${r.id}`, {
+        status: r.approved_at ? "production" : "staging",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-count"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["obligations"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+
   // Clear ONLY the section you're viewing — delete just this tab's rule ids,
   // so clearing For Action / Approved / Archived never touches the others.
   const sectionLabel =
@@ -831,6 +849,9 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                 </>
               )}
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
+              {tab === "archived" && (
+                <th className="px-3 py-2.5 text-right font-medium">Actions</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -937,6 +958,26 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                     )}
                   </button>
                 </td>
+                {tab === "archived" && (
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={restoreMutation.isPending}
+                      onClick={() => restoreMutation.mutate(r)}
+                      title={
+                        r.approved_at
+                          ? "Restore to Approved — its filings come back onto the calendar"
+                          : "Restore to For Action for review"
+                      }
+                    >
+                      {restoreMutation.isPending && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
+                      Restore
+                    </Button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

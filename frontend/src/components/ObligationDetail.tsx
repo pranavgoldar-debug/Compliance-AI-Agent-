@@ -40,6 +40,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DateField } from "@/components/DateField";
 import { StatusPill } from "@/components/StatusPill";
 import { JurisdictionBadge } from "@/components/JurisdictionBadge";
@@ -855,6 +863,7 @@ function ActionBar({
 }) {
   const isAdmin = currentUser?.role === "admin";
   const isAssignee = currentUser?.id === obligation.assignee?.id;
+  const queryClient = useQueryClient();
 
   // Status options use the same canonical labels as the stepper above and
   // every other surface (statusLabel in lib/format):
@@ -862,21 +871,43 @@ function ActionBar({
   //   - Employee (assignee): can move between the working stages. "Filed"
   //     still requires the primary workflow button below so they don't
   //     accidentally close the item.
-  //   - Admin: sees the employee options PLUS "Filed", mirroring the
-  //     Approve & close button.
-  const statusOptionsForEmployee: { value: ObligationStatus; label: string }[] = [
+  //   - Admin: additionally gets "Filed" and "Not Applicable" (the API
+  //     enforces both as admin-only). Not Applicable requires a reason —
+  //     picking it opens the dialog below; the status only changes once
+  //     the reason is posted as a comment.
+  const workingStages: { value: ObligationStatus; label: string }[] = [
     { value: "not_started", label: statusLabel("not_started") },
     { value: "in_progress", label: statusLabel("in_progress") },
     { value: "pending_review", label: statusLabel("pending_review") },
   ];
-  const statusOptionsForAdmin: { value: ObligationStatus; label: string }[] = [
-    ...statusOptionsForEmployee,
-    { value: "completed", label: statusLabel("completed") },
-  ];
-  const statusOptions = isAdmin ? statusOptionsForAdmin : statusOptionsForEmployee;
+  const statusOptions: { value: ObligationStatus; label: string }[] = isAdmin
+    ? [
+        ...workingStages,
+        { value: "completed", label: statusLabel("completed") },
+        { value: "not_applicable", label: statusLabel("not_applicable") },
+      ]
+    : workingStages;
   const canUseDropdown =
     (isAssignee || isAdmin) &&
     obligation.status !== "completed";
+
+  // Not-applicable needs a mandatory reason: the dialog posts it as a
+  // comment first, and only then flips the status.
+  const [naOpen, setNaOpen] = useState(false);
+  const [naReason, setNaReason] = useState("");
+  const naMutation = useMutation({
+    mutationFn: (reason: string) =>
+      api.post(`/api/obligations/${obligation.id}/comments`, {
+        body: `Marked Not Applicable — reason: ${reason}`,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["obligation-comments", obligation.id] });
+      onPatch({ status: "not_applicable" });
+      setNaOpen(false);
+      setNaReason("");
+    },
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
 
   return (
     <div className="border-b border-border bg-background sticky top-0 z-10">
@@ -899,7 +930,11 @@ function ActionBar({
             {statusOptions.map((o) => (
               <DropdownMenuItem
                 key={o.value}
-                onClick={() => onPatch({ status: o.value })}
+                onClick={() =>
+                  o.value === "not_applicable"
+                    ? setNaOpen(true)
+                    : onPatch({ status: o.value })
+                }
                 disabled={o.value === obligation.status}
               >
                 {o.label}
@@ -908,6 +943,50 @@ function ActionBar({
           </DropdownMenuContent>
         </DropdownMenu>
         )}
+
+        <Dialog
+          open={naOpen}
+          onOpenChange={(v) => {
+            setNaOpen(v);
+            if (!v) setNaReason("");
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Mark not applicable</DialogTitle>
+              <DialogDescription>
+                A reason is required — it's posted as a comment on this filing
+                so the audit trail shows why it was ruled out.
+              </DialogDescription>
+            </DialogHeader>
+            <textarea
+              value={naReason}
+              onChange={(e) => setNaReason(e.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="Why does this filing not apply?"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-aspora-500"
+            />
+            <DialogFooter>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNaOpen(false)}
+                disabled={naMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={!naReason.trim() || naMutation.isPending || saving}
+                onClick={() => naMutation.mutate(naReason.trim())}
+              >
+                {naMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Mark not applicable
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {isAdmin && (
         <DropdownMenu>

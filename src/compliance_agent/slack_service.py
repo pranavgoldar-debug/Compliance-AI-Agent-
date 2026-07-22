@@ -215,6 +215,14 @@ def _view_button(obligation: Obligation, label: str = "View in Aspora") -> dict:
                 "action_id": "st_completed",
                 "value": f"{oid}:completed",
             },
+            {
+                # Doesn't flip the status directly — the interactivity
+                # handler replies asking for a mandatory reason first.
+                "type": "button",
+                "text": {"type": "plain_text", "text": "🚫 Not Applicable"},
+                "action_id": "st_not_applicable",
+                "value": f"{oid}:not_applicable",
+            },
         ],
     }
 
