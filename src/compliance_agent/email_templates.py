@@ -168,12 +168,25 @@ def deadline_alert_email(
     open_url: str,
     escalation_contact_name: str = "your manager",
 ) -> tuple[str, str, str]:
-    subject = f"[Aspora] {obligation_name} due in {days_remaining}d — {entity_name}"
+    # Phrase the deadline correctly on all three sides of the due date —
+    # the same template serves the advance reminders, the due-day ping and
+    # the weekly overdue chasers.
+    if days_remaining > 0:
+        due_phrase = f"due in {days_remaining} day{'s' if days_remaining != 1 else ''}"
+        subject_due = f"due in {days_remaining}d"
+    elif days_remaining == 0:
+        due_phrase = "due TODAY"
+        subject_due = "due today"
+    else:
+        late = -days_remaining
+        due_phrase = f"OVERDUE by {late} day{'s' if late != 1 else ''}"
+        subject_due = f"overdue by {late}d"
+    subject = f"[Aspora] {obligation_name} {subject_due} — {entity_name}"
     due_long = _fmt_long(due_date)
 
     text = (
         f"Hi {owner_name},\n\n"
-        f"{obligation_name} is due in {days_remaining} days\n"
+        f"{obligation_name} is {due_phrase}\n"
         f"Filing deadline: {due_long} · Regulator: {regulator_name}\n\n"
         f"Canonical key:   {jurisdiction} · {form_code}\n"
         f"Entity:          {entity_name} ({entity_ref})\n"
@@ -189,7 +202,7 @@ def deadline_alert_email(
     content = (
         f'<p style="font-size:14px;margin:0 0 6px">Hi {owner_name},</p>'
         f'<h1 style="font-size:24px;margin:0 0 8px;color:{TEXT}">'
-        f"{obligation_name} is due in {days_remaining} days</h1>"
+        f"{obligation_name} is {due_phrase}</h1>"
         f'<p style="font-size:13px;color:{MUTED};margin:0 0 20px">'
         f'Filing deadline: <strong style="color:{TEXT}">{due_long}</strong> · '
         f"Regulator: {regulator_name}</p>"

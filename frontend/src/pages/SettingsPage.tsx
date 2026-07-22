@@ -340,7 +340,14 @@ Open a filing — the stepper across the top shows exactly where it is: **Not St
 
 ### Reminders & Slack
 
-Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status without leaving Slack — the buttons are **▶ Started · 🔄 Under Progress · ✅ Filed · 🚫 Not Applicable** and the website updates automatically. (**Not Applicable** asks you to type the reason first — same rule as the app.)
+Reminders go out by **email** and **Slack**, and they keep chasing until the filing is done:
+
+- **First reminder** — by frequency: **Monthly 7 days** · **Quarterly 30 days** · **Semi-annual 45 days** · **Annual 60 days** before the due date.
+- **Follow-ups** — every **7 days** after the first reminder, until the due date.
+- **Due day** — a "due today" ping on the deadline itself.
+- **Overdue** — a chaser every **7 days late** until it's Filed (or Not Applicable).
+
+From a Slack card you can open the filing or change its status without leaving Slack — the buttons are **▶ Started · 🔄 Under Progress · ✅ Filed · 🚫 Not Applicable** and the website updates automatically. (**Not Applicable** asks you to type the reason first — same rule as the app.)
 
 **Get @-mentioned in Slack (one-time, per person):** Slack only pings you when the app knows your Slack **member ID** — a display name isn't enough.
 

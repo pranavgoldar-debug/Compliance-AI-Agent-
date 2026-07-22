@@ -1,20 +1,26 @@
 """Outbound deadline reminders.
 
-For each open assigned obligation, we send a reminder when its
-days-remaining hits one of the offsets defined per effort band in
-`reminder_offsets_days()`. Aspora policy:
+The FIRST reminder for each open assigned obligation is driven by the
+filing's frequency (reminder_offsets_for_frequency):
 
-  Monthly   →  7 days before              (one ping)
-  Quarterly →  25 and 15 days before      (two pings)
-  Annual    →  45 and 30 days before      (two pings)
+  Monthly      →   7 days before
+  Quarterly    →  30 days before
+  Semi-annual  →  45 days before
+  Annual       →  60 days before
+
+After that first ping the filing keeps being chased until it's Filed:
+
+  - a follow-up every 7 days until the due date,
+  - a "due today" ping on the due date itself,
+  - and once overdue, a ping every 7 days late (7, 14, 21, …).
 
 Intended to be run on a daily schedule:
 
   python -m compliance_agent.cli send-reminders          # actually send
   python -m compliance_agent.cli send-reminders --dry-run
 
-Idempotent — each (assignee, obligation, offset) fires exactly once.
-A Notification row with the offset baked into its title is the dedup
+Idempotent — each (assignee, obligation, slot) fires exactly once.
+A Notification row with the slot tag baked into its title is the dedup
 anchor, so cron runs never double-send.
 """
 from __future__ import annotations
@@ -45,9 +51,10 @@ from compliance_agent.db import (
 from compliance_agent.email_service import send_email
 
 
-# Marker baked into Notification.title so cron runs can dedup per-offset
-# without needing a new column.
+# Markers baked into Notification.title so cron runs can dedup per-slot
+# without needing a new column. T-N = N days before due, T+N = N days late.
 _OFFSET_TAG = "[T-{}d]"
+_OVERDUE_TAG = "[T+{}d]"
 
 
 @dataclass
@@ -117,13 +124,12 @@ def _build_email_body(db: Session, obligation: Obligation, days_remaining: int) 
     )
 
 
-def _already_reminded_at_offset(
+def _already_reminded(
     db: Session,
     user_id: int,
     obligation_id: int,
-    offset_days: int,
+    tag: str,
 ) -> bool:
-    tag = _OFFSET_TAG.format(offset_days)
     return (
         db.execute(
             select(Notification.id)
@@ -140,9 +146,9 @@ def _already_reminded_at_offset(
 
 
 def find_due_for_reminder(db: Session) -> list[Obligation]:
-    """All open, assigned, future obligations. The caller filters which
-    offsets apply per-band."""
-    today_d = today()
+    """All open, assigned obligations — including overdue ones, which keep
+    getting chased weekly until they're filed. The caller decides which
+    reminder slot (if any) fires today."""
     stmt = (
         select(Obligation)
         .options(
@@ -158,7 +164,6 @@ def find_due_for_reminder(db: Session) -> list[Obligation]:
                     ObligationStatus.pending_review,
                 ]
             ),
-            Obligation.due_date >= today_d,
             Obligation.assignee_id.is_not(None),
         )
         .order_by(Obligation.due_date)
@@ -166,32 +171,44 @@ def find_due_for_reminder(db: Session) -> list[Obligation]:
     return db.execute(stmt).scalars().unique().all()
 
 
+def _reminder_slots(lead: int) -> list[int]:
+    """All pre-due reminder days for a filing: the frequency lead itself,
+    then a follow-up every 7 days down to (and including) the due date.
+
+    lead=7  → [7, 0]
+    lead=30 → [30, 23, 16, 9, 2, 0]
+    lead=60 → [60, 53, 46, 39, 32, 25, 18, 11, 4, 0]
+    """
+    slots = list(range(lead, 0, -7))
+    slots.append(0)
+    return slots
+
+
 def _trigger_offset(
     offsets: list[int],
     days_left: int,
 ) -> Optional[int]:
-    """Pick the offset that fires today.
+    """Pick the pre-due slot that fires today.
 
-    Fires when days_left is at-or-just-passed an offset boundary AND we
-    haven't passed the next (smaller) offset yet. In practice that means
-    the cron run that lands on or first dips below an offset triggers it.
+    Fires when days_left is at-or-just-passed a slot boundary AND we
+    haven't passed the next (smaller) slot yet. In practice that means
+    the cron run that lands on or first dips below a slot triggers it.
 
-    Examples for annual offsets [45, 30]:
-       days_left=46 → returns None  (not in any window yet)
-       days_left=45 → returns 45    (entering 45-day window)
-       days_left=40 → returns 45    (still in 45-day window, will dedup
-                                      against existing 45d notification)
-       days_left=30 → returns 30    (entering 30-day window)
-       days_left=10 → returns 30    (still under 30d, dedup against 30d)
+    Examples for slots [30, 23, 16, 9, 2, 0]:
+       days_left=31 → returns None  (not in any window yet)
+       days_left=30 → returns 30    (entering the 30-day window)
+       days_left=27 → returns 30    (still in the 30 slot — dedups, no send)
+       days_left=23 → returns 23    (weekly follow-up)
+       days_left=0  → returns 0     (due today)
 
     The de-dup check in send_reminders handles the "fire only once" part;
-    this function just routes today's run to the right offset bucket.
+    this function just routes today's run to the right slot bucket.
     """
     candidates = [o for o in offsets if days_left <= o]
     if not candidates:
         return None
-    # Tightest (smallest) offset that still applies — so once we cross
-    # 30 days for an annual, future runs route to the 30d slot, not 45d.
+    # Tightest (smallest) slot that still applies — so once we cross the
+    # next weekly boundary, future runs route to that slot, not the old one.
     return min(candidates)
 
 
@@ -205,24 +222,39 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
         slack_on = slack_service.is_configured(db)
 
         for ob in find_due_for_reminder(db):
-            # Reminder cadence is driven by the filing's FREQUENCY (Monthly→7d,
-            # Quarterly→30d, Annual→45d); fall back to the effort-band offsets
-            # when the rule has no usable frequency.
+            # The FIRST reminder is driven by the filing's FREQUENCY
+            # (Monthly→7d, Quarterly→30d, Semi-annual→45d, Annual→60d);
+            # fall back to the effort-band offsets when the rule has no
+            # usable frequency. After that: weekly follow-ups, a due-day
+            # ping, then weekly overdue pings.
             freq = ob.rule.frequency if ob.rule else ""
             offsets = reminder_offsets_for_frequency(freq)
             if not offsets:
                 band = ob.effort_band or EffortBand.w4
                 offsets = reminder_offsets_days(band)
+            if not offsets:
+                continue
             days_left = (ob.due_date - today_d).days
 
-            offset = _trigger_offset(offsets, days_left)
-            if offset is None:
-                continue
+            if days_left >= 0:
+                offset = _trigger_offset(_reminder_slots(max(offsets)), days_left)
+                if offset is None:
+                    continue
+                tag = _OFFSET_TAG.format(offset)
+            else:
+                # Overdue — chase every 7 days late (the due-day ping covers
+                # days 1–6 late via its own dedup slot).
+                days_late = -days_left
+                late_slot = (days_late // 7) * 7
+                if late_slot == 0:
+                    continue
+                offset = -late_slot
+                tag = _OVERDUE_TAG.format(late_slot)
 
             assignee: Optional[User] = ob.assignee
             if assignee is None or not assignee.is_active:
                 continue
-            if _already_reminded_at_offset(db, assignee.id, ob.id, offset):
+            if _already_reminded(db, assignee.id, ob.id, tag):
                 continue
 
             subject, body, body_html = _build_email_body(db, ob, days_left)
@@ -231,11 +263,16 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
 
             if not dry_run:
                 form = ob.rule.form_name if ob.rule else "Compliance item"
+                title = (
+                    f"Reminder {tag}: {form} due in {days_left}d"
+                    if days_left >= 0
+                    else f"Overdue {tag}: {form} — {-days_left}d late"
+                )
                 db.add(
                     Notification(
                         user_id=assignee.id,
                         kind=NotificationKind.alert_window,
-                        title=f"Reminder {_OFFSET_TAG.format(offset)}: {form} due in {days_left}d",
+                        title=title,
                         body=(ob.entity.name if ob.entity else None),
                         link_url=f"/obligations/{ob.id}",
                         obligation_id=ob.id,
@@ -255,9 +292,14 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                     and slack_on
                     and slack_service.is_configured(db)
                 ):
-                    msg = slack_service.deadline_blocks(
-                        obligation=ob, assignee=assignee, days_remaining=days_left
-                    )
+                    if days_left >= 0:
+                        msg = slack_service.deadline_blocks(
+                            obligation=ob, assignee=assignee, days_remaining=days_left
+                        )
+                    else:
+                        msg = slack_service.overdue_blocks(
+                            obligation=ob, days_late=-days_left
+                        )
                     slack_sent = bool(
                         slack_service.post(
                             msg["text"],

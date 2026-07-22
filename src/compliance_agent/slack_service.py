@@ -260,15 +260,14 @@ def deadline_blocks(
     status = obligation_status_label(obligation.status)
     due = obligation.due_date.strftime("%d-%b-%y")
     dot = "🔴" if days_remaining <= 7 else "🟡" if days_remaining <= 15 else "🟢"
-    text = f"{dot} {form} due in {days_remaining} {_days_word(days_remaining)} — {due} ({entity})"
+    text = f"{dot} {form} {_days_word(days_remaining)} — {due} ({entity})"
     blocks = [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"{dot} *{form}* due in *{days_remaining} "
-                    f"{_days_word(days_remaining)}* — {due}\n"
+                    f"{dot} *{form}* *{_days_word(days_remaining)}* — {due}\n"
                     f"`{juris}` · `{form}` · {entity} · status: *{status}*"
                 ),
             },
@@ -409,36 +408,6 @@ def filed_blocks(*, obligation: Obligation, actor: User) -> dict:
         },
         {"type": "section", "fields": _ob_context_fields(obligation)},
         _view_button(obligation, "Open the audit trail →"),
-        {"type": "divider"},
-    ]
-    return {"text": text, "blocks": blocks}
-
-
-def payment_request_blocks(*, obligation: Obligation, actor: User) -> dict:
-    """Admin approved a filing; finance needs to pay."""
-    form = obligation.rule.form_name if obligation.rule else "Compliance item"
-    entity = obligation.entity.name if obligation.entity else "—"
-    rule = obligation.rule
-    amount_hint = (rule.payment_rule or "").strip() if rule else ""
-    text = f":money_with_wings: Payment requested — {form} ({entity})."
-    blocks = [
-        {
-            "type": "header",
-            "text": {"type": "plain_text", "text": f"💸 Payment requested — {form}"},
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    f"*Filing approved* by *{(actor.full_name or actor.email).strip()}*. "
-                    f"Finance — please log the payment amount + UTR to close it out."
-                    + (f"\n\n*Payment rule:* _{amount_hint}_" if amount_hint else "")
-                ),
-            },
-        },
-        {"type": "section", "fields": _ob_context_fields(obligation)},
-        _view_button(obligation),
         {"type": "divider"},
     ]
     return {"text": text, "blocks": blocks}

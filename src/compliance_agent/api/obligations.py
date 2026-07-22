@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from compliance_agent.api._helpers import (
     ALERT_WINDOW_DAYS,
-    is_awaiting_payment,
     log_activity,
     serialize_calendar_obligation,
     serialize_obligation,
@@ -22,7 +21,6 @@ from compliance_agent.api._helpers import (
 from compliance_agent.api.notifications import (
     emit_assignment,
     emit_mentions,
-    emit_payment_request,
     emit_status_change,
     extract_mentions,
 )
@@ -302,11 +300,6 @@ def update_obligation(
             new_status=obligation.status,
             actor=user,
         )
-        # Filing was just approved AND the rule has a payment leg → fire an
-        # explicit "payment requested" notification so finance doesn't have
-        # to come check the Awaiting payment chip.
-        if completed_now and is_awaiting_payment(obligation):
-            emit_payment_request(db, obligation=obligation, actor=user)
 
     # Two-way sync: completing in-app closes the linked ClickUp task.
     # (The inbound webhook updates the ORM directly, not via this endpoint,
@@ -932,12 +925,6 @@ def bulk_update(
             emit_status_change(
                 db, assignee=assignee, obligation=o, new_status=o.status, actor=user
             )
-            if (
-                o.status == ObligationStatus.completed
-                and prev_status != ObligationStatus.completed
-                and is_awaiting_payment(o)
-            ):
-                emit_payment_request(db, obligation=o, actor=user)
 
         log_activity(
             db,
