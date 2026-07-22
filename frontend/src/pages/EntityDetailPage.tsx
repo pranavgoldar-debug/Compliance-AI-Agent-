@@ -645,23 +645,13 @@ function ApplicabilitySection({
   const notApplicable = grp("not_applicable");
 
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  // Default-tick mandatory + conditional. Keyed on the result's form names (a
-  // stable string) so the selection also initializes when the result is
-  // restored from the persisted entity.last_assessment after navigation — not
-  // only on a fresh run (which the old [assess.data] dependency missed).
+  // NOTHING is pre-ticked — mandatory included. Every item is opted into
+  // Review & Assign deliberately by the user. Keyed on the result's form
+  // names (a stable string) so a new/restored result clears any stale
+  // selection left over from a previous run.
   const resultKey = (result?.items ?? []).map((i) => i.form_name).join("|");
   useEffect(() => {
-    if (result) {
-      setPicked(
-        new Set(
-          (result.items ?? [])
-            // Default-tick ONLY mandatory; conditional + not-applicable start
-            // unticked so the user opts those into Review & Assign deliberately.
-            .filter((i) => i.verdict === "mandatory")
-            .map((i) => i.form_name),
-        ),
-      );
-    }
+    if (result) setPicked(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultKey]);
   const toggle = (form: string) =>

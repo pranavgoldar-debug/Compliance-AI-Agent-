@@ -216,7 +216,7 @@ Still in **Compliance**, click **"Activities"**. Answer the follow-up and operat
 - **Conditional** — applies only if a threshold or trigger is met.
 - **Not applicable** — ruled out by your activity answers; it won't be filed.
 
-Tick the ones you want (mandatory + conditional come pre-ticked) and click **"Add … to Review & Assign"**. That is the moment a draft leaves the entity and enters the shared **Review & Assign** queue.
+Tick the ones you want — nothing is pre-ticked, mandatory included, so every filing is a deliberate choice — and click **"Add … to Review & Assign"**. That is the moment a draft leaves the entity and enters the shared **Review & Assign** queue.
 
 ---
 
