@@ -2111,6 +2111,15 @@ function GoogleCalendarCard() {
       ),
     onSuccess: (r) => setResult(r),
   });
+  // Re-pushes every open assigned filing so already-created events pick up
+  // payload changes (e.g. the frequency-based reminders).
+  const resyncMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>(
+        "/api/admin/integrations/google-calendar/resync",
+      ),
+    onSuccess: (r) => setResult(r),
+  });
   if (!cfg) return null;
 
   return (
@@ -2140,19 +2149,35 @@ function GoogleCalendarCard() {
             </div>
           </div>
           {cfg.configured && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => testMutation.mutate()}
-              disabled={testMutation.isPending}
-            >
-              {testMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CalendarIcon className="h-3.5 w-3.5" />
-              )}
-              Send test event
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => resyncMutation.mutate()}
+                disabled={resyncMutation.isPending}
+                title="Re-push every open assigned filing so existing events pick up reminder changes"
+              >
+                {resyncMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                Re-sync all events
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => testMutation.mutate()}
+                disabled={testMutation.isPending}
+              >
+                {testMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CalendarIcon className="h-3.5 w-3.5" />
+                )}
+                Send test event
+              </Button>
+            </div>
           )}
         </div>
 

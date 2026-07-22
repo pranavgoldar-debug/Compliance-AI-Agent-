@@ -243,6 +243,51 @@ def test_google_calendar(
     return TestResult(ok=False, detail=detail)
 
 
+@admin_router.post("/google-calendar/resync", response_model=TestResult)
+def resync_google_calendar(
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> TestResult:
+    """Re-push every open, assigned filing to the shared calendar. Used to
+    roll event-level changes (e.g. the frequency-based reminders) onto
+    events that already exist, without waiting for each filing to be
+    touched. Runs sequentially in one background thread to stay gentle on
+    Google's rate limits."""
+    import threading
+
+    from compliance_agent import calendar_service
+
+    if not calendar_service.is_configured():
+        return TestResult(ok=False, detail="Google Calendar is not configured.")
+
+    ids = db.execute(
+        select(Obligation.id).where(
+            Obligation.assignee_id.is_not(None),
+            Obligation.status.not_in(
+                [ObligationStatus.completed, ObligationStatus.not_applicable]
+            ),
+        )
+    ).scalars().all()
+
+    def _run(oids: list[int]) -> None:
+        for oid in oids:
+            calendar_service.sync_obligation(oid, sync=True)
+
+    threading.Thread(target=_run, args=(list(ids),), daemon=True).start()
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="integration.gcal.resync",
+        target_type="integration",
+        payload={"queued": len(ids)},
+    )
+    db.commit()
+    return TestResult(
+        ok=True,
+        detail=f"Re-syncing {len(ids)} assigned filing(s) to the shared calendar in the background.",
+    )
+
+
 class EmailTestRequest(BaseModel):
     to: Optional[str] = Field(
         None, description="Override the recipient. Defaults to the actor's own email."

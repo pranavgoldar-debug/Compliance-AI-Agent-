@@ -56,7 +56,7 @@ def _event_payload(ob) -> dict:
     from compliance_agent.email_service import base_url
 
     day = ob.due_date.isoformat()
-    return {
+    payload = {
         "summary": f"{form} — {entity_name} (Assignee: {who})",
         "description": (
             f"Aspora Compliance filing.\n"
@@ -69,6 +69,24 @@ def _event_payload(ob) -> dict:
         "end": {"date": day},
         "transparency": "transparent",
     }
+
+    # Mirror the Slack/email reminder rule on the event itself (Monthly 7d,
+    # Quarterly 30d, …). Google caps event reminders at 4 weeks (40320
+    # minutes), so longer leads clamp to 28 days before. Note these fire for
+    # the connected Google account; other subscribers of the shared calendar
+    # get their own per-calendar notification defaults.
+    from compliance_agent.api._helpers import reminder_offsets_for_frequency
+
+    offsets = reminder_offsets_for_frequency(rule.frequency if rule else "")
+    if offsets:
+        overrides = []
+        for days in offsets[:2]:  # Google allows max 5 overrides per event
+            minutes = min(days * 24 * 60, 40320)
+            overrides.append({"method": "popup", "minutes": minutes})
+            overrides.append({"method": "email", "minutes": minutes})
+        payload["reminders"] = {"useDefault": False, "overrides": overrides}
+
+    return payload
 
 
 def _request(method: str, url: str, *, token: str, json_body: Optional[dict] = None):
