@@ -171,8 +171,7 @@ Go to **Entities → "Add entity"** (admin only). Fill in:
 - **Legal name** and **Jurisdiction** — required.
 - **Legal type**, **Short code**, **Registration number** — optional identifiers.
 - **Nature of operation** — one line on what the company does (e.g. *cross-border remittance & payments*). **The AI reads this to discover regulations**, so write it properly.
-- **Fiscal year end / ARD** — *important.* The last day of the company's financial year — the date its accounts are made up to (e.g. *31 March*). Most deadlines are *"X months after the year-end"*, so the calendar can't place them without it.
-- **Why "/ ARD"?** **ARD (Accounting Reference Date)** is the UK Companies House name for that **same date** — in this app **ARD = fiscal year end**, one date with two names. (It is *not* the *annual return / confirmation statement*, which is a separate filing.)
+- **Fiscal year end** — *important.* Many deadlines are "X months after financial year-end", so the calendar can't place them without it.
 - **Ownership** — optional parent → subsidiary chain.
 
 Save, then open the entity. You'll see five tabs: **Overview · Licences · Primary Activity · Compliance · Documents.**
@@ -191,8 +190,8 @@ Open the **Licences** tab → **"Upload license"**. Attach the licence PDF (the 
 
 Open the **Primary Activity** tab and answer each activity **Yes / No / TBD** (TBD = *to be decided* — everything starts there until you answer) — e.g. *"Does the entity trade cross-border?"*
 
-- **What they do:** gate the follow-up questions, and decide whether a discovered filing ends up **mandatory** or **conditional** for this entity.
-- **What they don't do:** they **don't change what discovery finds.** Discovery always assumes every activity could apply; the assessment narrows it down afterwards.
+- **What they do:** drive the **assessment** — they decide whether a discovered filing ends up **mandatory**, **conditional**, or (only on an explicit **No**) not applicable. TBD never removes anything.
+- **What they don't do:** they **don't change what discovery finds** — discovery always assumes the entity does *everything* (every activity = yes), so the full universe of filings is found regardless of your answers.
 
 ---
 
@@ -202,7 +201,7 @@ Open the **Compliance** tab → **"Refresh Regulations"** (the Sparkles button).
 
 Missed something? Use **"Add regulation"** — a two-tab dialog:
 
-- **Manual entry** — type the filing and build its due date visually (frequency → rule) with a live **"Next due"** preview, so you don't guess. Where the app knows authoritative links for the jurisdiction, pick one under **Suggested sources**.
+- **Manual entry** — type the filing and build its due date visually with the **Due-Date Builder** (see below) and a live **"Next due"** preview, so you don't guess. Where the app knows authoritative links for the jurisdiction, pick one under **Suggested sources**.
 - **Import** — upload your obligations register as **Excel or CSV**. Columns auto-map (adjustable), each row is validated, and a blank template is downloadable.
 
 Anything you add lands as a **draft on this entity's discovered list** — exactly like the AI's finds. Nothing is live yet.
@@ -223,10 +222,11 @@ Tick the ones you want (mandatory + conditional come pre-ticked) and click **"Ad
 
 ### Step 6 — Review & Assign (approve + pick owners)
 
-Open **Review & Assign** in the sidebar (admin only). Two tabs:
+Open **Review & Assign** in the sidebar (admin only). Three tabs:
 
 - **For Action** — everything waiting for you; each item carries an **"Awaiting review"** badge.
 - **Approved** — already live.
+- **Archived** — taken out of rotation, recoverable anytime (see below).
 
 Click a **For Action** card to expand it, then:
 
@@ -236,77 +236,84 @@ Click a **For Action** card to expand it, then:
 
 On approve, the rule moves to **Approved** and the app **automatically generates the dated obligation(s)** from its frequency + due-date rule — and they show up on the Calendar immediately. (You can still change the owner later from the Approved tab; it re-syncs to the calendar.)
 
-*Don't need it?* **Archive** (reversible, keeps history) or **Delete** (permanent).
+*Don't need it?* **Archive** or **Delete** (permanent). Archiving is **reversible and never deletes anything**: the rule just stops generating filings. It stays listed in the **Archived** tab here *and* in an **Archived** section on the entity's Compliance tab — both with a **Restore** button. Restoring a previously-approved rule puts its filings straight back on the calendar.
+
+---
+
+### Due date rules (the Due-Date Builder)
+
+The **Due date rule** defines *when* a filing is due. You meet the builder in two places: **"Add regulation"** (Step 4) and **Review & Assign → Edit** (Step 6). Pick a **Filing frequency** and a **Due date basis**, fill in the fields, and the calendar computes the real dates — the preview banner shows the next few so you can check them before saving.
+
+**Filing frequency — how often it recurs:**
+
+| Frequency | Meaning | Example |
+|---|---|---|
+| Annual | Once a year (12-month periods) | Annual accounts |
+| Semi-annual | Twice a year (every 6 months) | Half-yearly regulatory return |
+| Quarterly | Every 3 months | VAT return |
+| Monthly | Every month | Payroll / RTI |
+| One-time | Once, on a specific date; does not repeat | Initial registration |
+| Event-based | Only when something happens — no scheduled date | Change-in-control notification |
+| Continuous | Must be kept in place at all times — no scheduled date | AML programme, sanctions screening |
+
+> **Event-based** and **Continuous** filings don't get calendar dates — pick them in the builder and the rule is tracked without a schedule.
+
+**Due date basis — how the deadline is worked out** (shown for the recurring frequencies):
+
+- **Fixed day each period** (Annual: *Fixed date each year*) — a literal calendar date that repeats every period.
+- **After period end** (Annual: *After financial year end*) — the deadline is measured from the end of each reporting period.
+
+**Fields for "Fixed day each period":**
+
+- **Day** — the day of the month it's due (1–31). If the month is shorter, it's clamped to the last valid day (e.g. 31 → 30 in April, 28/29 in February).
+- **Month** — the anchor month (Annual / Semi-annual / Quarterly). Hidden for Monthly, which recurs on the chosen **Day** every month.
+
+**Fields for "After period end":**
+
+- **Offset** — how long *after* each period ends the filing is due: due date = period end + (Offset × Unit). **Offset 0** = due on the period-end date itself.
+- **Unit** — the unit for the offset: **months** or **days**.
+- **Snap to last day of the resulting month** (months only) — after adding the offset, move the due date to the **last day** of that month. Use it for "end of the Nth month after period end."
+
+> Period ends anchor on the **entity's fiscal year-end** (defaults to 31 December if none is set); each period steps back from there.
+
+**Field for "One-time":** just the **Due date** — the single calendar date the filing is due.
+
+**Schedule preview:** the purple banner lists the next computed due dates (and the period each belongs to) so you can sanity-check the rule. *"Set the rule above to see the schedule"* means the rule isn't complete yet.
+
+**Examples:**
+
+| Setup | Result |
+|---|---|
+| Annual · After financial year end · Offset **9 months** (FY end 31 Dec) | Due **30 Sep** each year (typical UK corporation-tax payment) |
+| Annual · Fixed date each year · Day **31**, Month **March** | Due **31 March** every year |
+| Quarterly · After period end · Offset **1 month** | Due **one month after** each quarter-end |
+| Monthly · Fixed day each period · Day **20** | Due on the **20th** of every month |
+| Quarterly VAT · After period end · Offset **1 month** · Snap on | Due **end of the month** after each quarter-end |
+
+---
+
+### Applicability
+
+**Applicability** records whether a filing applies to the entity:
+
+- **Mandatory** — always applies; a required obligation.
+- **Conditional** — applies only when certain conditions are met (e.g. turnover thresholds, specific activities). Confirm whether it applies to your entity.
+- **Sector-specific** — applies only to entities in particular sectors or licence types.
+
+To change it: open the rule in **Review & Assign → Edit**, set the **Applicability** dropdown, then **Save**. Use this when the AI marks something *Conditional* but it's *Mandatory* for your entity — or the reverse.
 
 ---
 
 ### Step 7 — It's on the Calendar
 
-Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
-
----
-
-### Step 8 — Do the work (Filings)
-
-**Filings** (sidebar) is each person's queue. Tabs: **Assigned to me · Filed · All**. Items are grouped **Overdue → In alert window → In progress → Upcoming → Filed**, each with a coloured **status pill**: *Not Started · Started · Under Progress · Filed · Not Applicable.*
-
-Open a filing and the buttons walk you through a **4-step handoff**:
-
-1. **Compliance prepares** — add the filing reference, upload proof, then **"Mark filing complete"**.
-2. **Admin verifies** — **"Approve & hand off to finance"** (if a payment is due), or close it; or **"Send back"** to fix.
-3. **Finance pays** — enter the amount + transaction reference, then **"Mark payment complete"**.
-4. **Admin signs off** — **"Approve & close"**. The filing is now **Filed** and moves to the Filed tab.
-
-(No payment needed? The admin just closes it at step 2.)
-
----
-
-### Writing due dates
-
-Most of the time you'll use the **visual due-date builder** in *Add regulation* — pick the frequency and the rule, and watch the **"Next due"** preview. You only type a due date as **free text** when editing a rule's deadline in Review & Assign, or in an **import file's deadline column**. When you do, use one of these shapes:
-
-| What you want | Type it like this | Frequency |
-|---|---|---|
-| Monthly, on a fixed day | \`by the 25th of the following month\` | Monthly |
-| Annual, fixed calendar date | \`by 30 Jun\` · \`31 Dec\` | Annually |
-| Within N months of FY-end | \`within 9 months of the financial year end\` | Annually |
-| Month + day after period end | \`15th day of the 6th month after the end of the tax period\` | Annually / Quarterly |
-
-> **Avoid vague text** like \`annually\`, \`as required\`, or \`see regulation\`. If the parser can't read a real deadline it falls back to "today + interval", so the date drifts day-to-day instead of sitting on the true statutory deadline.
-
-**What the frequencies mean:**
-
-| Frequency | Meaning | Example |
-|---|---|---|
-| Annual | Once a year | Annual accounts |
-| Semi-annual | Twice a year | Half-yearly regulatory return |
-| Quarterly | Every quarter | VAT return |
-| Monthly | Every month | Payroll / RTI |
-| One-time | Once, on a specific date | Initial registration |
-| Event-based | Only when something happens — no scheduled date | Change-in-control notification |
-| Continuous | Must be kept in place at all times — no scheduled date | AML programme, sanctions screening |
-
-> **Event-based** and **Continuous** filings don't get calendar dates — pick them in the due-date builder and the rule is tracked without a schedule.
-
----
-
-### Reminders & Slack
-
-Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status (**In progress / For review / Filed**) without leaving Slack — the website updates automatically.
-
-**Get @-mentioned in Slack (one-time, per person):** Slack only pings you when the app knows your Slack **member ID** — a display name isn't enough.
-
-1. In Slack: click your profile photo → **Profile** → **⋮ (three dots)** → **"Copy member ID"** (looks like \`U07ABC123\`).
-2. In the app: **Settings → Profile → "Your Slack member id"** → paste → **Save**.
-
-Once set, alert cards mention you with a real blue **@name** (and your status-button clicks in Slack are credited to your user). Without it, cards just show your name in bold — no ping. Turn the email/Slack toggles on under **Settings → Profile**.
+Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, tax type, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
 
 ### Google Calendar
 
 Every **assigned** filing is pushed automatically to the shared **"Aspora Compliance"** Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing.
 
 - **Assign / reassign** → the event appears or updates within seconds.
-- **Complete, mark N/A, or unassign** (in the app or via the Slack buttons) → the event disappears.
+- **Mark Filed, Not Applicable, or unassign** (in the app or via the Slack buttons) → the event disappears.
 - One filing = one event, no duplicates — the app keeps them in sync on its own.
 
 **Seeing the calendar (one-time, per person):** ask an admin to share the *Aspora Compliance* calendar with you ("See all event details"), then click **"Add this calendar"** in the invite email and make sure its checkbox is ticked in Google Calendar's sidebar. After that, every assignment shows up automatically — nothing to do per filing.
@@ -317,13 +324,40 @@ Every **assigned** filing is pushed automatically to the shared **"Aspora Compli
 
 ---
 
+### Step 8 — Do the work (Filings)
+
+**Filings** (sidebar) is each person's queue. Tabs: **Assigned to me · Filed · All**. Items are grouped **Overdue → In alert window → In progress → Upcoming → Filed**, each with a coloured **status pill**: *Not Started · Started · Under Progress · Filed · Not Applicable.*
+
+Open a filing — the stepper across the top shows exactly where it is: **Not Started → Started → Under Progress → Filed**. Move it along with the **Update status** menu:
+
+1. **Start** — flip the status to **Started** when work begins.
+2. **Submit** — prepare the filing (reference, proof documents), then click **"Mark filing complete"** (on the payment leg: **"Mark payment complete"**). The item moves to **Under Progress** for admin review.
+3. **Sign off** — an admin picks **Update status → Filed** to close it, or **"Send back"** to return it to the assignee. Closed the wrong one? Admins get a **Reopen** button on filed items.
+
+**Not applicable?** Admins can pick **Update status → Not Applicable** — a **reason is required**: a dialog asks why, posts the reason as a comment on the filing, and only then flips the status. The audit trail always shows who ruled it out and why.
+
+---
+
+### Reminders & Slack
+
+Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status without leaving Slack — the buttons are **▶ Started · 🔄 Under Progress · ✅ Filed · 🚫 Not Applicable** and the website updates automatically. (**Not Applicable** asks you to type the reason first — same rule as the app.)
+
+**Get @-mentioned in Slack (one-time, per person):** Slack only pings you when the app knows your Slack **member ID** — a display name isn't enough.
+
+1. In Slack: click your profile photo → **Profile** → **⋮ (three dots)** → **"Copy member ID"** (looks like \`U07ABC123\`).
+2. In the app: **Settings → Profile → "Your Slack member id"** → paste → **Save**.
+
+Once set, alert cards mention you with a real blue **@name** (and your status-button clicks in Slack are credited to your user). Without it, cards just show your name in bold — no ping. Turn the email/Slack toggles on under **Settings → Profile**.
+
+---
+
 ### Where everything lives
 
 | Page | What it's for |
 |---|---|
 | **Home** | Overdue / due-soon / awaiting-review at a glance. |
 | **Calendar** | Every due date across entities — the source of truth. |
-| **Filings** | Your work queue: prepare, attach proof, mark complete. |
+| **Filings** | Your work queue: prepare, attach proof, mark filed. |
 | **Documents** | Licence PDFs and proof-of-filing. |
 | **Entities** | Companies, fiscal year-ends, and licences (admin). |
 | **Review & Assign** | Approve discovered filings and set owners (admin). |
@@ -334,9 +368,9 @@ Every **assigned** filing is pushed automatically to the shared **"Aspora Compli
 
 ### In one breath
 
-Add the **entity** → upload its **licence** → set its **Primary Activity** → **Refresh Regulations** → **Find applicable regulations** → send them to **Review & Assign** → **Approve & assign** an owner → it lands on the **Calendar** and in that person's **Filings** → Compliance prepares, Admin verifies, Finance pays, Admin closes → **Filed.**
+Add the **entity** → upload its **licence** → set its **Primary Activity** → **Refresh Regulations** → **Find applicable regulations** → send them to **Review & Assign** → **Approve & assign** an owner → it lands on the **Calendar** and in that person's **Filings** → work it **Started → Under Progress** → admin signs it off → **Filed.**
 
-Most days you live in **Calendar** and **Filings**; the setup steps (1–6) you only repeat when you add a company or a new licence.
+Most days you live in **Calendar** and **Filings**; the setup steps you only repeat when you add a company or a new licence.
 `;
 
 
