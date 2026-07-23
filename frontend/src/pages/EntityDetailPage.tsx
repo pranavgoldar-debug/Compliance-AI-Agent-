@@ -1211,7 +1211,10 @@ function ComplianceRulesTab({
     >
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{r.name}</span>
+          {/* Lead with the form code — it's how the same rule is titled in
+              Review & Assign and on the calendar, so it's findable here too.
+              The generic name becomes the sub-line. */}
+          <span className="font-medium text-sm">{r.form_name || r.name}</span>
           {/* Discovered list is the exhaustive candidate set (assume all
               activities present) — no applicability label here; that's decided
               by "Find applicable regulations" below. */}
@@ -1222,6 +1225,7 @@ function ComplianceRulesTab({
           )}
         </div>
         <div className="text-xs text-muted-foreground mt-0.5">
+          {r.form_name && r.name && r.name !== r.form_name ? `${r.name} · ` : ""}
           {r.authority} · {r.category} · {r.frequency}
         </div>
       </div>
