@@ -222,11 +222,10 @@ Tick the ones you want — nothing is pre-ticked, mandatory included, so every f
 
 ### Step 6 — Review & Assign (approve + pick owners)
 
-Open **Review & Assign** in the sidebar (admin only). Three tabs:
+Open **Review & Assign** in the sidebar (admin only). Two tabs:
 
 - **For Action** — everything waiting for you; each item carries an **"Awaiting review"** badge.
 - **Approved** — already live.
-- **Archived** — taken out of rotation, recoverable anytime (see below).
 
 Click a **For Action** card to expand it, then:
 
@@ -236,7 +235,7 @@ Click a **For Action** card to expand it, then:
 
 On approve, the rule moves to **Approved** and the app **automatically generates the dated obligation(s)** from its frequency + due-date rule — and they show up on the Calendar immediately. (You can still change the owner later from the Approved tab; it re-syncs to the calendar.)
 
-*Don't need it?* **Archive** or **Delete** (permanent). Archiving is **reversible and never deletes anything**: the rule just stops generating filings. It stays listed in the **Archived** tab here *and* in an **Archived** section on the entity's Compliance tab — both with a **Restore** button. Restoring a previously-approved rule puts its filings straight back on the calendar.
+*Don't need it?* **Move back to Compliance** — the item returns to the entity's discovered list as a draft (nothing is lost; send it to Review & Assign again anytime) — or **Delete** (permanent).
 
 ---
 

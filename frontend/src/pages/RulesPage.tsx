@@ -10,7 +10,6 @@ import {
   CircleCheck,
   CircleAlert,
   CircleHelp,
-  Archive,
   AlertTriangle,
   ExternalLink,
   FileText,
@@ -197,9 +196,9 @@ export function RulesPage() {
       // that's selected.
       // For Action only shows items a human sent here; hide discovered drafts.
       if (tab === "staging") params.set("in_review", "true");
-      // Active sections (For Action / Approved) hide rules orphaned by a deleted
-      // entity (or only owned by archived ones). Archived tab keeps showing them.
-      if (tab !== "archived") params.set("active_entity_only", "true");
+      // Hide rules orphaned by a deleted entity (or only owned by archived
+      // entities).
+      params.set("active_entity_only", "true");
       return api.get<Rule[]>(`/api/rules?${params.toString()}`);
     },
   });
@@ -210,23 +209,20 @@ export function RulesPage() {
     queryFn: () => api.get<Entity[]>("/api/entities"),
   });
 
-  // Always-on counts for all three tab badges (For Action / Approved /
-  // Archived) — one consolidated query, refreshed by the same invalidation
-  // that mutations fire.
+  // Always-on counts for both tab badges (For Action / Approved) — one
+  // consolidated query, refreshed by the same invalidation that mutations fire.
   const { data: counts } = useQuery({
     queryKey: ["rules-count"],
     queryFn: async () => {
-      const [s, p, a] = await Promise.all([
+      const [s, p] = await Promise.all([
         api.get<Rule[]>("/api/rules?status=staging&in_review=true&active_entity_only=true"),
         api.get<Rule[]>("/api/rules?status=production&active_entity_only=true"),
-        api.get<Rule[]>("/api/rules?status=archived"),
       ]);
-      return { staging: s.length, production: p.length, archived: a.length };
+      return { staging: s.length, production: p.length };
     },
   });
   const stagingCount = counts?.staging;
   const productionCount = counts?.production;
-  const archivedCount = counts?.archived;
 
   // On open, make sure every For Action / Approved rule has its calendar
   // obligation — so items show on the calendar automatically.
@@ -349,14 +345,6 @@ export function RulesPage() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="archived">
-            Archived
-            {typeof archivedCount === "number" && (
-              <Badge variant="neutral" className="ml-1">
-                {archivedCount}
-              </Badge>
-            )}
-          </TabsTrigger>
         </TabsList>
       </Tabs>
         <div className="relative w-full sm:w-auto sm:min-w-[280px]">
@@ -460,9 +448,7 @@ export function RulesPage() {
           title={
             tab === "staging"
               ? "Inbox zero — no rules awaiting review"
-              : tab === "archived"
-                ? "No archived rules"
-                : "No rules match the filters"
+              : "No rules match the filters"
           }
           description={
             tab === "staging"
@@ -666,28 +652,9 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
     onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
 
-  // Restore an archived rule — back to Approved if it had been approved
-  // before, otherwise back to For Action. Restoring to Approved also
-  // brings its pending filings back onto the calendar.
-  const restoreMutation = useMutation({
-    mutationFn: (r: Rule) =>
-      api.patch<Rule>(`/api/rules/${r.id}`, {
-        status: r.approved_at ? "production" : "staging",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["rules-count"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
-      queryClient.invalidateQueries({ queryKey: ["obligations"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
-  });
-
   // Clear ONLY the section you're viewing — delete just this tab's rule ids,
-  // so clearing For Action / Approved / Archived never touches the others.
-  const sectionLabel =
-    tab === "staging" ? "For Action" : tab === "production" ? "Approved" : "Archived";
+  // so clearing For Action never touches Approved and vice versa.
+  const sectionLabel = tab === "staging" ? "For Action" : "Approved";
   const clearSection = useMutation({
     mutationFn: (ids: number[]) =>
       api.post<{ deleted: number }>("/api/rules/bulk-delete", { ids }),
@@ -722,8 +689,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
   });
 
   // Permanently remove rules orphaned by a deleted entity (no live entity left).
-  // The active sections already HIDE these; this clears them from the DB too.
-  // Archived rules are left alone.
+  // The sections already HIDE these; this clears them from the DB too.
   const orphanCleanup = useMutation({
     mutationFn: () =>
       api.post<{ deleted_rules: number; deleted_obligations: number }>(
@@ -804,7 +770,7 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
               onClick={() => {
                 if (
                   window.confirm(
-                    "Permanently delete rules left with no live entity (orphaned by a deleted entity), plus any filings off them? Archived rules and the Library catalogue are NOT touched. This can't be undone.",
+                    "Permanently delete rules left with no live entity (orphaned by a deleted entity), plus any filings off them? The Library catalogue is NOT touched. This can't be undone.",
                   )
                 ) {
                   orphanCleanup.mutate();
@@ -849,9 +815,6 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                 </>
               )}
               <th className="px-3 py-2.5 text-left font-medium">Source</th>
-              {tab === "archived" && (
-                <th className="px-3 py-2.5 text-right font-medium">Actions</th>
-              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -958,26 +921,6 @@ function ProductionTable({ rules, tab }: { rules: Rule[]; tab: string }) {
                     )}
                   </button>
                 </td>
-                {tab === "archived" && (
-                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={restoreMutation.isPending}
-                      onClick={() => restoreMutation.mutate(r)}
-                      title={
-                        r.approved_at
-                          ? "Restore to Approved — its filings come back onto the calendar"
-                          : "Restore to For Action for review"
-                      }
-                    >
-                      {restoreMutation.isPending && (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      )}
-                      Restore
-                    </Button>
-                  </td>
-                )}
               </tr>
             ))}
           </tbody>
@@ -1110,8 +1053,11 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
       }),
     onSuccess: refresh,
   });
-  const archiveMutation = useMutation({
-    mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { status: "archived" }),
+  // Send the rule back to the entity's Compliance tab: it stays a staging
+  // draft, just no longer flagged for review — so it reappears on the
+  // discovered list and can be re-sent later.
+  const returnMutation = useMutation({
+    mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { sent_to_review: false }),
     onSuccess: refresh,
   });
   const deleteMutation = useMutation({
@@ -1130,12 +1076,12 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
   const busy =
     saveMutation.isPending ||
     promoteMutation.isPending ||
-    archiveMutation.isPending ||
+    returnMutation.isPending ||
     deleteMutation.isPending;
   const err =
     saveMutation.error ||
     promoteMutation.error ||
-    archiveMutation.error ||
+    returnMutation.error ||
     deleteMutation.error;
 
   return (
@@ -1299,16 +1245,16 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
                     onClick={() => {
                       if (
                         window.confirm(
-                          `Archive "${rule.form_name}"? It moves to the Archived section and stops generating filings. You can still delete it later.`,
+                          `Move "${rule.form_name}" back to the entity's Compliance tab? It returns to the discovered list as a draft — you can send it to Review & Assign again anytime.`,
                         )
                       ) {
-                        archiveMutation.mutate();
+                        returnMutation.mutate();
                       }
                     }}
-                    title="Move to Archived (reversible — not a permanent delete)"
+                    title="Return to the entity's discovered list (not a delete)"
                   >
-                    {archiveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Archive
+                    {returnMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Move back to Compliance
                   </Button>
                   <Button
                     variant="ghost"
@@ -1373,11 +1319,7 @@ function StagingTable({ rules }: { rules: Rule[] }) {
     mutationFn: (id: number) => api.patch<Rule>(`/api/rules/${id}`, { status: "production" }),
     onSuccess: refresh,
   });
-  const reject = useMutation({
-    mutationFn: (id: number) => api.patch<Rule>(`/api/rules/${id}`, { status: "archived" }),
-    onSuccess: refresh,
-  });
-  const busy = approve.isPending || reject.isPending;
+  const busy = approve.isPending;
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
