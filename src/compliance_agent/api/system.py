@@ -30,6 +30,68 @@ def system_info() -> SystemInfo:
     )
 
 
+@router.get("/find-rules")
+def find_rules(q: str = "", _: User = Depends(require_admin)) -> dict:
+    """Admin-only, browser-openable diagnostic: search EVERY rule — all
+    statuses, ignoring the Finance-only visibility filter — by name / form /
+    authority / jurisdiction, plus the most recent rule-related audit-log
+    entries. Use it to trace where a filing went:
+    `/api/system/find-rules?q=gpm312`.
+    """
+    from sqlalchemy import desc, or_, select
+
+    from compliance_agent.db import Activity, Rule, session_scope
+
+    with session_scope() as db:
+        stmt = select(Rule)
+        if q.strip():
+            like = f"%{q.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Rule.name.ilike(like),
+                    Rule.form_name.ilike(like),
+                    Rule.authority.ilike(like),
+                    Rule.jurisdiction_code.ilike(like),
+                )
+            )
+        rules = db.execute(stmt.order_by(desc(Rule.updated_at)).limit(100)).scalars().all()
+        rules_out = [
+            {
+                "id": r.id,
+                "form_name": r.form_name,
+                "name": r.name,
+                "jurisdiction": r.jurisdiction_code,
+                "status": r.status.value,
+                "sent_to_review": bool(r.sent_to_review),
+                "responsible_function": r.responsible_function,
+                "category": r.category,
+                "entities": [e.name for e in r.entities],
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+            for r in rules
+        ]
+        acts = db.execute(
+            select(Activity)
+            .where(Activity.action.like("rule%"))
+            .order_by(desc(Activity.created_at))
+            .limit(50)
+        ).scalars().all()
+        activity_out = [
+            {
+                "at": a.created_at.isoformat() if a.created_at else None,
+                "action": a.action,
+                "target_id": a.target_id,
+                "payload": a.payload,
+            }
+            for a in acts
+        ]
+    return {
+        "matches": len(rules_out),
+        "rules": rules_out,
+        "recent_rule_activity": activity_out,
+    }
+
+
 @router.get("/recover-archived-rules")
 def recover_archived_rules(_: User = Depends(require_admin)) -> dict:
     """Admin-only, browser-openable recovery for rules stranded in the old

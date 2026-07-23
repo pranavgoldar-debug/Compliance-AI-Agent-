@@ -1059,6 +1059,7 @@ function StagingCard({ rule, defaultOpen = false }: { rule: Rule; defaultOpen?: 
   const returnMutation = useMutation({
     mutationFn: () => api.patch<Rule>(`/api/rules/${rule.id}`, { sent_to_review: false }),
     onSuccess: refresh,
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
   });
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/rules/${rule.id}`),
