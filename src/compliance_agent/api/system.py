@@ -30,6 +30,39 @@ def system_info() -> SystemInfo:
     )
 
 
+@router.get("/recover-archived-rules")
+def recover_archived_rules(_: User = Depends(require_admin)) -> dict:
+    """Admin-only, browser-openable recovery for rules stranded in the old
+    'archived' status (the archive feature was removed; archived rows are
+    invisible in the UI). Every archived rule goes back to the entity's
+    Compliance tab as a discovered draft (status=staging,
+    sent_to_review=false). Idempotent — a second run finds nothing. Open it
+    in the browser while logged in as an admin:
+    `/api/system/recover-archived-rules`.
+    """
+    from sqlalchemy import select
+
+    from compliance_agent.db import Rule, RuleStatus, session_scope
+
+    with session_scope() as db:
+        rows = db.execute(
+            select(Rule).where(Rule.status == RuleStatus.archived)
+        ).scalars().all()
+        names = []
+        for r in rows:
+            r.status = RuleStatus.staging
+            r.sent_to_review = False
+            names.append(
+                f"{r.form_name or r.name} ({', '.join(e.name for e in r.entities) or 'no entity'})"
+            )
+        db.commit()
+    return {
+        "recovered": len(names),
+        "rules": names,
+        "note": "These are back on their entity's Compliance tab as discovered drafts.",
+    }
+
+
 @router.get("/repair-schema")
 def repair_schema(_: User = Depends(require_admin)) -> dict:
     """Admin-only, browser-openable schema repair (no shell, no DB client).
