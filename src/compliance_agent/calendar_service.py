@@ -70,21 +70,25 @@ def _event_payload(ob) -> dict:
         "transparency": "transparent",
     }
 
-    # Mirror the Slack/email reminder rule on the event itself (Monthly 7d,
-    # Quarterly 30d, …). Google caps event reminders at 4 weeks (40320
-    # minutes), so longer leads clamp to 28 days before. Note these fire for
-    # the connected Google account; other subscribers of the shared calendar
-    # get their own per-calendar notification defaults.
+    # Mirror the escalating reminder rule on the event itself as far as
+    # Google allows: event reminders cap at 4 weeks (40320 minutes) and 5
+    # overrides per event, so the event carries popups at the (capped)
+    # frequency lead, T-14, T-7 and T-1, plus one email at the lead.
+    # Note these fire for the connected Google account; other subscribers
+    # of the shared calendar get their own per-calendar notification
+    # defaults. The exact escalation ladder (daily/2-daily/… pings) is
+    # delivered by the reminder cron via Slack + email.
     from compliance_agent.api._helpers import reminder_offsets_for_frequency
 
     offsets = reminder_offsets_for_frequency(rule.frequency if rule else "")
     if offsets:
-        overrides = []
-        for days in offsets[:2]:  # Google allows max 5 overrides per event
-            minutes = min(days * 24 * 60, 40320)
-            overrides.append({"method": "popup", "minutes": minutes})
-            overrides.append({"method": "email", "minutes": minutes})
-        payload["reminders"] = {"useDefault": False, "overrides": overrides}
+        lead = min(max(offsets), 28)  # Google's 4-week ceiling
+        points = sorted({d for d in (lead, 14, 7, 1) if d <= lead}, reverse=True)
+        overrides: list[dict] = [
+            {"method": "popup", "minutes": d * 24 * 60} for d in points
+        ]
+        overrides.append({"method": "email", "minutes": lead * 24 * 60})
+        payload["reminders"] = {"useDefault": False, "overrides": overrides[:5]}
 
     return payload
 

@@ -1,18 +1,19 @@
 """Outbound deadline reminders.
 
 The FIRST reminder for each open assigned obligation is driven by the
-filing's frequency (reminder_offsets_for_frequency):
+filing's frequency (reminder_offsets_for_frequency), and the follow-up
+cadence escalates per frequency until the filing is Filed:
 
-  Monthly      →   7 days before
-  Quarterly    →  30 days before
-  Semi-annual  →  45 days before
-  Annual       →  60 days before
+  Monthly      →  first at  7 days before, then DAILY
+  Quarterly    →  first at 30 days before, then every 2 days
+  Half-yearly  →  first at 45 days before, then weekly
+  Annual       →  first at 60 days before, then weekly until T-14,
+                  daily after
+  Multi-year   →  first at 90 days before, then bi-weekly until T-28,
+                  weekly after
 
-After that first ping the filing keeps being chased until it's Filed:
-
-  - a follow-up every 7 days until the due date,
-  - a "due today" ping on the due date itself,
-  - and once overdue, a ping every 7 days late (7, 14, 21, …).
+Every filing also gets a "due today" ping on the due date itself, and
+once overdue, a chaser every 7 days late (7, 14, 21, …).
 
 Intended to be run on a daily schedule:
 
@@ -172,16 +173,31 @@ def find_due_for_reminder(db: Session) -> list[Obligation]:
 
 
 def _reminder_slots(lead: int) -> list[int]:
-    """All pre-due reminder days for a filing: the frequency lead itself,
-    then a follow-up every 7 days down to (and including) the due date.
+    """All pre-due reminder days for a filing — the frequency lead itself,
+    then the per-frequency escalation ladder down to (and including) the
+    due date:
 
-    lead=7  → [7, 0]
-    lead=30 → [30, 23, 16, 9, 2, 0]
-    lead=60 → [60, 53, 46, 39, 32, 25, 18, 11, 4, 0]
+      lead ≤ 7  (Monthly)     → daily:            [7, 6, 5, 4, 3, 2, 1, 0]
+      lead ≤ 30 (Quarterly)   → every 2 days:     [30, 28, 26, …, 2, 0]
+      lead ≤ 45 (Half-yearly) → weekly:           [45, 38, 31, 24, 17, 10, 3, 0]
+      lead ≤ 60 (Annual)      → weekly to T-14,
+                                daily after:      [60, 53, …, 18, 14, 13, …, 0]
+      lead > 60 (Multi-year)  → bi-weekly to T-28,
+                                weekly after:     [90, 76, 62, 48, 34, 28, 21, 14, 7, 0]
     """
-    slots = list(range(lead, 0, -7))
-    slots.append(0)
-    return slots
+    if lead <= 7:
+        slots = list(range(lead, -1, -1))
+    elif lead <= 30:
+        slots = list(range(lead, -1, -2))
+    elif lead <= 45:
+        slots = list(range(lead, -1, -7))
+    elif lead <= 60:
+        slots = list(range(lead, 14, -7)) + list(range(14, -1, -1))
+    else:
+        slots = list(range(lead, 28, -14)) + list(range(28, -1, -7))
+    if 0 not in slots:
+        slots.append(0)
+    return sorted(set(slots), reverse=True)
 
 
 def _trigger_offset(
@@ -223,10 +239,11 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
 
         for ob in find_due_for_reminder(db):
             # The FIRST reminder is driven by the filing's FREQUENCY
-            # (Monthly→7d, Quarterly→30d, Semi-annual→45d, Annual→60d);
-            # fall back to the effort-band offsets when the rule has no
-            # usable frequency. After that: weekly follow-ups, a due-day
-            # ping, then weekly overdue pings.
+            # (Monthly→7d, Quarterly→30d, Half-yearly→45d, Annual→60d,
+            # Multi-year→90d); fall back to the effort-band offsets when
+            # the rule has no usable frequency. After that the per-frequency
+            # escalation ladder (_reminder_slots) runs to the due date,
+            # then weekly overdue pings.
             freq = ob.rule.frequency if ob.rule else ""
             offsets = reminder_offsets_for_frequency(freq)
             if not offsets:

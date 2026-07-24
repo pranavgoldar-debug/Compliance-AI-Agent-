@@ -339,12 +339,17 @@ Open a filing — the stepper across the top shows exactly where it is: **Not St
 
 ### Reminders & Slack
 
-Reminders go out by **email** and **Slack**, and they keep chasing until the filing is done:
+Reminders go out by **email** and **Slack**, and they escalate per frequency until the filing is done:
 
-- **First reminder** — by frequency: **Monthly 7 days** · **Quarterly 30 days** · **Semi-annual 45 days** · **Annual 60 days** before the due date.
-- **Follow-ups** — every **7 days** after the first reminder, until the due date.
-- **Due day** — a "due today" ping on the deadline itself.
-- **Overdue** — a chaser every **7 days late** until it's Filed (or Not Applicable).
+| Frequency | First reminder | Then |
+|---|---|---|
+| Monthly | 7 days before | Daily |
+| Quarterly | 30 days before | Every 2 days |
+| Half-yearly | 45 days before | Weekly |
+| Annual | 60 days before | Weekly until 14 days out, then daily |
+| Multi-year / long-form | 90 days before | Bi-weekly until 28 days out, then weekly |
+
+Plus a **"due today"** ping on the deadline itself, and once **overdue**, a chaser every **7 days late** until it's Filed (or Not Applicable). The Google Calendar event carries matching popup reminders (at the lead, 14, 7 and 1 days out — Google caps event reminders at 4 weeks).
 
 From a Slack card you can open the filing or change its status without leaving Slack — the buttons are **▶ Started · 🔄 Under Progress · ✅ Filed · 🚫 Not Applicable** and the website updates automatically. (**Not Applicable** asks you to type the reason first — same rule as the app.)
 
