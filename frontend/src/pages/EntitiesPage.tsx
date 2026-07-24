@@ -650,10 +650,19 @@ function TableView({
                     <div className="h-8 w-8 rounded-lg bg-aspora-100 grid place-items-center text-aspora-700 font-semibold text-[10px] shrink-0">
                       {e.short_code || userInitials(e.name)}
                     </div>
-                    <div className="font-medium truncate">{e.name}</div>
+                    {/* Bounded width so truncate actually engages — in an
+                        auto-layout table an unbounded cell just grows to fit
+                        the longest name and pushes the tail columns off-screen. */}
+                    <div className="font-medium truncate max-w-[280px]" title={e.name}>
+                      {e.name}
+                    </div>
                   </Link>
                 </td>
-                <td className="px-4 py-2.5 text-muted-foreground">{e.legal_type}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">
+                  <div className="max-w-[180px] truncate" title={e.legal_type ?? undefined}>
+                    {e.legal_type}
+                  </div>
+                </td>
                 <td className="px-4 py-2.5">
                   <Badge variant={entityStatusVariant(e.status)}>
                     {entityStatusLabel(e.status)}
