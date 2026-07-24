@@ -1661,7 +1661,8 @@ function EditEntityDialog({
   const [nature, setNature] = useState(entity.nature_of_operation ?? "");
   const [status, setStatus] = useState<EntityStatus>(entity.status ?? "not_started");
   const [ownership, setOwnership] = useState<OwnershipStage[]>(entity.ownership ?? []);
-  // Country lead — first stop of the overdue escalation chain (1 day late).
+  // MLRO — first stop of the overdue escalation chain (pinged at 1 and 3
+  // days late). Stored as country_lead_id; one per entity/country.
   const [countryLeadId, setCountryLeadId] = useState<number | "">(
     entity.country_lead?.id ?? "",
   );
@@ -1789,7 +1790,7 @@ function EditEntityDialog({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium">Country lead</label>
+            <label className="text-xs font-medium">MLRO</label>
             <select
               value={countryLeadId}
               onChange={(e) =>
@@ -1806,7 +1807,7 @@ function EditEntityDialog({
             </select>
             <p className="text-[11px] text-muted-foreground">
               First escalation stop — notified when any of this entity's filings
-              is 1 day overdue.
+              is 1 day overdue, and again at 3 days.
             </p>
           </div>
           <div className="space-y-1">

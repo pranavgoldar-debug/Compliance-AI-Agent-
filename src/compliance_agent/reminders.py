@@ -17,11 +17,12 @@ once overdue, a chaser every 7 days late (7, 14, 21, …).
 
 Overdue items additionally ESCALATE beyond the assignee:
 
-  overdue 1 day  → the entity's country lead is notified
-  overdue 3 days → the Head of Compliance (Settings → Alert policies)
-  overdue 7 days → the CFO, by email    (Settings → Alert policies)
+  overdue 1 day  → the entity's MLRO is notified
+  overdue 3 days → the entity's MLRO again (second nudge)
+  overdue 7 days → the CFO, by email (Settings → Alert policies)
 
-Each escalation step fires exactly once per filing + person.
+The MLRO is per-entity (entities.country_lead_id — each country's entity
+has its own). Each escalation step fires exactly once per filing.
 
 Intended to be run on a daily schedule:
 
@@ -238,16 +239,14 @@ def _trigger_offset(
     return min(candidates)
 
 
-def _escalation_contacts(db: Session) -> tuple[Optional[User], Optional[User]]:
-    """(Head of Compliance, CFO) from the workspace 'escalation' setting —
-    either may be None when unset."""
+def _escalation_contacts(db: Session) -> Optional[User]:
+    """The CFO from the workspace 'escalation' setting — None when unset.
+    (The MLRO is per-entity: entities.country_lead_id.)"""
     from compliance_agent.db import WorkspaceSetting
 
     row = db.get(WorkspaceSetting, "escalation")
     v = dict(row.value or {}) if row else {}
-    hoc = db.get(User, v["head_of_compliance_id"]) if v.get("head_of_compliance_id") else None
-    cfo = db.get(User, v["cfo_id"]) if v.get("cfo_id") else None
-    return hoc, cfo
+    return db.get(User, v["cfo_id"]) if v.get("cfo_id") else None
 
 
 def _run_escalations(
@@ -255,23 +254,22 @@ def _run_escalations(
     ob: Obligation,
     days_late: int,
     *,
-    hoc: Optional[User],
     cfo: Optional[User],
     slack_on: bool,
     dry_run: bool,
 ) -> None:
-    """Overdue escalation chain — 1d: country lead, 3d: Head of Compliance,
-    7d: CFO (email). One send per filing + person, deduped via the same
+    """Overdue escalation chain — 1d: the entity's MLRO, 3d: the MLRO again,
+    7d: CFO (email). One send per filing + step, deduped via the same
     Notification-title tags as the assignee reminders. Skips a step when the
     person isn't configured or is already the assignee (they're being chased
     anyway)."""
     from compliance_agent.email_service import base_url
 
-    country_lead = ob.entity.country_lead if ob.entity else None
+    mlro = ob.entity.country_lead if ob.entity else None
     steps: list[tuple[int, Optional[User], str, bool]] = [
         # (days-late threshold, who, role label, email-only)
-        (1, country_lead, "country lead", False),
-        (3, hoc, "Head of Compliance", False),
+        (1, mlro, "MLRO", False),
+        (3, mlro, "MLRO", False),
         (7, cfo, "CFO", True),
     ]
     form = ob.rule.form_name if ob.rule else "Compliance item"
@@ -331,17 +329,17 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
 
     with session_scope() as db:
         slack_on = slack_service.is_configured(db)
-        hoc, cfo = _escalation_contacts(db)
+        cfo = _escalation_contacts(db)
 
         for ob in find_due_for_reminder(db):
             days_left = (ob.due_date - today_d).days
 
-            # Overdue → run the escalation chain (country lead / Head of
-            # Compliance / CFO) regardless of the assignee-chaser slots.
+            # Overdue → run the escalation chain (MLRO at 1d and 3d, CFO at
+            # 7d) regardless of the assignee-chaser slots.
             if days_left < 0:
                 _run_escalations(
                     db, ob, -days_left,
-                    hoc=hoc, cfo=cfo, slack_on=slack_on, dry_run=dry_run,
+                    cfo=cfo, slack_on=slack_on, dry_run=dry_run,
                 )
 
             # The FIRST reminder is driven by the filing's FREQUENCY

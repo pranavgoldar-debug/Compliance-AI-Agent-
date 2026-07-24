@@ -353,8 +353,8 @@ Plus a **"due today"** ping on the deadline itself, and once **overdue**, a chas
 
 **Overdue escalation** — beyond the assignee, each step fires once per filing:
 
-- **1 day overdue** → the entity's **country lead** (set on the entity — Entities → edit).
-- **3 days overdue** → the **Head of Compliance** (picked under Settings → Alert policies).
+- **1 day overdue** → the entity's **MLRO** (set on the entity — Entities → edit; each country's entity has its own).
+- **3 days overdue** → the **MLRO again** (second nudge).
 - **7 days overdue** → the **CFO**, by email (picked under Settings → Alert policies).
 
 From a Slack card you can open the filing or change its status without leaving Slack — the buttons are **▶ Started · 🔄 Under Progress · ✅ Filed · 🚫 Not Applicable** and the website updates automatically. (**Not Applicable** asks you to type the reason first — same rule as the app.)
@@ -2591,19 +2591,11 @@ function AlertPoliciesTab() {
         </div>
         <ul className="space-y-2 text-sm">
           <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
-            <span>Overdue 1 day</span>
+            <span>Overdue 1 &amp; 3 days</span>
             <span className="text-muted-foreground text-xs">
-              Notify country lead — set per entity (Entities → edit)
+              Notify the entity's MLRO — set per entity (Entities → edit),
+              since each country's entity has its own
             </span>
-          </li>
-          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
-            <span>
-              Overdue 3 days
-              <span className="text-muted-foreground text-xs"> — notify Head of Compliance</span>
-            </span>
-            {userSelect(esc?.head_of_compliance_id, (id) =>
-              saveEsc.mutate({ head_of_compliance_id: id }),
-            )}
           </li>
           <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
             <span>
