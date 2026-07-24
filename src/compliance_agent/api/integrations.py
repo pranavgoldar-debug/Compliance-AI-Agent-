@@ -31,6 +31,7 @@ from compliance_agent.db import (
     ObligationStatus,
     Role,
     User,
+    WorkspaceSetting,
     get_session,
     obligation_status_label,
     session_scope,
@@ -192,6 +193,61 @@ def test_slack(
         ok=False,
         detail="Slack rejected the post. Double-check the webhook URL and that the channel still exists.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Escalation contacts — who gets pinged when a filing goes overdue.
+# The country lead is per-entity (entities.country_lead_id); these two are
+# workspace-wide. Consumed by the reminder cron's escalation steps
+# (overdue 1d → country lead, 3d → Head of Compliance, 7d → CFO).
+# ---------------------------------------------------------------------------
+ESCALATION_KEY = "escalation"
+
+
+class EscalationConfig(BaseModel):
+    head_of_compliance_id: Optional[int] = None
+    cfo_id: Optional[int] = None
+
+
+@admin_router.get("/escalation", response_model=EscalationConfig)
+def get_escalation(
+    db: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+) -> EscalationConfig:
+    row = db.get(WorkspaceSetting, ESCALATION_KEY)
+    v = dict(row.value or {}) if row else {}
+    return EscalationConfig(
+        head_of_compliance_id=v.get("head_of_compliance_id"),
+        cfo_id=v.get("cfo_id"),
+    )
+
+
+@admin_router.post("/escalation", response_model=EscalationConfig)
+def set_escalation(
+    payload: EscalationConfig,
+    db: Session = Depends(get_session),
+    actor: User = Depends(require_admin),
+) -> EscalationConfig:
+    for uid in (payload.head_of_compliance_id, payload.cfo_id):
+        if uid is not None and db.get(User, uid) is None:
+            raise HTTPException(status_code=400, detail=f"User {uid} not found.")
+    row = db.get(WorkspaceSetting, ESCALATION_KEY)
+    value = payload.model_dump()
+    if row is None:
+        row = WorkspaceSetting(key=ESCALATION_KEY, value=value, updated_by_id=actor.id)
+        db.add(row)
+    else:
+        row.value = value
+        row.updated_by_id = actor.id
+    log_activity(
+        db,
+        actor_id=actor.id,
+        action="integration.escalation.updated",
+        target_type="integration",
+        payload=value,
+    )
+    db.commit()
+    return payload
 
 
 # ---------------------------------------------------------------------------

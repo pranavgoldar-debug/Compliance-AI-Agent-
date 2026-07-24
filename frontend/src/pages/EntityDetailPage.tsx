@@ -48,7 +48,7 @@ import { deriveFunction, entityStatusLabel, entityStatusVariant, fieldLabel, fmt
 import { CountrySelect } from "@/components/CountrySelect";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, BankDetails, DocumentOut, Entity, EntityStatus, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
+import type { ActivityOut, BankDetails, DocumentOut, Entity, EntityStatus, GeneratedQuestion, License, Obligation, OwnershipStage, Rule, UserBrief } from "@/types/api";
 
 
 function StatTile({
@@ -1661,6 +1661,15 @@ function EditEntityDialog({
   const [nature, setNature] = useState(entity.nature_of_operation ?? "");
   const [status, setStatus] = useState<EntityStatus>(entity.status ?? "not_started");
   const [ownership, setOwnership] = useState<OwnershipStage[]>(entity.ownership ?? []);
+  // Country lead — first stop of the overdue escalation chain (1 day late).
+  const [countryLeadId, setCountryLeadId] = useState<number | "">(
+    entity.country_lead?.id ?? "",
+  );
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    staleTime: 300_000,
+  });
   const [error, setError] = useState<string | null>(null);
 
   // Re-sync the form when the entity object changes (e.g. polling refresh).
@@ -1678,6 +1687,7 @@ function EditEntityDialog({
       setNature(entity.nature_of_operation ?? "");
       setStatus(entity.status ?? "not_started");
       setOwnership(entity.ownership ?? []);
+      setCountryLeadId(entity.country_lead?.id ?? "");
       setError(null);
     }
   }, [open, entity]);
@@ -1707,6 +1717,7 @@ function EditEntityDialog({
         nature_of_operation: nature.trim() || null,
         status,
         ownership: cleaned.length ? cleaned : null,
+        country_lead_id: countryLeadId === "" ? null : Number(countryLeadId),
       });
     },
     onSuccess: () => {
@@ -1776,6 +1787,27 @@ function EditEntityDialog({
               rows={2}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
             />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Country lead</label>
+            <select
+              value={countryLeadId}
+              onChange={(e) =>
+                setCountryLeadId(e.target.value ? Number(e.target.value) : "")
+              }
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">— not set —</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              First escalation stop — notified when any of this entity's filings
+              is 1 day overdue.
+            </p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Nature of operation</label>

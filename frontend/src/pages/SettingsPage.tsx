@@ -351,6 +351,12 @@ Reminders go out by **email** and **Slack**, and they escalate per frequency unt
 
 Plus a **"due today"** ping on the deadline itself, and once **overdue**, a chaser every **7 days late** until it's Filed (or Not Applicable). The Google Calendar event carries matching popup reminders (at the lead, 14, 7 and 1 days out — Google caps event reminders at 4 weeks).
 
+**Overdue escalation** — beyond the assignee, each step fires once per filing:
+
+- **1 day overdue** → the entity's **country lead** (set on the entity — Entities → edit).
+- **3 days overdue** → the **Head of Compliance** (picked under Settings → Alert policies).
+- **7 days overdue** → the **CFO**, by email (picked under Settings → Alert policies).
+
 From a Slack card you can open the filing or change its status without leaving Slack — the buttons are **▶ Started · 🔄 Under Progress · ✅ Filed · 🚫 Not Applicable** and the website updates automatically. (**Not Applicable** asks you to type the reason first — same rule as the app.)
 
 **Get @-mentioned in Slack (one-time, per person):** Slack only pings you when the app knows your Slack **member ID** — a display name isn't enough.
@@ -2501,6 +2507,49 @@ function AddJurisdictionDialog({
 // Alert policies
 // ---------------------------------------------------------------------------
 function AlertPoliciesTab() {
+  const queryClient = useQueryClient();
+  // Escalation contacts — country lead lives on each entity; these two are
+  // workspace-wide and drive the overdue 3d / 7d escalation steps.
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    staleTime: 300_000,
+  });
+  const { data: esc } = useQuery({
+    queryKey: ["escalation-contacts"],
+    queryFn: () =>
+      api.get<{ head_of_compliance_id: number | null; cfo_id: number | null }>(
+        "/api/admin/integrations/escalation",
+      ),
+  });
+  const saveEsc = useMutation({
+    mutationFn: (patch: { head_of_compliance_id?: number | null; cfo_id?: number | null }) =>
+      api.post("/api/admin/integrations/escalation", {
+        head_of_compliance_id: esc?.head_of_compliance_id ?? null,
+        cfo_id: esc?.cfo_id ?? null,
+        ...patch,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["escalation-contacts"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const userSelect = (
+    value: number | null | undefined,
+    onChange: (id: number | null) => void,
+  ) => (
+    <select
+      value={value ?? ""}
+      disabled={saveEsc.isPending || !esc}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      className="h-8 rounded-md border border-input bg-background px-2 text-xs max-w-[200px]"
+    >
+      <option value="">— not set —</option>
+      {users.map((u) => (
+        <option key={u.id} value={u.id}>
+          {u.full_name || u.email}
+        </option>
+      ))}
+    </select>
+  );
   return (
     <Card>
       <CardContent className="p-6 space-y-5">
@@ -2535,20 +2584,33 @@ function AlertPoliciesTab() {
 
         <div className="space-y-1 pt-4 border-t border-border">
           <h3 className="font-semibold">Escalation rules</h3>
-          <p className="text-xs text-muted-foreground">When an item is overdue by N days, who else gets pinged.</p>
+          <p className="text-xs text-muted-foreground">
+            When an item is overdue by N days, who else gets pinged. Each step
+            fires once per filing.
+          </p>
         </div>
         <ul className="space-y-2 text-sm">
-          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between">
+          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
             <span>Overdue 1 day</span>
-            <span className="text-muted-foreground text-xs">Notify country lead</span>
+            <span className="text-muted-foreground text-xs">
+              Notify country lead — set per entity (Entities → edit)
+            </span>
           </li>
-          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between">
-            <span>Overdue 3 days</span>
-            <span className="text-muted-foreground text-xs">Notify Head of Compliance</span>
+          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
+            <span>
+              Overdue 3 days
+              <span className="text-muted-foreground text-xs"> — notify Head of Compliance</span>
+            </span>
+            {userSelect(esc?.head_of_compliance_id, (id) =>
+              saveEsc.mutate({ head_of_compliance_id: id }),
+            )}
           </li>
-          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between">
-            <span>Overdue 7 days</span>
-            <span className="text-muted-foreground text-xs">Email CFO</span>
+          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
+            <span>
+              Overdue 7 days
+              <span className="text-muted-foreground text-xs"> — email CFO</span>
+            </span>
+            {userSelect(esc?.cfo_id, (id) => saveEsc.mutate({ cfo_id: id }))}
           </li>
         </ul>
       </CardContent>
