@@ -130,8 +130,11 @@ function TaskRow({ ob }: { ob: Obligation }) {
         showDays
       />
 
-      <div className="flex items-center justify-end gap-1.5 min-w-0">
-        <AssigneeChip user={ob.assignee} size="sm" showName />
+      {/* Left-aligned so every row's avatar + name start at the same x —
+          right-justified names gave a ragged, misaligned column. The chip
+          flexes and truncates; the kebab stays pinned at the far right. */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <AssigneeChip user={ob.assignee} size="sm" showName className="flex-1 min-w-0" />
         <RowQuickActions ob={ob} />
       </div>
     </div>
@@ -245,7 +248,7 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
         <div>Obligation</div>
         <div>Due</div>
         <div>Status</div>
-        <div className="text-right">Assignee</div>
+        <div>Assignee</div>
       </div>
       <div className="divide-y divide-border">
         {items.map((ob) => (
