@@ -309,13 +309,16 @@ Open **Calendar** ("Compliance Calendar") — every obligation across every enti
 
 ### Google Calendar
 
-Every **assigned** filing is pushed automatically to the shared **"Aspora Compliance"** Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing.
+Every **assigned** filing is pushed automatically to Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing. Two layers:
 
-- **Assign / reassign** → the event appears or updates within seconds.
+- **Your personal calendar** — the assignee is invited as an **attendee**, so each filing lands on that person's own Google calendar automatically. **You only see the filings assigned to you**; nothing to set up.
+- **The shared "Aspora Compliance" calendar** — carries **every** filing across all entities: the org-wide oversight view. Only add it (admins, typically) if you want the full picture; if you're seeing everyone's filings, untick this calendar in Google Calendar's sidebar — your own assignments stay on your personal calendar.
+
+Sync behaviour:
+
+- **Assign / reassign** → the event appears or updates (and the attendee invite moves) within seconds.
 - **Mark Filed, Not Applicable, or unassign** (in the app or via the Slack buttons) → the event disappears.
 - One filing = one event, no duplicates — the app keeps them in sync on its own.
-
-**Seeing the calendar (one-time, per person):** ask an admin to share the *Aspora Compliance* calendar with you ("See all event details"), then click **"Add this calendar"** in the invite email and make sure its checkbox is ticked in Google Calendar's sidebar. After that, every assignment shows up automatically — nothing to do per filing.
 
 > **The app is the source of truth.** Don't edit or delete these events inside Google Calendar — the app will overwrite manual changes on its next sync. To change a date or owner, change it on the filing.
 
