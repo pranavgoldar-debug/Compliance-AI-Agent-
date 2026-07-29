@@ -106,6 +106,35 @@ def create_app() -> FastAPI:
     # Bring the DB online on startup. Idempotent — safe in production restarts.
     init_db()
 
+    # Self-scheduling reminders — the deployment has no cron, and relying on
+    # an external scheduler meant reminders never fired at all. A daemon
+    # thread runs the engine shortly after boot (catching up anything due)
+    # and then every 6 hours while the service is awake. Each (person,
+    # filing, slot) sends exactly once, so repeat runs never double-ping.
+    # Disable with REMINDERS_AUTOSEND=0 (e.g. when an external cron drives
+    # /api/cron/send-reminders instead).
+    if os.environ.get("REMINDERS_AUTOSEND", "1") != "0":
+        import logging
+        import threading
+        import time as _time
+
+        def _reminder_loop() -> None:
+            # Let boot/migrations settle; stagger workers a little so two
+            # processes don't run the engine at the same instant.
+            _time.sleep(90 + (os.getpid() % 60))
+            while True:
+                try:
+                    from compliance_agent.reminders import send_reminders
+
+                    send_reminders()
+                except Exception:  # noqa: BLE001 — a bad run must not kill the loop
+                    logging.getLogger("compliance_agent.reminders").warning(
+                        "scheduled reminder run failed", exc_info=True
+                    )
+                _time.sleep(6 * 60 * 60)
+
+        threading.Thread(target=_reminder_loop, daemon=True, name="reminders").start()
+
     # Rate limiting + sliding sessions. Order matters: SlowAPI wants its
     # state on `app.state`, the middleware adds 429 handling, and the
     # sliding-session refresh runs after auth so it can mint a fresh
