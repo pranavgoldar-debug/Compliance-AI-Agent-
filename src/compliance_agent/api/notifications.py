@@ -201,8 +201,9 @@ def emit_assignment(
 ) -> None:
     """Persist an 'assigned' notification for the new assignee and fan out to
     Slack + email. Self-assignment (the mark-it-mine flow) skips the in-app
-    bell, the Slack ping AND the email — notifying yourself about your own
-    click is noise on every channel. The audit log still records it."""
+    bell and the email — notifying yourself about your own click is noise.
+    Only the Slack channel ping still fires for self-assignments: it's the
+    team's shared record of who took ownership."""
     self_assigned = assignee.id == actor.id
     body = (
         f"{obligation.rule.form_name} — {obligation.entity.name}"
