@@ -312,12 +312,17 @@ def _run_escalations(
                 ),
             )
         if not email_only and slack_on and target.notify_slack:
+            # Route the escalation to the ESCALATED person's team channel.
             slack_service.post(
                 f":rotating_light: {slack_service._mention(target)} — *{form}* "
                 f"({entity_name}) is *{days_late}d overdue*. Escalated to you as "
                 f"the {role}; assignee {slack_service._mention(ob.assignee)}.",
                 sync=True,
-                function=(ob.rule.responsible_function if ob.rule else None),
+                function=(
+                    target.department.value
+                    if target.department
+                    else (ob.rule.responsible_function if ob.rule else None)
+                ),
             )
 
 
@@ -420,12 +425,20 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                         msg = slack_service.overdue_blocks(
                             obligation=ob, days_late=-days_left
                         )
+                    # Route to the ASSIGNEE's team channel (same rule as the
+                    # assignment ping) — a finance person's filing pings the
+                    # finance channel even if the rule is tagged Compliance.
+                    route_function = (
+                        assignee.department.value
+                        if assignee.department
+                        else (ob.rule.responsible_function if ob.rule else None)
+                    )
                     slack_sent = bool(
                         slack_service.post(
                             msg["text"],
                             blocks=msg["blocks"],
                             sync=True,
-                            function=(ob.rule.responsible_function if ob.rule else None),
+                            function=route_function,
                         )
                     )
 
