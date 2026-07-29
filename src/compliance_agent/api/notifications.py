@@ -285,28 +285,6 @@ def emit_assignment(
                 "assignment email to %s failed", assignee.email, exc_info=True
             )
 
-    # Finance hand-off via ClickUp: if the assignee is on the finance team and
-    # ClickUp is connected, drop a task so they can action it there. Guarded on
-    # clickup_task_id so we never create a duplicate (the payment-request flow
-    # may already have made one).
-    if (
-        not self_assigned
-        and assignee.department == Department.finance
-        and not obligation.clickup_task_id
-    ):
-        from compliance_agent import clickup_service
-
-        if clickup_service.is_configured(db):
-            created = clickup_service.create_payment_task(
-                db,
-                obligation,
-                amount=obligation.payment_amount or "—",
-                notes=f"Assigned to {assignee.full_name or assignee.email}.",
-                app_url=base_url(),
-            )
-            if created:
-                obligation.clickup_task_id, obligation.clickup_task_url = created
-
 
 # Match @<identifier>. We resolve against active users by:
 #   - exact email match  (rare but supported)

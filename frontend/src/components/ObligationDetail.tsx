@@ -1515,7 +1515,7 @@ function MainContent({ obligation }: { obligation: Obligation }) {
 
 
 // ---------------------------------------------------------------------------
-// Right sidebar (page) — assignee, effort band, alert schedule, ClickUp, tags
+// Right sidebar (page) — assignee, effort band, alert schedule, tags
 // ---------------------------------------------------------------------------
 function Sidebar({
   obligation,
@@ -1544,31 +1544,6 @@ function Sidebar({
           />
 
           <AlertScheduleCard obligation={obligation} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-4 space-y-2">
-          <h3 className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <ExternalLink className="h-3.5 w-3.5" />
-            ClickUp task
-          </h3>
-          {obligation.clickup_task_url ? (
-            <a
-              href={obligation.clickup_task_url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-aspora-700 hover:underline"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open finance task in ClickUp
-            </a>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              No ClickUp task yet — created automatically when this is handed off
-              to finance (if ClickUp is connected in Settings).
-            </p>
-          )}
         </CardContent>
       </Card>
 

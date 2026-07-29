@@ -1081,7 +1081,7 @@ def apply_rule_due_date(
     )
     db.commit()
     # Propagate every moved deadline to the mirrored external systems (Google
-    # Calendar event + ClickUp task) so this path stays consistent with the
+    # Calendar event) so this path stays consistent with the
     # obligation-level ones.
     if moved_ids:
         from compliance_agent import calendar_service

@@ -57,25 +57,12 @@ def _propagate_obligation_external(
     db: Session, obligation_id: int, *, due_date_changed: bool = True
 ) -> None:
     """After an obligation write is committed, push the current state to the
-    mirrored external systems so no surface shows a stale deadline:
-      - Google Calendar event (assignment / status / due-date changes)
-      - ClickUp task due date (only when the due date moved)
+    mirrored Google Calendar event (assignment / status / due-date changes).
     Best-effort — never raises, so a flaky integration can't fail the write."""
     from compliance_agent import calendar_service
 
     if calendar_service.is_configured():
         calendar_service.sync_obligation(obligation_id)
-    if due_date_changed:
-        ob = db.get(Obligation, obligation_id)
-        if ob is not None and ob.clickup_task_id:
-            try:
-                from compliance_agent import clickup_service
-
-                clickup_service.update_task_due_date(
-                    db, ob.clickup_task_id, ob.due_date
-                )
-            except Exception:  # noqa: BLE001 — never block on a mirror sync
-                pass
 
 
 def _base_query():
@@ -301,14 +288,6 @@ def update_obligation(
             actor=user,
         )
 
-    # Two-way sync: completing in-app closes the linked ClickUp task.
-    # (The inbound webhook updates the ORM directly, not via this endpoint,
-    # so a ClickUp-driven completion won't bounce back here.) Best-effort.
-    if completed_now and obligation.clickup_task_id:
-        from compliance_agent import clickup_service
-
-        clickup_service.close_task(db, obligation.clickup_task_id)
-
     # Due date moved (admin direct edit) — supersede any pending change
     # request and tell the assignee their deadline shifted.
     due_date_changed = "due_date" in data and obligation.due_date != prev_due_date
@@ -356,9 +335,8 @@ def update_obligation(
         ),
     )
     db.commit()
-    # Propagate to the mirrored external systems post-commit (Google Calendar
-    # event + ClickUp task) so the deadline is consistent on every surface,
-    # whichever path changed it.
+    # Propagate to the mirrored Google Calendar event post-commit so the
+    # deadline is consistent on every surface, whichever path changed it.
     _propagate_obligation_external(db, obligation.id, due_date_changed=due_date_changed)
     obligation = db.execute(
         _base_query().where(Obligation.id == obligation.id)
@@ -566,8 +544,8 @@ def approve_due_date_request(
             status_code=409,
             detail="Another occurrence of this filing already sits on that date.",
         )
-    # Propagate the applied deadline to Calendar + ClickUp, same as every
-    # other due-date path.
+    # Propagate the applied deadline to the Calendar, same as every other
+    # due-date path.
     _propagate_obligation_external(db, obligation_id, due_date_changed=True)
     return serialize_obligation(_reload_obligation(db, obligation_id))
 
@@ -800,22 +778,6 @@ def handoff_to_finance(
             f"Filing approved by {user.full_name or user.email}. "
             f"Assigned to {finance_user.full_name or finance_user.email} to pay."
         )
-
-    # ClickUp two-way sync — create a finance task so the team can action the
-    # payment in ClickUp. Best-effort; never blocks the hand-off.
-    from compliance_agent import clickup_service
-    from compliance_agent.email_service import base_url as _app_base_url
-
-    if not obligation.clickup_task_id and clickup_service.is_configured(db):
-        created = clickup_service.create_payment_task(
-            db,
-            obligation,
-            amount=obligation.payment_amount or "—",
-            notes=payload.notes or "",
-            app_url=_app_base_url(),
-        )
-        if created:
-            obligation.clickup_task_id, obligation.clickup_task_url = created
 
     log_activity(
         db,

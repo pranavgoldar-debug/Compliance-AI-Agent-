@@ -30,6 +30,33 @@ def system_info() -> SystemInfo:
     )
 
 
+@router.get("/run-reminders")
+def run_reminders(dry_run: bool = False, _: User = Depends(require_admin)) -> dict:
+    """Admin-only, browser-openable: run the reminder engine RIGHT NOW —
+    same as the daily cron. Use `?dry_run=true` to preview what would fire
+    without sending anything. Open while logged in as an admin:
+    `/api/system/run-reminders`.
+    """
+    from compliance_agent.reminders import send_reminders
+
+    results = send_reminders(dry_run=dry_run)
+    return {
+        "ok": True,
+        "dry_run": dry_run,
+        "fired": [
+            {
+                "obligation_id": r.obligation_id,
+                "assignee": r.assignee_email,
+                "days_remaining": r.days_remaining,
+                "slot": r.offset_days,
+                "email_sent": r.email_sent,
+                "slack_sent": r.slack_sent,
+            }
+            for r in results
+        ],
+    }
+
+
 @router.get("/find-rules")
 def find_rules(q: str = "", _: User = Depends(require_admin)) -> dict:
     """Admin-only, browser-openable diagnostic: search EVERY rule — all

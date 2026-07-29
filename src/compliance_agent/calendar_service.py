@@ -70,6 +70,15 @@ def _event_payload(ob) -> dict:
         "transparency": "transparent",
     }
 
+    # Invite the assignee as an attendee: the event then also lands on THEIR
+    # personal Google calendar, so each person sees exactly the filings
+    # assigned to them (the shared calendar keeps the full picture).
+    # Re-assignment swaps the attendee on the next sync.
+    if assignee and assignee.email:
+        payload["attendees"] = [
+            {"email": assignee.email, "displayName": who, "responseStatus": "accepted"}
+        ]
+
     # Mirror the escalating reminder rule on the event itself as far as
     # Google allows: event reminders cap at 4 weeks (40320 minutes) and 5
     # overrides per event, so the event carries popups at the (capped)
@@ -148,9 +157,12 @@ def _sync(obligation_id: int) -> Optional[str]:
             return None
 
         payload = _event_payload(ob)
+        # sendUpdates=all → Google emails the assignee their invite, so the
+        # filing shows up on their personal calendar without any manual step.
         if mapping is not None and mapping.calendar_id == cal:
             r = _request(
-                "PATCH", f"{_API}/calendars/{cal}/events/{mapping.event_id}",
+                "PATCH",
+                f"{_API}/calendars/{cal}/events/{mapping.event_id}?sendUpdates=all",
                 token=token, json_body=payload,
             )
             if r.status_code == 200:
@@ -162,7 +174,11 @@ def _sync(obligation_id: int) -> Optional[str]:
             db.delete(mapping)
             mapping = None
 
-        r = _request("POST", f"{_API}/calendars/{cal}/events", token=token, json_body=payload)
+        r = _request(
+            "POST",
+            f"{_API}/calendars/{cal}/events?sendUpdates=all",
+            token=token, json_body=payload,
+        )
         if r.status_code != 200:
             return f"Google Calendar insert failed: {r.status_code} {r.text[:200]}"
         event_id = (r.json() or {}).get("id", "")

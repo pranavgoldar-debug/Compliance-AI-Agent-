@@ -193,7 +193,6 @@ def serialize_obligation(o: Obligation) -> ObligationOut:
         filing_reference=o.filing_reference,
         payment_amount=o.payment_amount,
         payment_reference=o.payment_reference,
-        clickup_task_url=o.clickup_task_url,
         beneficiary_details=o.beneficiary_details,
         is_awaiting_payment=is_awaiting_payment(o),
         notes=o.notes,
