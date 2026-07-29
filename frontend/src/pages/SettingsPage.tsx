@@ -309,10 +309,9 @@ Open **Calendar** ("Compliance Calendar") — every obligation across every enti
 
 ### Google Calendar
 
-Every **assigned** filing is pushed automatically to Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing. Two layers:
+Every **assigned** filing is pushed automatically to Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing.
 
-- **Your personal calendar** — the assignee is invited as an **attendee**, so each filing lands on that person's own Google calendar automatically. **You only see the filings assigned to you**; nothing to set up.
-- **The shared "Aspora Compliance" calendar** — carries **every** filing across all entities: the org-wide oversight view. Only add it (admins, typically) if you want the full picture; if you're seeing everyone's filings, untick this calendar in Google Calendar's sidebar — your own assignments stay on your personal calendar.
+**Everyone — admins included — sees only their own filings.** The assignee is invited as an **attendee**, so each filing lands on that person's own Google calendar automatically; nothing to set up. Events are **private**: only the assignee can see the details. The *Aspora Compliance* calendar the app writes to is just the app's container — **don't subscribe to it or share it with anyone** (if you added it earlier, remove it from your Google Calendar sidebar). The org-wide picture lives in the app's own Calendar page.
 
 Sync behaviour:
 

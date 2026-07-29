@@ -70,10 +70,18 @@ def _event_payload(ob) -> dict:
         "transparency": "transparent",
     }
 
-    # Invite the assignee as an attendee: the event then also lands on THEIR
-    # personal Google calendar, so each person sees exactly the filings
-    # assigned to them (the shared calendar keeps the full picture).
-    # Re-assignment swaps the attendee on the next sync.
+    # Invite the assignee as an attendee: the event then lands on THEIR
+    # personal Google calendar, so each person — admins included — sees
+    # exactly the filings assigned to them. Re-assignment swaps the
+    # attendee on the next sync.
+    #
+    # visibility=private locks the details down to the organizer + the
+    # assignee: even someone who got the host calendar shared to them only
+    # sees a busy block, never other people's filings. The host calendar
+    # (GOOGLE_CALENDAR_ID) is just the app's container — nobody should
+    # subscribe to it.
+    payload["visibility"] = "private"
+    payload["guestsCanSeeOtherGuests"] = False
     if assignee and assignee.email:
         payload["attendees"] = [
             {"email": assignee.email, "displayName": who, "responseStatus": "accepted"}
