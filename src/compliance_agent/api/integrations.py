@@ -411,7 +411,12 @@ webhook_router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 # App with Interactivity enabled (Request URL = this endpoint) and the app's
 # Signing Secret in SLACK_SIGNING_SECRET. Public, signature-verified.
 # ---------------------------------------------------------------------------
-def _slack_ack(response_url: Optional[str], text: str) -> None:
+def _slack_ack(
+    response_url: Optional[str], text: str, *, to_channel: bool = False
+) -> None:
+    """Reply to a Slack interaction. Errors/prompts stay ephemeral (only the
+    clicker sees them); pass to_channel=True for confirmations the whole
+    channel should see (status changes)."""
     if not response_url:
         return
     try:
@@ -421,7 +426,7 @@ def _slack_ack(response_url: Optional[str], text: str) -> None:
             response_url,
             json={
                 "text": text,
-                "response_type": "ephemeral",
+                "response_type": "in_channel" if to_channel else "ephemeral",
                 # Never replace the original card — without this Slack
                 # swaps the card (buttons + Open link) for the ack text,
                 # so the user can't change the status again.
@@ -528,7 +533,11 @@ async def slack_interactivity(request: Request) -> dict:
             if actor
             else "recorded in the audit log (add your Slack member ID in Aspora → Users to post it as a comment)"
         )
-        _slack_ack(response_url, f":no_entry_sign: *{form_name}* → Not Applicable. Reason {where}.")
+        _slack_ack(
+            response_url,
+            f":no_entry_sign: *{form_name}* → Not Applicable. Reason {where}.",
+            to_channel=True,
+        )
         return {}
 
     value = action.get("value", "")
@@ -610,7 +619,11 @@ async def slack_interactivity(request: Request) -> dict:
     if calendar_service.is_configured():
         calendar_service.sync_obligation(oid)
 
-    _slack_ack(response_url, f":white_check_mark: *{form_name}* → {obligation_status_label(new_status)}")
+    _slack_ack(
+        response_url,
+        f":white_check_mark: *{form_name}* → {obligation_status_label(new_status)}",
+        to_channel=True,
+    )
     return {}
 
 
