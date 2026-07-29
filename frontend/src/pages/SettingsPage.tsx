@@ -1964,27 +1964,43 @@ function GoogleCalendarCard() {
           </div>
         )}
 
+        {cfg.configured && (
+          <p className="text-xs text-muted-foreground">
+            Assignees are invited per filing, so each person's own calendar
+            shows only their work. The container calendar should belong to a
+            dedicated bot Google account and must NOT be shared with or added
+            by anyone — its owner always sees every event.
+          </p>
+        )}
+
         {!cfg.configured && (
           <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
             <div className="font-medium">Set up (one-time — reuses the Gmail OAuth client)</div>
             <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
               <li>
+                Use a <strong>dedicated bot Google account</strong> (e.g.{" "}
+                <code className="font-mono">compliance-bot@…</code>) — its calendar hosts the
+                events, and the account owner always sees everything, so it must not be a
+                person.
+              </li>
+              <li>
                 Google Cloud Console → same project → enable the <strong>Google Calendar API</strong>.
               </li>
               <li>
-                Re-mint the refresh token at developers.google.com/oauthplayground with BOTH scopes:{" "}
+                Logged in AS THE BOT, mint the refresh token at
+                developers.google.com/oauthplayground with BOTH scopes:{" "}
                 <code className="font-mono">…/auth/gmail.send</code> and{" "}
                 <code className="font-mono">…/auth/calendar.events</code> → update{" "}
                 <code className="font-mono">GMAIL_REFRESH_TOKEN</code>.
               </li>
               <li>
-                In Google Calendar: create an "Aspora Compliance" calendar → its settings →
-                "Integrate calendar" → copy the <strong>Calendar ID</strong> → share the calendar
-                with the team.
+                In the bot's Google Calendar: create an "Aspora Compliance" calendar → its
+                settings → "Integrate calendar" → copy the <strong>Calendar ID</strong>. Don't
+                share it with anyone — assignees get per-filing invites automatically.
               </li>
               <li>
                 Render → Environment: set <code className="font-mono">GOOGLE_CALENDAR_ID</code> to
-                that ID → redeploy → use "Send test event".
+                that ID → redeploy → use "Send test event", then "Re-sync all events".
               </li>
             </ol>
           </div>
