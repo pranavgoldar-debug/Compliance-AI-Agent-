@@ -1771,11 +1771,11 @@ function AlertScheduleCard({ obligation }: { obligation: Obligation }) {
             Email
           </span>
           <span
-            className="inline-flex items-center gap-1 opacity-60"
-            title="Google Calendar sync — not yet wired"
+            className="inline-flex items-center gap-1"
+            title="Google Calendar — the assignee is invited to the due-date event, with popup reminders at the lead time and 14 / 7 / 1 days out"
           >
             <CalendarIcon className="h-3 w-3" />
-            Calendar (soon)
+            Calendar
           </span>
         </div>
       </div>
