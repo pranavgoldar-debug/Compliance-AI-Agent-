@@ -201,9 +201,8 @@ def emit_assignment(
 ) -> None:
     """Persist an 'assigned' notification for the new assignee and fan out to
     Slack + email. Self-assignment (the mark-it-mine flow) skips the in-app
-    bell and the Slack ping — notifying yourself about your own click is
-    noise — but the EMAIL still sends, so every assignment leaves a mail
-    trail (admins approving-and-assigning to themselves expect it)."""
+    bell, the Slack ping AND the email — notifying yourself about your own
+    click is noise on every channel. The audit log still records it."""
     self_assigned = assignee.id == actor.id
     body = (
         f"{obligation.rule.form_name} — {obligation.entity.name}"
@@ -245,7 +244,9 @@ def emit_assignment(
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
     # Uses the branded assignment template (email_templates.assignment_email).
-    if assignee.notify_email and smtp_configured():
+    # Self-assignments send nothing — "Pranav assigned you a task" addressed
+    # to Pranav is noise.
+    if not self_assigned and assignee.notify_email and smtp_configured():
         from datetime import date as _date
 
         from compliance_agent.email_templates import assignment_email
