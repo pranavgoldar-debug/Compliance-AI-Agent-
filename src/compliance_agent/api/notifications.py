@@ -272,7 +272,6 @@ def emit_assignment(
                 jurisdiction=juris,
                 form_code=form,
                 entity_name=entity.name if entity else "—",
-                evidence_required="Filing acknowledgement / proof of submission",
                 due_date=obligation.due_date,
                 assigned_at=_date.today(),
                 open_url=link,

@@ -88,7 +88,6 @@ def assignment_email(
     jurisdiction: str,
     form_code: str,
     entity_name: str,
-    evidence_required: str,
     due_date: Optional[date],
     assigned_at: Optional[date],
     open_url: str,
@@ -104,8 +103,7 @@ def assignment_email(
         f"{task_title}  ({task_id})\n"
         f"{task_description}\n\n"
         f"Linked obligation: {linked_obligation_name}\n"
-        f"Canonical key · Entity: {jurisdiction} · {form_code} · {entity_name}\n"
-        f"Evidence required: {evidence_required}\n\n"
+        f"Canonical key · Entity: {jurisdiction} · {form_code} · {entity_name}\n\n"
         f"Open it: {open_url}\n"
         f"Can't take this on? Reply to {assigned_by_email}.\n"
     )
@@ -132,7 +130,6 @@ def assignment_email(
             f'<span style="font-family:monospace">{jurisdiction}</span> · '
             f'<span style="font-family:monospace">{form_code}</span> · {entity_name}',
         )
-        + _row("Evidence required", evidence_required)
         + "</table></div></div>"
         + _button("View details", open_url)
         + _footer_links(
