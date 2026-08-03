@@ -68,11 +68,12 @@ interface Filters {
   entityIds: number[];
   jurisdictions: string[];
   statuses: ObligationStatus[];
+  functions: string[];
   dueWithinDays: number | null;
 }
 
 function emptyFilters(): Filters {
-  return { entityIds: [], jurisdictions: [], statuses: [], dueWithinDays: null };
+  return { entityIds: [], jurisdictions: [], statuses: [], functions: [], dueWithinDays: null };
 }
 
 
@@ -129,8 +130,11 @@ function TaskRow({ ob }: { ob: Obligation }) {
         showDays
       />
 
-      <div className="flex items-center justify-end gap-1.5 min-w-0">
-        <AssigneeChip user={ob.assignee} size="sm" showName />
+      {/* Left-aligned so every row's avatar + name start at the same x —
+          right-justified names gave a ragged, misaligned column. The chip
+          flexes and truncates; the kebab stays pinned at the far right. */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <AssigneeChip user={ob.assignee} size="sm" showName className="flex-1 min-w-0" />
         <RowQuickActions ob={ob} />
       </div>
     </div>
@@ -244,7 +248,7 @@ function GroupSection({ title, items }: { title: string; items: Obligation[] }) 
         <div>Obligation</div>
         <div>Due</div>
         <div>Status</div>
-        <div className="text-right">Assignee</div>
+        <div>Assignee</div>
       </div>
       <div className="divide-y divide-border">
         {items.map((ob) => (
@@ -424,6 +428,10 @@ export function TasksPage({
       arr = arr.filter((o) => filters.jurisdictions.includes(o.entity_jurisdiction_code));
     if (filters.statuses.length)
       arr = arr.filter((o) => filters.statuses.includes(o.status));
+    if (filters.functions.length)
+      arr = arr.filter((o) =>
+        filters.functions.includes(o.rule_responsible_function || ""),
+      );
     if (filters.dueWithinDays != null)
       arr = arr.filter(
         (o) => o.days_remaining <= (filters.dueWithinDays as number) && o.days_remaining >= 0,
@@ -448,6 +456,7 @@ export function TasksPage({
     filters.entityIds.length +
     filters.jurisdictions.length +
     filters.statuses.length +
+    filters.functions.length +
     (filters.dueWithinDays != null ? 1 : 0);
 
   // Header copy. The page is a single combined "Compliance & Finance"
@@ -512,6 +521,17 @@ export function TasksPage({
           ]}
           selected={filters.statuses}
           onChange={(vals) => setFilters((f) => ({ ...f, statuses: vals as ObligationStatus[] }))}
+        />
+        <FilterPopover
+          label="Function"
+          options={[
+            { value: "Finance", label: "Finance" },
+            { value: "Compliance", label: "Compliance" },
+            { value: "Legal", label: "Legal" },
+            { value: "HR", label: "HR" },
+          ]}
+          selected={filters.functions}
+          onChange={(vals) => setFilters((f) => ({ ...f, functions: vals }))}
         />
         <DueRangePopover
           value={filters.dueWithinDays}

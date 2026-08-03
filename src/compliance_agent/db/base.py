@@ -288,8 +288,6 @@ def _add_missing_columns() -> None:
             ("effort_band", f"{varchar(8)} NOT NULL DEFAULT 'w4'"),
             ("effort_band_reason", text_type),
             ("department", f"{varchar(16)} NOT NULL DEFAULT 'compliance'"),
-            ("clickup_task_id", varchar(64)),
-            ("clickup_task_url", varchar(512)),
             # Finance-side beneficiary / bank account free text.
             ("beneficiary_details", text_type),
             # Provenance: which licence auto-scheduled this obligation.

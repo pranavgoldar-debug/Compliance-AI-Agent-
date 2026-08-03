@@ -171,8 +171,7 @@ Go to **Entities → "Add entity"** (admin only). Fill in:
 - **Legal name** and **Jurisdiction** — required.
 - **Legal type**, **Short code**, **Registration number** — optional identifiers.
 - **Nature of operation** — one line on what the company does (e.g. *cross-border remittance & payments*). **The AI reads this to discover regulations**, so write it properly.
-- **Fiscal year end / ARD** — *important.* The last day of the company's financial year — the date its accounts are made up to (e.g. *31 March*). Most deadlines are *"X months after the year-end"*, so the calendar can't place them without it.
-- **Why "/ ARD"?** **ARD (Accounting Reference Date)** is the UK Companies House name for that **same date** — in this app **ARD = fiscal year end**, one date with two names. (It is *not* the *annual return / confirmation statement*, which is a separate filing.)
+- **Fiscal year end** — *important.* Many deadlines are "X months after financial year-end", so the calendar can't place them without it.
 - **Ownership** — optional parent → subsidiary chain.
 
 Save, then open the entity. You'll see five tabs: **Overview · Licences · Primary Activity · Compliance · Documents.**
@@ -191,8 +190,8 @@ Open the **Licences** tab → **"Upload license"**. Attach the licence PDF (the 
 
 Open the **Primary Activity** tab and answer each activity **Yes / No / TBD** (TBD = *to be decided* — everything starts there until you answer) — e.g. *"Does the entity trade cross-border?"*
 
-- **What they do:** gate the follow-up questions, and decide whether a discovered filing ends up **mandatory** or **conditional** for this entity.
-- **What they don't do:** they **don't change what discovery finds.** Discovery always assumes every activity could apply; the assessment narrows it down afterwards.
+- **What they do:** drive the **assessment** — they decide whether a discovered filing ends up **mandatory**, **conditional**, or (only on an explicit **No**) not applicable. TBD never removes anything.
+- **What they don't do:** they **don't change what discovery finds** — discovery always assumes the entity does *everything* (every activity = yes), so the full universe of filings is found regardless of your answers.
 
 ---
 
@@ -202,7 +201,7 @@ Open the **Compliance** tab → **"Refresh Regulations"** (the Sparkles button).
 
 Missed something? Use **"Add regulation"** — a two-tab dialog:
 
-- **Manual entry** — type the filing and build its due date visually (frequency → rule) with a live **"Next due"** preview, so you don't guess. Where the app knows authoritative links for the jurisdiction, pick one under **Suggested sources**.
+- **Manual entry** — type the filing and build its due date visually with the **Due-Date Builder** (see below) and a live **"Next due"** preview, so you don't guess. Where the app knows authoritative links for the jurisdiction, pick one under **Suggested sources**.
 - **Import** — upload your obligations register as **Excel or CSV**. Columns auto-map (adjustable), each row is validated, and a blank template is downloadable.
 
 Anything you add lands as a **draft on this entity's discovered list** — exactly like the AI's finds. Nothing is live yet.
@@ -217,7 +216,7 @@ Still in **Compliance**, click **"Activities"**. Answer the follow-up and operat
 - **Conditional** — applies only if a threshold or trigger is met.
 - **Not applicable** — ruled out by your activity answers; it won't be filed.
 
-Tick the ones you want (mandatory + conditional come pre-ticked) and click **"Add … to Review & Assign"**. That is the moment a draft leaves the entity and enters the shared **Review & Assign** queue.
+Tick the ones you want — nothing is pre-ticked, mandatory included, so every filing is a deliberate choice — and click **"Add … to Review & Assign"**. That is the moment a draft leaves the entity and enters the shared **Review & Assign** queue.
 
 ---
 
@@ -236,13 +235,93 @@ Click a **For Action** card to expand it, then:
 
 On approve, the rule moves to **Approved** and the app **automatically generates the dated obligation(s)** from its frequency + due-date rule — and they show up on the Calendar immediately. (You can still change the owner later from the Approved tab; it re-syncs to the calendar.)
 
-*Don't need it?* **Archive** (reversible, keeps history) or **Delete** (permanent).
+*Don't need it?* **Move back to Compliance** — the item returns to the entity's discovered list as a draft (nothing is lost; send it to Review & Assign again anytime) — or **Delete** (permanent).
+
+---
+
+### Due date rules (the Due-Date Builder)
+
+The **Due date rule** defines *when* a filing is due. You meet the builder in two places: **"Add regulation"** (Step 4) and **Review & Assign → Edit** (Step 6). Pick a **Filing frequency** and a **Due date basis**, fill in the fields, and the calendar computes the real dates — the preview banner shows the next few so you can check them before saving.
+
+**Filing frequency — how often it recurs:**
+
+| Frequency | Meaning | Example |
+|---|---|---|
+| Annual | Once a year (12-month periods) | Annual accounts |
+| Semi-annual | Twice a year (every 6 months) | Half-yearly regulatory return |
+| Quarterly | Every 3 months | VAT return |
+| Monthly | Every month | Payroll / RTI |
+| One-time | Once, on a specific date; does not repeat | Initial registration |
+| Event-based | Only when something happens — no scheduled date | Change-in-control notification |
+| Continuous | Must be kept in place at all times — no scheduled date | AML programme, sanctions screening |
+
+> **Event-based** and **Continuous** filings don't get calendar dates — pick them in the builder and the rule is tracked without a schedule.
+
+**Due date basis — how the deadline is worked out** (shown for the recurring frequencies):
+
+- **Fixed day each period** (Annual: *Fixed date each year*) — a literal calendar date that repeats every period.
+- **After period end** (Annual: *After financial year end*) — the deadline is measured from the end of each reporting period.
+
+**Fields for "Fixed day each period":**
+
+- **Day** — the day of the month it's due (1–31). If the month is shorter, it's clamped to the last valid day (e.g. 31 → 30 in April, 28/29 in February).
+- **Month** — the anchor month (Annual / Semi-annual / Quarterly). Hidden for Monthly, which recurs on the chosen **Day** every month.
+
+**Fields for "After period end":**
+
+- **Offset** — how long *after* each period ends the filing is due: due date = period end + (Offset × Unit). **Offset 0** = due on the period-end date itself.
+- **Unit** — the unit for the offset: **months** or **days**.
+- **Snap to last day of the resulting month** (months only) — after adding the offset, move the due date to the **last day** of that month. Use it for "end of the Nth month after period end."
+
+> Period ends anchor on the **entity's fiscal year-end** (defaults to 31 December if none is set); each period steps back from there.
+
+**Field for "One-time":** just the **Due date** — the single calendar date the filing is due.
+
+**Schedule preview:** the purple banner lists the next computed due dates (and the period each belongs to) so you can sanity-check the rule. *"Set the rule above to see the schedule"* means the rule isn't complete yet.
+
+**Examples:**
+
+| Setup | Result |
+|---|---|
+| Annual · After financial year end · Offset **9 months** (FY end 31 Dec) | Due **30 Sep** each year (typical UK corporation-tax payment) |
+| Annual · Fixed date each year · Day **31**, Month **March** | Due **31 March** every year |
+| Quarterly · After period end · Offset **1 month** | Due **one month after** each quarter-end |
+| Monthly · Fixed day each period · Day **20** | Due on the **20th** of every month |
+| Quarterly VAT · After period end · Offset **1 month** · Snap on | Due **end of the month** after each quarter-end |
+
+---
+
+### Applicability
+
+**Applicability** records whether a filing applies to the entity:
+
+- **Mandatory** — always applies; a required obligation.
+- **Conditional** — applies only when certain conditions are met (e.g. turnover thresholds, specific activities). Confirm whether it applies to your entity.
+- **Sector-specific** — applies only to entities in particular sectors or licence types.
+
+To change it: open the rule in **Review & Assign → Edit**, set the **Applicability** dropdown, then **Save**. Use this when the AI marks something *Conditional* but it's *Mandatory* for your entity — or the reverse.
 
 ---
 
 ### Step 7 — It's on the Calendar
 
-Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
+Open **Calendar** ("Compliance Calendar") — every obligation across every entity, on its due date. Only **Approved** rules appear here. Two views: **Heatmap** (triage at a glance) and **List** (scan / sort). Filter by **entity, jurisdiction, tax type, applicability, authority, category, status,** and **assignee**. In **List** view you can multi-select rows and **assign** or **change status** in bulk from the bar at the bottom.
+
+### Google Calendar
+
+Every **assigned** filing is pushed automatically to Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing.
+
+**Everyone — admins included — sees only their own filings.** The assignee is invited as an **attendee**, so each filing lands on that person's own Google calendar automatically; nothing to set up. Events are **private**: only the assignee can see the details. The *Aspora Compliance* calendar the app writes to is just the app's container — **don't subscribe to it or share it with anyone** (if you added it earlier, remove it from your Google Calendar sidebar). The org-wide picture lives in the app's own Calendar page.
+
+Sync behaviour:
+
+- **Assign / reassign** → the event appears or updates (and the attendee invite moves) within seconds.
+- **Mark Filed, Not Applicable, or unassign** (in the app or via the Slack buttons) → the event disappears.
+- One filing = one event, no duplicates — the app keeps them in sync on its own.
+
+> **The app is the source of truth.** Don't edit or delete these events inside Google Calendar — the app will overwrite manual changes on its next sync. To change a date or owner, change it on the filing.
+
+*(Admins: the connection itself is configured once under **Settings → Integrations → Google Calendar** — setup steps and a "Send test event" button live on that card.)*
 
 ---
 
@@ -250,49 +329,37 @@ Open **Calendar** ("Compliance Calendar") — every obligation across every enti
 
 **Filings** (sidebar) is each person's queue. Tabs: **Assigned to me · Filed · All**. Items are grouped **Overdue → In alert window → In progress → Upcoming → Filed**, each with a coloured **status pill**: *Not Started · Started · Under Progress · Filed · Not Applicable.*
 
-Open a filing and the buttons walk you through a **4-step handoff**:
+Open a filing — the stepper across the top shows exactly where it is: **Not Started → Started → Under Progress → Filed**. Move it along with the **Update status** menu:
 
-1. **Compliance prepares** — add the filing reference, upload proof, then **"Mark filing complete"**.
-2. **Admin verifies** — **"Approve & hand off to finance"** (if a payment is due), or close it; or **"Send back"** to fix.
-3. **Finance pays** — enter the amount + transaction reference, then **"Mark payment complete"**.
-4. **Admin signs off** — **"Approve & close"**. The filing is now **Filed** and moves to the Filed tab.
+1. **Start** — flip the status to **Started** when work begins.
+2. **Submit** — prepare the filing (reference, proof documents), then click **"Mark filing complete"** (on the payment leg: **"Mark payment complete"**). The item moves to **Under Progress** for admin review.
+3. **Sign off** — an admin picks **Update status → Filed** to close it, or **"Send back"** to return it to the assignee. Closed the wrong one? Admins get a **Reopen** button on filed items.
 
-(No payment needed? The admin just closes it at step 2.)
-
----
-
-### Writing due dates
-
-Most of the time you'll use the **visual due-date builder** in *Add regulation* — pick the frequency and the rule, and watch the **"Next due"** preview. You only type a due date as **free text** when editing a rule's deadline in Review & Assign, or in an **import file's deadline column**. When you do, use one of these shapes:
-
-| What you want | Type it like this | Frequency |
-|---|---|---|
-| Monthly, on a fixed day | \`by the 25th of the following month\` | Monthly |
-| Annual, fixed calendar date | \`by 30 Jun\` · \`31 Dec\` | Annually |
-| Within N months of FY-end | \`within 9 months of the financial year end\` | Annually |
-| Month + day after period end | \`15th day of the 6th month after the end of the tax period\` | Annually / Quarterly |
-
-> **Avoid vague text** like \`annually\`, \`as required\`, or \`see regulation\`. If the parser can't read a real deadline it falls back to "today + interval", so the date drifts day-to-day instead of sitting on the true statutory deadline.
-
-**What the frequencies mean:**
-
-| Frequency | Meaning | Example |
-|---|---|---|
-| Annual | Once a year | Annual accounts |
-| Semi-annual | Twice a year | Half-yearly regulatory return |
-| Quarterly | Every quarter | VAT return |
-| Monthly | Every month | Payroll / RTI |
-| One-time | Once, on a specific date | Initial registration |
-| Event-based | Only when something happens — no scheduled date | Change-in-control notification |
-| Continuous | Must be kept in place at all times — no scheduled date | AML programme, sanctions screening |
-
-> **Event-based** and **Continuous** filings don't get calendar dates — pick them in the due-date builder and the rule is tracked without a schedule.
+**Not applicable?** Admins can pick **Update status → Not Applicable** — a **reason is required**: a dialog asks why, posts the reason as a comment on the filing, and only then flips the status. The audit trail always shows who ruled it out and why.
 
 ---
 
 ### Reminders & Slack
 
-Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 days, Annual ≈ 45 days ahead) by **email** and **Slack**. From a Slack card you can open the filing or change its status (**In progress / For review / Filed**) without leaving Slack — the website updates automatically.
+Reminders go out by **email** and **Slack**, and they escalate per frequency until the filing is done:
+
+| Frequency | First reminder | Then |
+|---|---|---|
+| Monthly | 7 days before | Daily |
+| Quarterly | 30 days before | Every 2 days |
+| Half-yearly | 45 days before | Weekly |
+| Annual | 60 days before | Weekly until 14 days out, then daily |
+| Multi-year / long-form | 90 days before | Bi-weekly until 28 days out, then weekly |
+
+Plus a **"due today"** ping on the deadline itself, and once **overdue**, a chaser every **7 days late** until it's Filed (or Not Applicable). The Google Calendar event carries matching popup reminders (at the lead, 14, 7 and 1 days out — Google caps event reminders at 4 weeks).
+
+**Overdue escalation** — beyond the assignee, each step fires once per filing:
+
+- **1 day overdue** → the entity's **MLRO** (set on the entity — Entities → edit; each country's entity has its own).
+- **3 days overdue** → the **MLRO again** (second nudge).
+- **7 days overdue** → the **CFO**, by email (picked under Settings → Alert policies).
+
+From a Slack card you can open the filing or change its status without leaving Slack — the buttons are **▶ Started · 🔄 Under Progress · ✅ Filed · 🚫 Not Applicable** and the website updates automatically. (**Not Applicable** asks you to type the reason first — same rule as the app.)
 
 **Get @-mentioned in Slack (one-time, per person):** Slack only pings you when the app knows your Slack **member ID** — a display name isn't enough.
 
@@ -300,20 +367,6 @@ Reminders go out **before** each due date (Monthly ≈ 7 days, Quarterly ≈ 30 
 2. In the app: **Settings → Profile → "Your Slack member id"** → paste → **Save**.
 
 Once set, alert cards mention you with a real blue **@name** (and your status-button clicks in Slack are credited to your user). Without it, cards just show your name in bold — no ping. Turn the email/Slack toggles on under **Settings → Profile**.
-
-### Google Calendar
-
-Every **assigned** filing is pushed automatically to the shared **"Aspora Compliance"** Google Calendar — an all-day event on the filing's **due date**, titled *"filing — entity (Assignee: name)"*, with a link back to the filing.
-
-- **Assign / reassign** → the event appears or updates within seconds.
-- **Complete, mark N/A, or unassign** (in the app or via the Slack buttons) → the event disappears.
-- One filing = one event, no duplicates — the app keeps them in sync on its own.
-
-**Seeing the calendar (one-time, per person):** ask an admin to share the *Aspora Compliance* calendar with you ("See all event details"), then click **"Add this calendar"** in the invite email and make sure its checkbox is ticked in Google Calendar's sidebar. After that, every assignment shows up automatically — nothing to do per filing.
-
-> **The app is the source of truth.** Don't edit or delete these events inside Google Calendar — the app will overwrite manual changes on its next sync. To change a date or owner, change it on the filing.
-
-*(Admins: the connection itself is configured once under **Settings → Integrations → Google Calendar** — setup steps and a "Send test event" button live on that card.)*
 
 ---
 
@@ -323,7 +376,7 @@ Every **assigned** filing is pushed automatically to the shared **"Aspora Compli
 |---|---|
 | **Home** | Overdue / due-soon / awaiting-review at a glance. |
 | **Calendar** | Every due date across entities — the source of truth. |
-| **Filings** | Your work queue: prepare, attach proof, mark complete. |
+| **Filings** | Your work queue: prepare, attach proof, mark filed. |
 | **Documents** | Licence PDFs and proof-of-filing. |
 | **Entities** | Companies, fiscal year-ends, and licences (admin). |
 | **Review & Assign** | Approve discovered filings and set owners (admin). |
@@ -334,9 +387,9 @@ Every **assigned** filing is pushed automatically to the shared **"Aspora Compli
 
 ### In one breath
 
-Add the **entity** → upload its **licence** → set its **Primary Activity** → **Refresh Regulations** → **Find applicable regulations** → send them to **Review & Assign** → **Approve & assign** an owner → it lands on the **Calendar** and in that person's **Filings** → Compliance prepares, Admin verifies, Finance pays, Admin closes → **Filed.**
+Add the **entity** → upload its **licence** → set its **Primary Activity** → **Refresh Regulations** → **Find applicable regulations** → send them to **Review & Assign** → **Approve & assign** an owner → it lands on the **Calendar** and in that person's **Filings** → work it **Started → Under Progress** → admin signs it off → **Filed.**
 
-Most days you live in **Calendar** and **Filings**; the setup steps (1–6) you only repeat when you add a company or a new licence.
+Most days you live in **Calendar** and **Filings**; the setup steps you only repeat when you add a company or a new licence.
 `;
 
 
@@ -1410,22 +1463,10 @@ const SLACK_GROUPS: { id: string; label: string; fns: string[] }[] = [
   { id: "hr", label: "HR", fns: ["hr"] },
 ];
 
-interface ClickUpConfig {
-  configured: boolean;
-  enabled: boolean;
-  has_token: boolean;
-  api_token_masked: string | null;
-  list_id: string | null;
-  done_status: string | null;
-  two_way_connected: boolean;
-}
-
-
 function IntegrationsTab() {
   return (
     <div className="space-y-4">
       <SlackCard />
-      <ClickUpCard />
       <GmailCard />
       <GoogleCalendarCard />
       <ComingSoonGrid />
@@ -1711,250 +1752,6 @@ function SlackCard() {
 }
 
 
-function ClickUpCard() {
-  const queryClient = useQueryClient();
-  const { data: cfg, isLoading } = useQuery({
-    queryKey: ["integrations", "clickup"],
-    queryFn: () => api.get<ClickUpConfig>("/api/admin/integrations/clickup"),
-  });
-
-  const [editing, setEditing] = useState(false);
-  const [token, setToken] = useState("");
-  const [listId, setListId] = useState("");
-  const [doneStatus, setDoneStatus] = useState("");
-  const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
-
-  useEffect(() => {
-    if (cfg) {
-      setListId(cfg.list_id || "");
-      setDoneStatus(cfg.done_status || "");
-    }
-  }, [cfg]);
-
-  const saveMutation = useMutation({
-    mutationFn: (body: {
-      api_token?: string;
-      list_id?: string;
-      done_status?: string;
-      enabled?: boolean;
-    }) => api.post<ClickUpConfig>("/api/admin/integrations/clickup", body),
-    onSuccess: (fresh) => {
-      queryClient.setQueryData(["integrations", "clickup"], fresh);
-      setEditing(false);
-      setToken("");
-      setResult(null);
-    },
-  });
-
-  const testMutation = useMutation({
-    mutationFn: () =>
-      api.post<{ ok: boolean; detail: string | null }>("/api/admin/integrations/clickup/test"),
-    onSuccess: (r) => setResult(r),
-  });
-
-  const connectMutation = useMutation({
-    mutationFn: () =>
-      api.post<ClickUpConfig>("/api/admin/integrations/clickup/connect-webhook"),
-    onSuccess: (fresh) => {
-      queryClient.setQueryData(["integrations", "clickup"], fresh);
-      setResult({ ok: true, detail: "Two-way sync connected — ClickUp will now push status updates back." });
-    },
-    onError: (e: unknown) =>
-      setResult({ ok: false, detail: (e as Error).message }),
-  });
-
-  if (isLoading || !cfg) {
-    return <Card><CardContent className="p-4 text-sm text-muted-foreground">Loading ClickUp config…</CardContent></Card>;
-  }
-
-  return (
-    <Card>
-      <CardContent className="p-5 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-lg bg-secondary grid place-items-center text-foreground/80 shrink-0">
-            <ListChecks className="h-5 w-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <div className="font-semibold">ClickUp</div>
-              {cfg.configured && cfg.enabled ? (
-                <Badge variant="completed">
-                  <CheckCircle2 className="h-3 w-3 mr-0.5" />
-                  Connected
-                </Badge>
-              ) : cfg.configured ? (
-                <Badge variant="alert">Paused</Badge>
-              ) : (
-                <Badge variant="neutral">Not connected</Badge>
-              )}
-              {cfg.two_way_connected && (
-                <Badge variant="default">Two-way sync</Badge>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              When compliance requests a payment, a task is created in your finance ClickUp list. Closing it there marks the obligation complete here.
-            </div>
-          </div>
-
-          {cfg.configured && !editing && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => testMutation.mutate()}
-              disabled={testMutation.isPending}
-            >
-              {testMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ListChecks className="h-3.5 w-3.5" />}
-              Test
-            </Button>
-          )}
-        </div>
-
-        {cfg.configured && !editing && (
-          <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">API token</span>
-              <span className="font-mono truncate">{cfg.api_token_masked}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">List ID</span>
-              <span className="font-mono">{cfg.list_id}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Done status</span>
-              <span className="font-mono">{cfg.done_status || "complete"}</span>
-            </div>
-          </div>
-        )}
-
-        {result && (
-          <div
-            className={cn(
-              "rounded-lg border px-3 py-2 text-sm",
-              result.ok
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-destructive/30 bg-destructive/5 text-destructive",
-            )}
-          >
-            {result.detail}
-          </div>
-        )}
-
-        {!editing ? (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              {cfg.configured ? "Update" : "Connect"}
-            </Button>
-            {cfg.configured && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => connectMutation.mutate()}
-                  disabled={connectMutation.isPending}
-                >
-                  {connectMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  {cfg.two_way_connected ? "Re-connect two-way sync" : "Enable two-way sync"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => saveMutation.mutate({ enabled: !cfg.enabled })}
-                  disabled={saveMutation.isPending}
-                >
-                  {cfg.enabled ? "Pause" : "Resume"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-red-600"
-                  onClick={() => {
-                    if (window.confirm("Disconnect ClickUp? New payment requests won't create tasks.")) {
-                      saveMutation.mutate({ api_token: "" });
-                    }
-                  }}
-                >
-                  Disconnect
-                </Button>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
-                ClickUp API token
-              </label>
-              <Input
-                autoFocus
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder={cfg.has_token ? "•••• (leave blank to keep current)" : "pk_12345678_ABCDEF…"}
-                className="font-mono text-xs mt-1"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                ClickUp → your avatar → Settings → Apps → Generate / copy your API token.
-              </p>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
-                Finance list ID
-              </label>
-              <Input
-                value={listId}
-                onChange={(e) => setListId(e.target.value)}
-                placeholder="901100123456"
-                className="font-mono text-xs mt-1"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Open the ClickUp list → ⋯ → Copy link. The number after /li/ (or /v/li/) is the List ID.
-              </p>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
-                Done status (optional)
-              </label>
-              <Input
-                value={doneStatus}
-                onChange={(e) => setDoneStatus(e.target.value)}
-                placeholder="complete"
-                className="font-mono text-xs mt-1"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                The list status that means "paid". Defaults to <code>complete</code>.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() =>
-                  saveMutation.mutate({
-                    api_token: token.trim() || undefined,
-                    list_id: listId.trim() || undefined,
-                    done_status: doneStatus.trim() || undefined,
-                    enabled: true,
-                  })
-                }
-                disabled={
-                  saveMutation.isPending ||
-                  (!token.trim() && !cfg.has_token) ||
-                  !listId.trim()
-                }
-              >
-                {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Save
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-
 function GmailCard() {
   const [recipient, setRecipient] = useState("");
   const [result, setResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
@@ -2077,6 +1874,15 @@ function GoogleCalendarCard() {
       ),
     onSuccess: (r) => setResult(r),
   });
+  // Re-pushes every open assigned filing so already-created events pick up
+  // payload changes (e.g. the frequency-based reminders).
+  const resyncMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; detail: string | null }>(
+        "/api/admin/integrations/google-calendar/resync",
+      ),
+    onSuccess: (r) => setResult(r),
+  });
   if (!cfg) return null;
 
   return (
@@ -2106,19 +1912,35 @@ function GoogleCalendarCard() {
             </div>
           </div>
           {cfg.configured && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => testMutation.mutate()}
-              disabled={testMutation.isPending}
-            >
-              {testMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CalendarIcon className="h-3.5 w-3.5" />
-              )}
-              Send test event
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => resyncMutation.mutate()}
+                disabled={resyncMutation.isPending}
+                title="Re-push every open assigned filing so existing events pick up reminder changes"
+              >
+                {resyncMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                Re-sync all events
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => testMutation.mutate()}
+                disabled={testMutation.isPending}
+              >
+                {testMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CalendarIcon className="h-3.5 w-3.5" />
+                )}
+                Send test event
+              </Button>
+            </div>
           )}
         </div>
 
@@ -2142,27 +1964,43 @@ function GoogleCalendarCard() {
           </div>
         )}
 
+        {cfg.configured && (
+          <p className="text-xs text-muted-foreground">
+            Assignees are invited per filing, so each person's own calendar
+            shows only their work. The container calendar should belong to a
+            dedicated bot Google account and must NOT be shared with or added
+            by anyone — its owner always sees every event.
+          </p>
+        )}
+
         {!cfg.configured && (
           <div className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm space-y-2">
             <div className="font-medium">Set up (one-time — reuses the Gmail OAuth client)</div>
             <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
               <li>
+                Use a <strong>dedicated bot Google account</strong> (e.g.{" "}
+                <code className="font-mono">compliance-bot@…</code>) — its calendar hosts the
+                events, and the account owner always sees everything, so it must not be a
+                person.
+              </li>
+              <li>
                 Google Cloud Console → same project → enable the <strong>Google Calendar API</strong>.
               </li>
               <li>
-                Re-mint the refresh token at developers.google.com/oauthplayground with BOTH scopes:{" "}
+                Logged in AS THE BOT, mint the refresh token at
+                developers.google.com/oauthplayground with BOTH scopes:{" "}
                 <code className="font-mono">…/auth/gmail.send</code> and{" "}
                 <code className="font-mono">…/auth/calendar.events</code> → update{" "}
                 <code className="font-mono">GMAIL_REFRESH_TOKEN</code>.
               </li>
               <li>
-                In Google Calendar: create an "Aspora Compliance" calendar → its settings →
-                "Integrate calendar" → copy the <strong>Calendar ID</strong> → share the calendar
-                with the team.
+                In the bot's Google Calendar: create an "Aspora Compliance" calendar → its
+                settings → "Integrate calendar" → copy the <strong>Calendar ID</strong>. Don't
+                share it with anyone — assignees get per-filing invites automatically.
               </li>
               <li>
                 Render → Environment: set <code className="font-mono">GOOGLE_CALENDAR_ID</code> to
-                that ID → redeploy → use "Send test event".
+                that ID → redeploy → use "Send test event", then "Re-sync all events".
               </li>
             </ol>
           </div>
@@ -2431,6 +2269,49 @@ function AddJurisdictionDialog({
 // Alert policies
 // ---------------------------------------------------------------------------
 function AlertPoliciesTab() {
+  const queryClient = useQueryClient();
+  // Escalation contacts — country lead lives on each entity; these two are
+  // workspace-wide and drive the overdue 3d / 7d escalation steps.
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    staleTime: 300_000,
+  });
+  const { data: esc } = useQuery({
+    queryKey: ["escalation-contacts"],
+    queryFn: () =>
+      api.get<{ head_of_compliance_id: number | null; cfo_id: number | null }>(
+        "/api/admin/integrations/escalation",
+      ),
+  });
+  const saveEsc = useMutation({
+    mutationFn: (patch: { head_of_compliance_id?: number | null; cfo_id?: number | null }) =>
+      api.post("/api/admin/integrations/escalation", {
+        head_of_compliance_id: esc?.head_of_compliance_id ?? null,
+        cfo_id: esc?.cfo_id ?? null,
+        ...patch,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["escalation-contacts"] }),
+    onError: (e) => window.alert(e instanceof Error ? e.message : String(e)),
+  });
+  const userSelect = (
+    value: number | null | undefined,
+    onChange: (id: number | null) => void,
+  ) => (
+    <select
+      value={value ?? ""}
+      disabled={saveEsc.isPending || !esc}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      className="h-8 rounded-md border border-input bg-background px-2 text-xs max-w-[200px]"
+    >
+      <option value="">— not set —</option>
+      {users.map((u) => (
+        <option key={u.id} value={u.id}>
+          {u.full_name || u.email}
+        </option>
+      ))}
+    </select>
+  );
   return (
     <Card>
       <CardContent className="p-6 space-y-5">
@@ -2465,20 +2346,25 @@ function AlertPoliciesTab() {
 
         <div className="space-y-1 pt-4 border-t border-border">
           <h3 className="font-semibold">Escalation rules</h3>
-          <p className="text-xs text-muted-foreground">When an item is overdue by N days, who else gets pinged.</p>
+          <p className="text-xs text-muted-foreground">
+            When an item is overdue by N days, who else gets pinged. Each step
+            fires once per filing.
+          </p>
         </div>
         <ul className="space-y-2 text-sm">
-          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between">
-            <span>Overdue 1 day</span>
-            <span className="text-muted-foreground text-xs">Notify country lead</span>
+          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
+            <span>Overdue 1 &amp; 3 days</span>
+            <span className="text-muted-foreground text-xs">
+              Notify the entity's MLRO — set per entity (Entities → edit),
+              since each country's entity has its own
+            </span>
           </li>
-          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between">
-            <span>Overdue 3 days</span>
-            <span className="text-muted-foreground text-xs">Notify Head of Compliance</span>
-          </li>
-          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between">
-            <span>Overdue 7 days</span>
-            <span className="text-muted-foreground text-xs">Email CFO</span>
+          <li className="rounded-lg border border-border px-3 py-2 flex items-center justify-between gap-2">
+            <span>
+              Overdue 7 days
+              <span className="text-muted-foreground text-xs"> — email CFO</span>
+            </span>
+            {userSelect(esc?.cfo_id, (id) => saveEsc.mutate({ cfo_id: id }))}
           </li>
         </ul>
       </CardContent>

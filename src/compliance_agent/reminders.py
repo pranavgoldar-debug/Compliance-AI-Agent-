@@ -1,20 +1,36 @@
 """Outbound deadline reminders.
 
-For each open assigned obligation, we send a reminder when its
-days-remaining hits one of the offsets defined per effort band in
-`reminder_offsets_days()`. Aspora policy:
+The FIRST reminder for each open assigned obligation is driven by the
+filing's frequency (reminder_offsets_for_frequency), and the follow-up
+cadence escalates per frequency until the filing is Filed:
 
-  Monthly   →  7 days before              (one ping)
-  Quarterly →  25 and 15 days before      (two pings)
-  Annual    →  45 and 30 days before      (two pings)
+  Monthly      →  first at  7 days before, then DAILY
+  Quarterly    →  first at 30 days before, then every 2 days
+  Half-yearly  →  first at 45 days before, then weekly
+  Annual       →  first at 60 days before, then weekly until T-14,
+                  daily after
+  Multi-year   →  first at 90 days before, then bi-weekly until T-28,
+                  weekly after
+
+Every filing also gets a "due today" ping on the due date itself, and
+once overdue, a chaser every 7 days late (7, 14, 21, …).
+
+Overdue items additionally ESCALATE beyond the assignee:
+
+  overdue 1 day  → the entity's MLRO is notified
+  overdue 3 days → the entity's MLRO again (second nudge)
+  overdue 7 days → the CFO, by email (Settings → Alert policies)
+
+The MLRO is per-entity (entities.country_lead_id — each country's entity
+has its own). Each escalation step fires exactly once per filing.
 
 Intended to be run on a daily schedule:
 
   python -m compliance_agent.cli send-reminders          # actually send
   python -m compliance_agent.cli send-reminders --dry-run
 
-Idempotent — each (assignee, obligation, offset) fires exactly once.
-A Notification row with the offset baked into its title is the dedup
+Idempotent — each (assignee, obligation, slot) fires exactly once.
+A Notification row with the slot tag baked into its title is the dedup
 anchor, so cron runs never double-send.
 """
 from __future__ import annotations
@@ -45,9 +61,12 @@ from compliance_agent.db import (
 from compliance_agent.email_service import send_email
 
 
-# Marker baked into Notification.title so cron runs can dedup per-offset
-# without needing a new column.
+# Markers baked into Notification.title so cron runs can dedup per-slot
+# without needing a new column. T-N = N days before due, T+N = N days late,
+# ESC-N = the N-days-late escalation step (fires once per filing + person).
 _OFFSET_TAG = "[T-{}d]"
+_OVERDUE_TAG = "[T+{}d]"
+_ESCALATION_TAG = "[ESC-{}d]"
 
 
 @dataclass
@@ -117,13 +136,12 @@ def _build_email_body(db: Session, obligation: Obligation, days_remaining: int) 
     )
 
 
-def _already_reminded_at_offset(
+def _already_reminded(
     db: Session,
     user_id: int,
     obligation_id: int,
-    offset_days: int,
+    tag: str,
 ) -> bool:
-    tag = _OFFSET_TAG.format(offset_days)
     return (
         db.execute(
             select(Notification.id)
@@ -140,9 +158,9 @@ def _already_reminded_at_offset(
 
 
 def find_due_for_reminder(db: Session) -> list[Obligation]:
-    """All open, assigned, future obligations. The caller filters which
-    offsets apply per-band."""
-    today_d = today()
+    """All open, assigned obligations — including overdue ones, which keep
+    getting chased weekly until they're filed. The caller decides which
+    reminder slot (if any) fires today."""
     stmt = (
         select(Obligation)
         .options(
@@ -158,7 +176,6 @@ def find_due_for_reminder(db: Session) -> list[Obligation]:
                     ObligationStatus.pending_review,
                 ]
             ),
-            Obligation.due_date >= today_d,
             Obligation.assignee_id.is_not(None),
         )
         .order_by(Obligation.due_date)
@@ -166,33 +183,147 @@ def find_due_for_reminder(db: Session) -> list[Obligation]:
     return db.execute(stmt).scalars().unique().all()
 
 
+def _reminder_slots(lead: int) -> list[int]:
+    """All pre-due reminder days for a filing — the frequency lead itself,
+    then the per-frequency escalation ladder down to (and including) the
+    due date:
+
+      lead ≤ 7  (Monthly)     → daily:            [7, 6, 5, 4, 3, 2, 1, 0]
+      lead ≤ 30 (Quarterly)   → every 2 days:     [30, 28, 26, …, 2, 0]
+      lead ≤ 45 (Half-yearly) → weekly:           [45, 38, 31, 24, 17, 10, 3, 0]
+      lead ≤ 60 (Annual)      → weekly to T-14,
+                                daily after:      [60, 53, …, 18, 14, 13, …, 0]
+      lead > 60 (Multi-year)  → bi-weekly to T-28,
+                                weekly after:     [90, 76, 62, 48, 34, 28, 21, 14, 7, 0]
+    """
+    if lead <= 7:
+        slots = list(range(lead, -1, -1))
+    elif lead <= 30:
+        slots = list(range(lead, -1, -2))
+    elif lead <= 45:
+        slots = list(range(lead, -1, -7))
+    elif lead <= 60:
+        slots = list(range(lead, 14, -7)) + list(range(14, -1, -1))
+    else:
+        slots = list(range(lead, 28, -14)) + list(range(28, -1, -7))
+    if 0 not in slots:
+        slots.append(0)
+    return sorted(set(slots), reverse=True)
+
+
 def _trigger_offset(
     offsets: list[int],
     days_left: int,
 ) -> Optional[int]:
-    """Pick the offset that fires today.
+    """Pick the pre-due slot that fires today.
 
-    Fires when days_left is at-or-just-passed an offset boundary AND we
-    haven't passed the next (smaller) offset yet. In practice that means
-    the cron run that lands on or first dips below an offset triggers it.
+    Fires when days_left is at-or-just-passed a slot boundary AND we
+    haven't passed the next (smaller) slot yet. In practice that means
+    the cron run that lands on or first dips below a slot triggers it.
 
-    Examples for annual offsets [45, 30]:
-       days_left=46 → returns None  (not in any window yet)
-       days_left=45 → returns 45    (entering 45-day window)
-       days_left=40 → returns 45    (still in 45-day window, will dedup
-                                      against existing 45d notification)
-       days_left=30 → returns 30    (entering 30-day window)
-       days_left=10 → returns 30    (still under 30d, dedup against 30d)
+    Examples for slots [30, 23, 16, 9, 2, 0]:
+       days_left=31 → returns None  (not in any window yet)
+       days_left=30 → returns 30    (entering the 30-day window)
+       days_left=27 → returns 30    (still in the 30 slot — dedups, no send)
+       days_left=23 → returns 23    (weekly follow-up)
+       days_left=0  → returns 0     (due today)
 
     The de-dup check in send_reminders handles the "fire only once" part;
-    this function just routes today's run to the right offset bucket.
+    this function just routes today's run to the right slot bucket.
     """
     candidates = [o for o in offsets if days_left <= o]
     if not candidates:
         return None
-    # Tightest (smallest) offset that still applies — so once we cross
-    # 30 days for an annual, future runs route to the 30d slot, not 45d.
+    # Tightest (smallest) slot that still applies — so once we cross the
+    # next weekly boundary, future runs route to that slot, not the old one.
     return min(candidates)
+
+
+def _escalation_contacts(db: Session) -> Optional[User]:
+    """The CFO from the workspace 'escalation' setting — None when unset.
+    (The MLRO is per-entity: entities.country_lead_id.)"""
+    from compliance_agent.db import WorkspaceSetting
+
+    row = db.get(WorkspaceSetting, "escalation")
+    v = dict(row.value or {}) if row else {}
+    return db.get(User, v["cfo_id"]) if v.get("cfo_id") else None
+
+
+def _run_escalations(
+    db: Session,
+    ob: Obligation,
+    days_late: int,
+    *,
+    cfo: Optional[User],
+    slack_on: bool,
+    dry_run: bool,
+) -> None:
+    """Overdue escalation chain — 1d: the entity's MLRO, 3d: the MLRO again,
+    7d: CFO (email). One send per filing + step, deduped via the same
+    Notification-title tags as the assignee reminders. Skips a step when the
+    person isn't configured or is already the assignee (they're being chased
+    anyway)."""
+    from compliance_agent.email_service import base_url
+
+    mlro = ob.entity.country_lead if ob.entity else None
+    steps: list[tuple[int, Optional[User], str, bool]] = [
+        # (days-late threshold, who, role label, email-only)
+        (1, mlro, "MLRO", False),
+        (3, mlro, "MLRO", False),
+        (7, cfo, "CFO", True),
+    ]
+    form = ob.rule.form_name if ob.rule else "Compliance item"
+    entity_name = ob.entity.name if ob.entity else "—"
+    assignee_name = (
+        (ob.assignee.full_name or ob.assignee.email) if ob.assignee else "unassigned"
+    )
+    link = f"{base_url().rstrip('/')}/obligations/{ob.id}"
+
+    for threshold, target, role, email_only in steps:
+        if days_late < threshold or target is None or not target.is_active:
+            continue
+        if ob.assignee_id == target.id:
+            continue
+        tag = _ESCALATION_TAG.format(threshold)
+        if _already_reminded(db, target.id, ob.id, tag):
+            continue
+        if dry_run:
+            continue
+        db.add(
+            Notification(
+                user_id=target.id,
+                kind=NotificationKind.alert_window,
+                title=f"Escalation {tag}: {form} — {days_late}d overdue",
+                body=f"{entity_name} · assignee: {assignee_name} · escalated to you as {role}",
+                link_url=f"/obligations/{ob.id}",
+                obligation_id=ob.id,
+            )
+        )
+        if target.email and (email_only or target.notify_email):
+            send_email(
+                to=target.email,
+                subject=f"[Aspora] ESCALATION — {form} overdue by {days_late}d ({entity_name})",
+                body_text=(
+                    f"Hi {target.full_name or target.email},\n\n"
+                    f"{form} for {entity_name} is overdue by {days_late} day(s) "
+                    f"and has been escalated to you as the {role}.\n"
+                    f"Assignee: {assignee_name}\n\n"
+                    f"Open it: {link}\n"
+                ),
+            )
+        if not email_only and slack_on and target.notify_slack:
+            # Route the escalation to the ESCALATED person's team channel.
+            slack_service.post(
+                f":rotating_light: {slack_service._mention(target)} — *{form}* "
+                f"({entity_name}) is *{days_late}d overdue*. Escalated to you as "
+                f"the {role}; assignee {slack_service._mention(ob.assignee)}.",
+                sync=True,
+                function=(
+                    target.department.value
+                    if target.department
+                    else (ob.rule.responsible_function if ob.rule else None)
+                ),
+            )
 
 
 def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
@@ -203,26 +334,52 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
 
     with session_scope() as db:
         slack_on = slack_service.is_configured(db)
+        cfo = _escalation_contacts(db)
 
         for ob in find_due_for_reminder(db):
-            # Reminder cadence is driven by the filing's FREQUENCY (Monthly→7d,
-            # Quarterly→30d, Annual→45d); fall back to the effort-band offsets
-            # when the rule has no usable frequency.
+            days_left = (ob.due_date - today_d).days
+
+            # Overdue → run the escalation chain (MLRO at 1d and 3d, CFO at
+            # 7d) regardless of the assignee-chaser slots.
+            if days_left < 0:
+                _run_escalations(
+                    db, ob, -days_left,
+                    cfo=cfo, slack_on=slack_on, dry_run=dry_run,
+                )
+
+            # The FIRST reminder is driven by the filing's FREQUENCY
+            # (Monthly→7d, Quarterly→30d, Half-yearly→45d, Annual→60d,
+            # Multi-year→90d); fall back to the effort-band offsets when
+            # the rule has no usable frequency. After that the per-frequency
+            # escalation ladder (_reminder_slots) runs to the due date,
+            # then weekly overdue pings.
             freq = ob.rule.frequency if ob.rule else ""
             offsets = reminder_offsets_for_frequency(freq)
             if not offsets:
                 band = ob.effort_band or EffortBand.w4
                 offsets = reminder_offsets_days(band)
-            days_left = (ob.due_date - today_d).days
-
-            offset = _trigger_offset(offsets, days_left)
-            if offset is None:
+            if not offsets:
                 continue
+
+            if days_left >= 0:
+                offset = _trigger_offset(_reminder_slots(max(offsets)), days_left)
+                if offset is None:
+                    continue
+                tag = _OFFSET_TAG.format(offset)
+            else:
+                # Overdue — chase every 7 days late (the due-day ping covers
+                # days 1–6 late via its own dedup slot).
+                days_late = -days_left
+                late_slot = (days_late // 7) * 7
+                if late_slot == 0:
+                    continue
+                offset = -late_slot
+                tag = _OVERDUE_TAG.format(late_slot)
 
             assignee: Optional[User] = ob.assignee
             if assignee is None or not assignee.is_active:
                 continue
-            if _already_reminded_at_offset(db, assignee.id, ob.id, offset):
+            if _already_reminded(db, assignee.id, ob.id, tag):
                 continue
 
             subject, body, body_html = _build_email_body(db, ob, days_left)
@@ -231,11 +388,16 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
 
             if not dry_run:
                 form = ob.rule.form_name if ob.rule else "Compliance item"
+                title = (
+                    f"Reminder {tag}: {form} due in {days_left}d"
+                    if days_left >= 0
+                    else f"Overdue {tag}: {form} — {-days_left}d late"
+                )
                 db.add(
                     Notification(
                         user_id=assignee.id,
                         kind=NotificationKind.alert_window,
-                        title=f"Reminder {_OFFSET_TAG.format(offset)}: {form} due in {days_left}d",
+                        title=title,
                         body=(ob.entity.name if ob.entity else None),
                         link_url=f"/obligations/{ob.id}",
                         obligation_id=ob.id,
@@ -255,15 +417,28 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                     and slack_on
                     and slack_service.is_configured(db)
                 ):
-                    msg = slack_service.deadline_blocks(
-                        obligation=ob, assignee=assignee, days_remaining=days_left
+                    if days_left >= 0:
+                        msg = slack_service.deadline_blocks(
+                            obligation=ob, assignee=assignee, days_remaining=days_left
+                        )
+                    else:
+                        msg = slack_service.overdue_blocks(
+                            obligation=ob, days_late=-days_left
+                        )
+                    # Route to the ASSIGNEE's team channel (same rule as the
+                    # assignment ping) — a finance person's filing pings the
+                    # finance channel even if the rule is tagged Compliance.
+                    route_function = (
+                        assignee.department.value
+                        if assignee.department
+                        else (ob.rule.responsible_function if ob.rule else None)
                     )
                     slack_sent = bool(
                         slack_service.post(
                             msg["text"],
                             blocks=msg["blocks"],
                             sync=True,
-                            function=(ob.rule.responsible_function if ob.rule else None),
+                            function=route_function,
                         )
                     )
 
@@ -278,7 +453,9 @@ def send_reminders(*, dry_run: bool = False) -> list[ReminderResult]:
                 )
             )
 
-        if not dry_run and results:
+        # Commit unconditionally — escalation notifications can exist even
+        # on a run where no assignee reminder fired.
+        if not dry_run:
             db.commit()
 
     return results

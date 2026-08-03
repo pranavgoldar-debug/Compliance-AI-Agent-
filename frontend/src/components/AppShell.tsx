@@ -15,7 +15,10 @@ export function AppShell() {
       <div className={cn("flex-1 flex flex-col min-w-0")}>
         <Topbar />
         <main className="flex-1 overflow-auto scrollbar-thin">
-          <div className="px-8 py-6 max-w-[1500px] mx-auto">
+          {/* pb-24 keeps the bottom of every page scrollable past the
+              floating Ask Aida launcher (fixed bottom-right), so the last
+              table row's actions are never hidden under it. */}
+          <div className="px-8 pt-6 pb-24 max-w-[1500px] mx-auto">
             <Outlet />
           </div>
         </main>

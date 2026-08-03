@@ -215,6 +215,14 @@ def _view_button(obligation: Obligation, label: str = "View in Aspora") -> dict:
                 "action_id": "st_completed",
                 "value": f"{oid}:completed",
             },
+            {
+                # Doesn't flip the status directly — the interactivity
+                # handler replies asking for a mandatory reason first.
+                "type": "button",
+                "text": {"type": "plain_text", "text": "🚫 Not Applicable"},
+                "action_id": "st_not_applicable",
+                "value": f"{oid}:not_applicable",
+            },
         ],
     }
 
@@ -242,42 +250,32 @@ def verify_slack_signature(signing_secret: str, timestamp: str, raw_body: bytes,
 def deadline_blocks(
     *, obligation: Obligation, assignee: Optional[User], days_remaining: int
 ) -> dict:
-    """Deadline-alert card for the channel: urgency dot + due line, the
-    canonical key / entity / status context, Open + status buttons (wired to
-    the interactivity endpoint) and an Owner footer with the escalation note."""
+    """Deadline-alert card — same layout as the assignment ping (header,
+    @-mention line, context-field grid, Open + status buttons) so every card
+    in a team channel reads the same."""
     rule = obligation.rule
     form = rule.form_name if rule else "Compliance item"
     entity = obligation.entity.name if obligation.entity else "—"
-    juris = (rule.jurisdiction_code if rule else "—").upper()
     status = obligation_status_label(obligation.status)
-    due = obligation.due_date.strftime("%d-%b-%y")
     dot = "🔴" if days_remaining <= 7 else "🟡" if days_remaining <= 15 else "🟢"
-    text = f"{dot} {form} due in {days_remaining} {_days_word(days_remaining)} — {due} ({entity})"
+    text = f"{dot} {form} ({entity}) {_days_word(days_remaining)}."
     blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"⏰ Reminder — {form}"},
+        },
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"{dot} *{form}* due in *{days_remaining} "
-                    f"{_days_word(days_remaining)}* — {due}\n"
-                    f"`{juris}` · `{form}` · {entity} · status: *{status}*"
+                    f"{dot} {_mention(assignee)} — *{form}* for *{entity}* is "
+                    f"*{_days_word(days_remaining)}*. Status: *{status}*."
                 ),
             },
         },
-        _view_button(obligation, "Open"),
-        {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": (
-                        f"Owner: {_mention(assignee)} · T-7 copies the assigner, "
-                        "overdue pages compliance-leads"
-                    ),
-                }
-            ],
-        },
+        {"type": "section", "fields": _ob_context_fields(obligation, include_assignee=False)},
+        _view_button(obligation, "Open the obligation →"),
         {"type": "divider"},
     ]
     return {"text": text, "blocks": blocks}
@@ -401,36 +399,6 @@ def filed_blocks(*, obligation: Obligation, actor: User) -> dict:
         },
         {"type": "section", "fields": _ob_context_fields(obligation)},
         _view_button(obligation, "Open the audit trail →"),
-        {"type": "divider"},
-    ]
-    return {"text": text, "blocks": blocks}
-
-
-def payment_request_blocks(*, obligation: Obligation, actor: User) -> dict:
-    """Admin approved a filing; finance needs to pay."""
-    form = obligation.rule.form_name if obligation.rule else "Compliance item"
-    entity = obligation.entity.name if obligation.entity else "—"
-    rule = obligation.rule
-    amount_hint = (rule.payment_rule or "").strip() if rule else ""
-    text = f":money_with_wings: Payment requested — {form} ({entity})."
-    blocks = [
-        {
-            "type": "header",
-            "text": {"type": "plain_text", "text": f"💸 Payment requested — {form}"},
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    f"*Filing approved* by *{(actor.full_name or actor.email).strip()}*. "
-                    f"Finance — please log the payment amount + UTR to close it out."
-                    + (f"\n\n*Payment rule:* _{amount_hint}_" if amount_hint else "")
-                ),
-            },
-        },
-        {"type": "section", "fields": _ob_context_fields(obligation)},
-        _view_button(obligation),
         {"type": "divider"},
     ]
     return {"text": text, "blocks": blocks}

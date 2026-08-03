@@ -56,7 +56,7 @@ def _event_payload(ob) -> dict:
     from compliance_agent.email_service import base_url
 
     day = ob.due_date.isoformat()
-    return {
+    payload = {
         "summary": f"{form} — {entity_name} (Assignee: {who})",
         "description": (
             f"Aspora Compliance filing.\n"
@@ -69,6 +69,45 @@ def _event_payload(ob) -> dict:
         "end": {"date": day},
         "transparency": "transparent",
     }
+
+    # Invite the assignee as an attendee: the event then lands on THEIR
+    # personal Google calendar, so each person — admins included — sees
+    # exactly the filings assigned to them. Re-assignment swaps the
+    # attendee on the next sync.
+    #
+    # visibility=private locks the details down to the organizer + the
+    # assignee: even someone who got the host calendar shared to them only
+    # sees a busy block, never other people's filings. The host calendar
+    # (GOOGLE_CALENDAR_ID) is just the app's container — nobody should
+    # subscribe to it.
+    payload["visibility"] = "private"
+    payload["guestsCanSeeOtherGuests"] = False
+    if assignee and assignee.email:
+        payload["attendees"] = [
+            {"email": assignee.email, "displayName": who, "responseStatus": "accepted"}
+        ]
+
+    # Mirror the escalating reminder rule on the event itself as far as
+    # Google allows: event reminders cap at 4 weeks (40320 minutes) and 5
+    # overrides per event, so the event carries popups at the (capped)
+    # frequency lead, T-14, T-7 and T-1, plus one email at the lead.
+    # Note these fire for the connected Google account; other subscribers
+    # of the shared calendar get their own per-calendar notification
+    # defaults. The exact escalation ladder (daily/2-daily/… pings) is
+    # delivered by the reminder cron via Slack + email.
+    from compliance_agent.api._helpers import reminder_offsets_for_frequency
+
+    offsets = reminder_offsets_for_frequency(rule.frequency if rule else "")
+    if offsets:
+        lead = min(max(offsets), 28)  # Google's 4-week ceiling
+        points = sorted({d for d in (lead, 14, 7, 1) if d <= lead}, reverse=True)
+        overrides: list[dict] = [
+            {"method": "popup", "minutes": d * 24 * 60} for d in points
+        ]
+        overrides.append({"method": "email", "minutes": lead * 24 * 60})
+        payload["reminders"] = {"useDefault": False, "overrides": overrides[:5]}
+
+    return payload
 
 
 def _request(method: str, url: str, *, token: str, json_body: Optional[dict] = None):
@@ -126,9 +165,12 @@ def _sync(obligation_id: int) -> Optional[str]:
             return None
 
         payload = _event_payload(ob)
+        # sendUpdates=all → Google emails the assignee their invite, so the
+        # filing shows up on their personal calendar without any manual step.
         if mapping is not None and mapping.calendar_id == cal:
             r = _request(
-                "PATCH", f"{_API}/calendars/{cal}/events/{mapping.event_id}",
+                "PATCH",
+                f"{_API}/calendars/{cal}/events/{mapping.event_id}?sendUpdates=all",
                 token=token, json_body=payload,
             )
             if r.status_code == 200:
@@ -140,7 +182,11 @@ def _sync(obligation_id: int) -> Optional[str]:
             db.delete(mapping)
             mapping = None
 
-        r = _request("POST", f"{_API}/calendars/{cal}/events", token=token, json_body=payload)
+        r = _request(
+            "POST",
+            f"{_API}/calendars/{cal}/events?sendUpdates=all",
+            token=token, json_body=payload,
+        )
         if r.status_code != 200:
             return f"Google Calendar insert failed: {r.status_code} {r.text[:200]}"
         event_id = (r.json() or {}).get("id", "")

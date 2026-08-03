@@ -17,6 +17,7 @@ What it guarantees
 * **Every table**, copied in foreign-key-safe order (``metadata.sorted_tables``).
 * **Primary keys preserved** — ids are copied verbatim, so every foreign key
   (and every ``clickup_task_id`` / calendar-event link) still resolves. Uploaded
+  (and every calendar-event link) still resolves. Uploaded
   files ride along automatically: they are rows in ``file_blobs``, not files on
   disk.
 * **Postgres sequences re-synced** after the copy, so the next insert on the new
@@ -427,6 +428,8 @@ def main() -> int:
             "\n✅ Migration complete and verified.\n"
             "   Next: point COMPLIANCE_DB_URL at the new database, copy the env "
             "vars, then re-register the ClickUp webhook against the new domain.\n"
+            "vars, then re-point the Slack interactivity URL + cron schedule at "
+            "the new domain.\n"
             "   See MIGRATION.md for the full cutover order."
         )
         return 0

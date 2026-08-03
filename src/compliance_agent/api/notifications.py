@@ -201,9 +201,9 @@ def emit_assignment(
 ) -> None:
     """Persist an 'assigned' notification for the new assignee and fan out to
     Slack + email. Self-assignment (the mark-it-mine flow) skips the in-app
-    bell and the Slack ping — notifying yourself about your own click is
-    noise — but the EMAIL still sends, so every assignment leaves a mail
-    trail (admins approving-and-assigning to themselves expect it)."""
+    bell and the email — notifying yourself about your own click is noise.
+    Only the Slack channel ping still fires for self-assignments: it's the
+    team's shared record of who took ownership."""
     self_assigned = assignee.id == actor.id
     body = (
         f"{obligation.rule.form_name} — {obligation.entity.name}"
@@ -245,7 +245,9 @@ def emit_assignment(
 
     # Email the assignee (when they have email alerts on + SMTP is set up).
     # Uses the branded assignment template (email_templates.assignment_email).
-    if assignee.notify_email and smtp_configured():
+    # Self-assignments send nothing — "Pranav assigned you a task" addressed
+    # to Pranav is noise.
+    if not self_assigned and assignee.notify_email and smtp_configured():
         from datetime import date as _date
 
         from compliance_agent.email_templates import assignment_email
@@ -272,7 +274,6 @@ def emit_assignment(
                 jurisdiction=juris,
                 form_code=form,
                 entity_name=entity.name if entity else "—",
-                evidence_required="Filing acknowledgement / proof of submission",
                 due_date=obligation.due_date,
                 assigned_at=_date.today(),
                 open_url=link,
@@ -284,28 +285,6 @@ def emit_assignment(
             logging.getLogger(__name__).warning(
                 "assignment email to %s failed", assignee.email, exc_info=True
             )
-
-    # Finance hand-off via ClickUp: if the assignee is on the finance team and
-    # ClickUp is connected, drop a task so they can action it there. Guarded on
-    # clickup_task_id so we never create a duplicate (the payment-request flow
-    # may already have made one).
-    if (
-        not self_assigned
-        and assignee.department == Department.finance
-        and not obligation.clickup_task_id
-    ):
-        from compliance_agent import clickup_service
-
-        if clickup_service.is_configured(db):
-            created = clickup_service.create_payment_task(
-                db,
-                obligation,
-                amount=obligation.payment_amount or "—",
-                notes=f"Assigned to {assignee.full_name or assignee.email}.",
-                app_url=base_url(),
-            )
-            if created:
-                obligation.clickup_task_id, obligation.clickup_task_url = created
 
 
 # Match @<identifier>. We resolve against active users by:
@@ -370,64 +349,6 @@ def emit_mentions(
                 obligation=obligation, mentioned=u, actor=actor, body=body
             )
             slack_service.post(msg["text"], blocks=msg["blocks"])
-
-
-def emit_payment_request(
-    db: Session,
-    *,
-    obligation: Obligation,
-    actor: User,
-) -> None:
-    """Filing's been approved and the rule has a payment leg — explicitly
-    ping the finance team (admins) that they need to pay. Without this, the
-    "Awaiting payment" chip on Tasks is invisible until somebody thinks to
-    look at it; this turns the hand-off into a real notification.
-
-    Targets all active admins (they're the payment approvers). Also fires a
-    workspace Slack ping if configured.
-    """
-    from compliance_agent.db import Role
-
-    rule = obligation.rule
-    entity = obligation.entity
-    form = rule.form_name if rule else "Compliance item"
-    entity_name = entity.name if entity else "—"
-    amount_hint = (rule.payment_rule or "").strip() if rule else ""
-
-    admins = (
-        db.execute(
-            select(User).where(User.role == Role.admin, User.is_active.is_(True))
-        )
-        .scalars()
-        .all()
-    )
-    title = f"Payment requested — {form}"
-    body = (
-        f"{entity_name} · filing approved by "
-        f"{actor.full_name or actor.email}. Log the payment + UTR to close it out."
-    )
-    if amount_hint:
-        body = f"{body}\nPayment rule: {amount_hint}"
-
-    for admin in admins:
-        # Skip the actor themselves — they just approved it, they know.
-        if admin.id == actor.id:
-            continue
-        db.add(
-            Notification(
-                user_id=admin.id,
-                kind=NotificationKind.payment_request,
-                title=title,
-                body=body,
-                link_url=f"/obligations/{obligation.id}",
-                obligation_id=obligation.id,
-                actor_id=actor.id,
-            )
-        )
-
-    if slack_service.is_configured(db):
-        msg = slack_service.payment_request_blocks(obligation=obligation, actor=actor)
-        slack_service.post(msg["text"], blocks=msg["blocks"])
 
 
 def emit_status_change(

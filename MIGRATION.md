@@ -13,6 +13,7 @@ Four things move:
 | 2 | Environment variables / secrets | copy by hand (inventory below) |
 | 3 | Public URL settings | `COMPLIANCE_BASE_URL`, `COMPLIANCE_FRONTEND_URL`, CORS, cookie domain |
 | 4 | Inbound webhooks + cron | re-point ClickUp / Slack / scheduler at the new domain |
+| 4 | Inbound webhook + cron | re-point Slack interactivity / the schedule at the new domain |
 
 ---
 
@@ -39,6 +40,22 @@ are looking at the wrong source — the truth is the SQLite file.
 > If the source is the SQLite file, download it off Render first
 > (`/api/admin/backup` if enabled, or a shell copy) and pass the local path:
 > `--source ./compliance.db`.
+
+### Getting a usable Render Postgres URL
+
+Render shows two connection strings. Use the **External Database URL** — the
+internal one only resolves from inside Render's own network, so it fails from
+your laptop or the new platform with a DNS error.
+
+External connections require TLS. If the URL doesn't already end in
+`?sslmode=require`, append it:
+
+```bash
+export SOURCE_DB_URL="postgresql://user:pass@dpg-xxxx-a.oregon-postgres.render.com/dbname?sslmode=require"
+```
+
+Query parameters and URL-encoded passwords are passed through untouched, and
+passwords are redacted from all output.
 
 ---
 
@@ -155,9 +172,28 @@ pinned to the old Render URL and must be updated:
 |---|---|---|
 | ClickUp webhook (task → app) | `POST https://NEW_HOST/api/webhooks/clickup` | ClickUp space/app webhook settings |
 | Slack interactivity (buttons) | `POST https://NEW_HOST/api/webhooks/slack/interactivity` | Slack app → Interactivity & Shortcuts → Request URL |
+- `CRON_TOKEN` 🔑 (guards the cron endpoints), `REMINDERS_AUTOSEND` (in-app reminder scheduler), `COMPLIANCE_AUDIT_RETENTION_DAYS`, `LOG_LEVEL`
+- `COMPLIANCE_AUTO_SEED=0` while cutting over; you can drop it afterwards
+
+---
+
+## Step 5 — Re-point the inbound webhook and cron
+
+Outbound integrations (Slack posts, Gmail, Calendar pushes) work the moment the
+env vars are in place. Anything that calls **into** the app is pinned to the old
+Render URL and must be updated:
+
+| Integration | New endpoint | Where to change it |
+|---|---|---|
+| Slack interactivity (buttons) | `POST https://NEW_HOST/api/webhooks/slack/interactivity` | Slack app → Interactivity & Shortcuts → Request URL |
+| Reminders cron | `https://NEW_HOST/api/cron/send-reminders?token=$CRON_TOKEN` | the internal platform's scheduler |
 | Weekly digest cron | `https://NEW_HOST/api/cron/weekly-digest?token=$CRON_TOKEN` | the internal platform's scheduler |
 | Rule sync cron | `https://NEW_HOST/api/cron/sync-rules?token=$CRON_TOKEN` | the internal platform's scheduler |
 | Google sign-in redirect | new callback URL | Google Cloud Console → OAuth client |
+
+> The app also runs reminders itself on boot (every 6h) when
+> `REMINDERS_AUTOSEND` is enabled, so the reminders cron is a belt-and-braces
+> external trigger rather than the only path.
 
 ---
 
@@ -175,6 +211,9 @@ pinned to the old Render URL and must be updated:
    verification).
 7. **Webhook test**: mark a task done in ClickUp → the obligation flips to Under
    Progress in the app.
+7. **Webhook test**: use a status button on a Slack card → the obligation's
+   status changes in the app (proves `SLACK_SIGNING_SECRET` + the new
+   interactivity URL).
 
 ---
 

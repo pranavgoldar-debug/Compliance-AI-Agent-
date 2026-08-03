@@ -48,7 +48,7 @@ import { deriveFunction, entityStatusLabel, entityStatusVariant, fieldLabel, fmt
 import { CountrySelect } from "@/components/CountrySelect";
 import { gatesForJurisdiction, followupsForJurisdiction, thresholdForJurisdiction } from "@/lib/financeGates";
 import { cn } from "@/lib/utils";
-import type { ActivityOut, BankDetails, DocumentOut, Entity, EntityStatus, GeneratedQuestion, License, Obligation, OwnershipStage, Rule } from "@/types/api";
+import type { ActivityOut, BankDetails, DocumentOut, Entity, EntityStatus, GeneratedQuestion, License, Obligation, OwnershipStage, Rule, UserBrief } from "@/types/api";
 
 
 function StatTile({
@@ -645,23 +645,13 @@ function ApplicabilitySection({
   const notApplicable = grp("not_applicable");
 
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  // Default-tick mandatory + conditional. Keyed on the result's form names (a
-  // stable string) so the selection also initializes when the result is
-  // restored from the persisted entity.last_assessment after navigation — not
-  // only on a fresh run (which the old [assess.data] dependency missed).
+  // NOTHING is pre-ticked — mandatory included. Every item is opted into
+  // Review & Assign deliberately by the user. Keyed on the result's form
+  // names (a stable string) so a new/restored result clears any stale
+  // selection left over from a previous run.
   const resultKey = (result?.items ?? []).map((i) => i.form_name).join("|");
   useEffect(() => {
-    if (result) {
-      setPicked(
-        new Set(
-          (result.items ?? [])
-            // Default-tick ONLY mandatory; conditional + not-applicable start
-            // unticked so the user opts those into Review & Assign deliberately.
-            .filter((i) => i.verdict === "mandatory")
-            .map((i) => i.form_name),
-        ),
-      );
-    }
+    if (result) setPicked(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultKey]);
   const toggle = (form: string) =>
@@ -1107,7 +1097,6 @@ function ComplianceRulesTab({
     queryKey: ["rules", "production", entity.id],
     queryFn: () => api.get<Rule[]>(`/api/rules?status=production&entity_id=${entity.id}`),
   });
-
   const review = staging.filter((r) => r.entity_ids.includes(entity.id));
   const confirmed = production.filter((r) => r.entity_ids.includes(entity.id));
 
@@ -1222,7 +1211,10 @@ function ComplianceRulesTab({
     >
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{r.name}</span>
+          {/* Lead with the form code — it's how the same rule is titled in
+              Review & Assign and on the calendar, so it's findable here too.
+              The generic name becomes the sub-line. */}
+          <span className="font-medium text-sm">{r.form_name || r.name}</span>
           {/* Discovered list is the exhaustive candidate set (assume all
               activities present) — no applicability label here; that's decided
               by "Find applicable regulations" below. */}
@@ -1233,6 +1225,7 @@ function ComplianceRulesTab({
           )}
         </div>
         <div className="text-xs text-muted-foreground mt-0.5">
+          {r.form_name && r.name && r.name !== r.form_name ? `${r.name} · ` : ""}
           {r.authority} · {r.category} · {r.frequency}
         </div>
       </div>
@@ -1668,6 +1661,16 @@ function EditEntityDialog({
   const [nature, setNature] = useState(entity.nature_of_operation ?? "");
   const [status, setStatus] = useState<EntityStatus>(entity.status ?? "not_started");
   const [ownership, setOwnership] = useState<OwnershipStage[]>(entity.ownership ?? []);
+  // MLRO — first stop of the overdue escalation chain (pinged at 1 and 3
+  // days late). Stored as country_lead_id; one per entity/country.
+  const [countryLeadId, setCountryLeadId] = useState<number | "">(
+    entity.country_lead?.id ?? "",
+  );
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserBrief[]>("/api/users"),
+    staleTime: 300_000,
+  });
   const [error, setError] = useState<string | null>(null);
 
   // Re-sync the form when the entity object changes (e.g. polling refresh).
@@ -1685,6 +1688,7 @@ function EditEntityDialog({
       setNature(entity.nature_of_operation ?? "");
       setStatus(entity.status ?? "not_started");
       setOwnership(entity.ownership ?? []);
+      setCountryLeadId(entity.country_lead?.id ?? "");
       setError(null);
     }
   }, [open, entity]);
@@ -1714,6 +1718,7 @@ function EditEntityDialog({
         nature_of_operation: nature.trim() || null,
         status,
         ownership: cleaned.length ? cleaned : null,
+        country_lead_id: countryLeadId === "" ? null : Number(countryLeadId),
       });
     },
     onSuccess: () => {
@@ -1783,6 +1788,27 @@ function EditEntityDialog({
               rows={2}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
             />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">MLRO</label>
+            <select
+              value={countryLeadId}
+              onChange={(e) =>
+                setCountryLeadId(e.target.value ? Number(e.target.value) : "")
+              }
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">— not set —</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              First escalation stop — notified when any of this entity's filings
+              is 1 day overdue, and again at 3 days.
+            </p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">Nature of operation</label>

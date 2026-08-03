@@ -185,7 +185,6 @@ export interface Obligation {
   filing_reference: string | null;
   payment_amount: string | null;
   payment_reference: string | null;
-  clickup_task_url: string | null;
   beneficiary_details: string | null;
   is_awaiting_payment: boolean;
   notes: string | null;
