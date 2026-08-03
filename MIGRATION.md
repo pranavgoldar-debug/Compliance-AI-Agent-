@@ -12,7 +12,6 @@ Four things move:
 | 1 | Database (entities, rules, obligations, users, audit log, uploads, integration config) | `scripts/migrate_data.py` |
 | 2 | Environment variables / secrets | copy by hand (inventory below) |
 | 3 | Public URL settings | `COMPLIANCE_BASE_URL`, `COMPLIANCE_FRONTEND_URL`, CORS, cookie domain |
-| 4 | Inbound webhooks + cron | re-point ClickUp / Slack / scheduler at the new domain |
 | 4 | Inbound webhook + cron | re-point Slack interactivity / the schedule at the new domain |
 
 ---
@@ -88,6 +87,46 @@ strict, scale the Render service to zero after the dump.
 
 ## Step 3 — Migrate
 
+Two routes. **If both sides are Postgres, prefer `pg_dump` (3a)** — it is the
+standard tool, it also carries indexes, constraints and enum types, and it
+leaves you an archived dump file. Use the script (3b) when the source is the
+SQLite fallback, when the Postgres versions won't cooperate, or when you just
+want the copy driven off the app's own models.
+
+Either way, **verify with the script** — that is the part `pg_dump` doesn't do.
+
+### Step 3a — pg_dump / pg_restore (Postgres → Postgres)
+
+```bash
+# Dump. -Fc = compressed custom format; --no-owner/--no-acl because the role
+# names on Render and the internal platform differ.
+pg_dump -Fc --no-owner --no-acl -d "$SOURCE_DB_URL" -f compliance.dump
+
+# Restore into the EMPTY target database.
+pg_restore --no-owner --no-acl -d "$TARGET_DB_URL" compliance.dump
+```
+
+Then prove it landed intact — this compares every table's row count and max id
+between the two live databases and exits non-zero on any mismatch:
+
+```bash
+python scripts/migrate_data.py --verify-only
+```
+
+Notes:
+
+* **Client version matters.** `pg_dump` must be at least the server's major
+  version, or it refuses ("server version mismatch"). Check with
+  `pg_dump --version` against Render's Postgres version; if yours is older, run
+  the dump from a matching client — e.g.
+  `docker run --rm -v "$PWD:/out" postgres:16 pg_dump -Fc --no-owner --no-acl -d "$SOURCE_DB_URL" -f /out/compliance.dump`.
+* **Sequences are included** in the dump, so the "next insert collides with a
+  migrated id" problem doesn't arise on this route.
+* Keep `compliance.dump` — it is a point-in-time backup of the old system.
+* Restore **before** the app's first boot on the new platform (see Step 1).
+
+### Step 3b — the migration script (any engine pairing)
+
 Keep credentials out of your shell history by exporting them first:
 
 ```bash
@@ -154,24 +193,6 @@ actually use need to move; secrets are marked 🔑.
 - `SMTP_*`, or `RESEND_API_KEY` 🔑 / `RESEND_FROM`, or `BREVO_API_KEY` 🔑 / `BREVO_FROM` / `BREVO_FROM_NAME`
 
 **Other**
-- `CRON_TOKEN` 🔑 (guards the cron endpoints), `COMPLIANCE_AUDIT_RETENTION_DAYS`, `LOG_LEVEL`
-- `COMPLIANCE_AUTO_SEED=0` while cutting over; you can drop it afterwards
-
-> ClickUp's API token and list id also live in the database and migrate
-> automatically.
-
----
-
-## Step 5 — Re-point inbound webhooks and cron
-
-Outbound integrations (Slack posts, Gmail, Calendar pushes, ClickUp writes) work
-the moment the env vars are in place. Anything that calls **into** the app is
-pinned to the old Render URL and must be updated:
-
-| Integration | New endpoint | Where to change it |
-|---|---|---|
-| ClickUp webhook (task → app) | `POST https://NEW_HOST/api/webhooks/clickup` | ClickUp space/app webhook settings |
-| Slack interactivity (buttons) | `POST https://NEW_HOST/api/webhooks/slack/interactivity` | Slack app → Interactivity & Shortcuts → Request URL |
 - `CRON_TOKEN` 🔑 (guards the cron endpoints), `REMINDERS_AUTOSEND` (in-app reminder scheduler), `COMPLIANCE_AUDIT_RETENTION_DAYS`, `LOG_LEVEL`
 - `COMPLIANCE_AUTO_SEED=0` while cutting over; you can drop it afterwards
 
@@ -209,8 +230,6 @@ Render URL and must be updated:
    and pings Slack. This is also the real sequence test — a save that fails with
    a duplicate-key error means sequences weren't re-synced (re-run the script's
    verification).
-7. **Webhook test**: mark a task done in ClickUp → the obligation flips to Under
-   Progress in the app.
 7. **Webhook test**: use a status button on a Slack card → the obligation's
    status changes in the app (proves `SLACK_SIGNING_SECRET` + the new
    interactivity URL).
