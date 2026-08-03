@@ -40,6 +40,22 @@ are looking at the wrong source — the truth is the SQLite file.
 > (`/api/admin/backup` if enabled, or a shell copy) and pass the local path:
 > `--source ./compliance.db`.
 
+### Getting a usable Render Postgres URL
+
+Render shows two connection strings. Use the **External Database URL** — the
+internal one only resolves from inside Render's own network, so it fails from
+your laptop or the new platform with a DNS error.
+
+External connections require TLS. If the URL doesn't already end in
+`?sslmode=require`, append it:
+
+```bash
+export SOURCE_DB_URL="postgresql://user:pass@dpg-xxxx-a.oregon-postgres.render.com/dbname?sslmode=require"
+```
+
+Query parameters and URL-encoded passwords are passed through untouched, and
+passwords are redacted from all output.
+
 ---
 
 ## Step 1 — Provision the target
