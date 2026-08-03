@@ -12,6 +12,7 @@ Four things move:
 | 1 | Database (entities, rules, obligations, users, audit log, uploads, integration config) | `scripts/migrate_data.py` |
 | 2 | Environment variables / secrets | copy by hand (inventory below) |
 | 3 | Public URL settings | `COMPLIANCE_BASE_URL`, `COMPLIANCE_FRONTEND_URL`, CORS, cookie domain |
+| 4 | Inbound webhooks + cron | re-point ClickUp / Slack / scheduler at the new domain |
 | 4 | Inbound webhook + cron | re-point Slack interactivity / the schedule at the new domain |
 
 ---
@@ -153,6 +154,24 @@ actually use need to move; secrets are marked 🔑.
 - `SMTP_*`, or `RESEND_API_KEY` 🔑 / `RESEND_FROM`, or `BREVO_API_KEY` 🔑 / `BREVO_FROM` / `BREVO_FROM_NAME`
 
 **Other**
+- `CRON_TOKEN` 🔑 (guards the cron endpoints), `COMPLIANCE_AUDIT_RETENTION_DAYS`, `LOG_LEVEL`
+- `COMPLIANCE_AUTO_SEED=0` while cutting over; you can drop it afterwards
+
+> ClickUp's API token and list id also live in the database and migrate
+> automatically.
+
+---
+
+## Step 5 — Re-point inbound webhooks and cron
+
+Outbound integrations (Slack posts, Gmail, Calendar pushes, ClickUp writes) work
+the moment the env vars are in place. Anything that calls **into** the app is
+pinned to the old Render URL and must be updated:
+
+| Integration | New endpoint | Where to change it |
+|---|---|---|
+| ClickUp webhook (task → app) | `POST https://NEW_HOST/api/webhooks/clickup` | ClickUp space/app webhook settings |
+| Slack interactivity (buttons) | `POST https://NEW_HOST/api/webhooks/slack/interactivity` | Slack app → Interactivity & Shortcuts → Request URL |
 - `CRON_TOKEN` 🔑 (guards the cron endpoints), `REMINDERS_AUTOSEND` (in-app reminder scheduler), `COMPLIANCE_AUDIT_RETENTION_DAYS`, `LOG_LEVEL`
 - `COMPLIANCE_AUTO_SEED=0` while cutting over; you can drop it afterwards
 
@@ -190,6 +209,8 @@ Render URL and must be updated:
    and pings Slack. This is also the real sequence test — a save that fails with
    a duplicate-key error means sequences weren't re-synced (re-run the script's
    verification).
+7. **Webhook test**: mark a task done in ClickUp → the obligation flips to Under
+   Progress in the app.
 7. **Webhook test**: use a status button on a Slack card → the obligation's
    status changes in the app (proves `SLACK_SIGNING_SECRET` + the new
    interactivity URL).
