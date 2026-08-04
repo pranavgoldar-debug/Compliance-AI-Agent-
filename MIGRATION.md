@@ -36,9 +36,10 @@ The totals must look like your real data (entities, rules, obligations you
 recognise). If Postgres comes back nearly empty but the app is full of data, you
 are looking at the wrong source — the truth is the SQLite file.
 
-> If the source is the SQLite file, download it off Render first
-> (`/api/admin/backup` if enabled, or a shell copy) and pass the local path:
-> `--source ./compliance.db`.
+> If the source is the SQLite file, download it off Render first (Render Shell:
+> `cat compliance.db | base64`, or scp it off the disk) and pass the local path:
+> `--source ./compliance.db`. Note the app exposes **no** backup endpoint — the
+> only in-app extracts are the per-table CSV exports under `/api/exports/*`.
 
 ### Getting a usable Render Postgres URL
 
