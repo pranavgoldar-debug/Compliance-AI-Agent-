@@ -152,6 +152,108 @@ def recover_archived_rules(_: User = Depends(require_admin)) -> dict:
     }
 
 
+@router.get("/db")
+def db_info(_: User = Depends(require_admin)) -> dict:
+    """Admin-only, browser-openable: WHICH database is this app actually using?
+
+    Exists because `db/base.py` falls back to a local SQLite file when the
+    configured Postgres is unreachable (Render's free Postgres expires after 90
+    days). The service still boots, auto-creates an empty schema and seeds a
+    bootstrap admin — so the app looks fine but every count reads 0 and it looks
+    like the data was deleted. Nothing was deleted: the app is pointed at an
+    empty database while the real one sits untouched.
+
+    `on_fallback: true` is that exact situation, and the smoking gun to check
+    first. Open `/api/system/db` in the browser while logged in as an admin.
+
+    The connection string is redacted — host and database name only, never the
+    password.
+    """
+    import os
+
+    from sqlalchemy import func, inspect, select
+
+    from compliance_agent.db.base import DATABASE_URL, engine
+
+    def _redact(url: str) -> str:
+        """Host + database only; strip driver, user and password entirely."""
+        if "://" not in url:
+            return url
+        scheme, rest = url.split("://", 1)
+        scheme = scheme.split("+", 1)[0]
+        if "@" in rest:
+            rest = rest.rsplit("@", 1)[1]
+        return f"{scheme}://{rest}"
+
+    configured = (os.environ.get("COMPLIANCE_DB_URL") or "").strip()
+    is_sqlite = DATABASE_URL.startswith("sqlite")
+    # Postgres was configured but we ended up on SQLite → the silent fallback ran.
+    on_fallback = bool(configured) and is_sqlite
+
+    counts: dict = {}
+    try:
+        present = set(inspect(engine).get_table_names())
+        from compliance_agent.db import models as _m
+
+        for label, model in (
+            ("entities", _m.Entity),
+            ("rules", _m.Rule),
+            ("obligations", _m.Obligation),
+            ("licenses", _m.License),
+            ("users", _m.User),
+            ("documents", _m.Document),
+            ("file_blobs", _m.FileBlob),
+            ("activities", _m.Activity),
+        ):
+            table = model.__table__
+            if table.name not in present:
+                counts[label] = None
+                continue
+            with engine.connect() as conn:
+                counts[label] = int(
+                    conn.execute(select(func.count()).select_from(table)).scalar_one()
+                )
+    except Exception as e:  # noqa: BLE001 — diagnostics must never 500
+        counts["error"] = f"{type(e).__name__}: {e}"
+
+    empty = counts.get("entities") == 0 and counts.get("rules") == 0
+
+    if on_fallback:
+        verdict = (
+            "FALLBACK ACTIVE — Postgres is configured but UNREACHABLE, so the app "
+            "is running on a local, ephemeral SQLite file. Your real data is still "
+            "in that Postgres. Do NOT re-enter data here: this file is wiped on "
+            "every redeploy. Fix the Postgres connection (or restore the database), "
+            "then set COMPLIANCE_DB_STRICT=1 so this can never happen silently."
+        )
+    elif is_sqlite and not configured:
+        verdict = (
+            "SQLite by configuration — no COMPLIANCE_DB_URL is set. On a PaaS this "
+            "file is ephemeral and lost on redeploy; set COMPLIANCE_DB_URL to a "
+            "managed Postgres."
+        )
+    elif empty:
+        verdict = (
+            "Connected to the configured Postgres, but it is EMPTY. This is a "
+            "different/new database, not the one holding your data — check that "
+            "COMPLIANCE_DB_URL points at the right instance."
+        )
+    else:
+        verdict = "OK — connected to the configured database and it holds data."
+
+    return {
+        "dialect": "sqlite" if is_sqlite else engine.dialect.name,
+        "in_use": _redact(DATABASE_URL),
+        "configured_db_url_set": bool(configured),
+        "configured_target": _redact(configured) if configured else None,
+        "on_fallback": on_fallback,
+        "strict_mode": os.environ.get("COMPLIANCE_DB_STRICT") == "1",
+        "looks_empty": empty,
+        "row_counts": counts,
+        "verdict": verdict,
+    }
+
+
 @router.get("/repair-schema")
 def repair_schema(_: User = Depends(require_admin)) -> dict:
     """Admin-only, browser-openable schema repair (no shell, no DB client).
